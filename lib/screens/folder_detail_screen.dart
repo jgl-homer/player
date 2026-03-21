@@ -6,6 +6,7 @@ import '../../providers/audio_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/mini_player.dart';
 import '../../widgets/song_list_tile.dart';
+import 'search_screen.dart';
 
 class FolderDetailScreen extends StatelessWidget {
   final String folderName;
@@ -60,8 +61,34 @@ class FolderDetailScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.search), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.more_vert), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SearchScreen()),
+              );
+            },
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            color: AppTheme.surfaceColor,
+            onSelected: (value) {
+              if (value == 'reproducir') {
+                audioProvider.playPlaylist(currentFolderSongs, 0);
+              } else if (value == 'añadir') {
+                audioProvider.addAllToQueue(currentFolderSongs);
+              } else if (value == 'delete') {
+                _showDeleteConfirmation(context, audioProvider, folderName, folderPath, currentFolderSongs);
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'reproducir', child: Text('Reproducir')),
+              const PopupMenuItem(value: 'añadir', child: Text('Añadir a lista')),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'delete', child: Text('Borrar carpeta', style: TextStyle(color: Colors.red))),
+            ],
+          ),
         ],
       ),
       body: Column(
@@ -186,6 +213,7 @@ class FolderDetailScreen extends StatelessWidget {
                         return SongListTile(
                           song: song,
                           isSelected: isSelected,
+                          showTrailing: false,
                           onTap: () {
                             audioProvider.playPlaylist(currentFolderSongs, index);
                           },
@@ -199,6 +227,34 @@ class FolderDetailScreen extends StatelessWidget {
             ),
           ),
           if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
+        ],
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(BuildContext context, AudioProvider audioProvider, String name, String path, List<SongModel> songs) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        title: const Text('Eliminar carpeta', style: TextStyle(color: Colors.white)),
+        content: Text(
+          '¿Estás seguro de que quieres borrar la carpeta "$name" de la lista? (No se borrarán los archivos físicos)',
+          style: const TextStyle(color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('CANCELAR', style: TextStyle(color: AppTheme.primaryColor)),
+          ),
+          TextButton(
+            onPressed: () {
+              audioProvider.deleteFolder(path);
+              Navigator.pop(context);
+              Navigator.pop(context); // Close detail screen as it's being "deleted"
+            },
+            child: const Text('ELIMINAR', style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );

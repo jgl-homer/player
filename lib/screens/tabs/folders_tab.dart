@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:path/path.dart' as path;
 
 import '../../../providers/audio_provider.dart';
 import '../../../widgets/folder_list_tile.dart';
+import '../../../theme/app_theme.dart';
 import '../folder_detail_screen.dart';
 
 class FoldersTab extends StatefulWidget {
@@ -16,6 +18,7 @@ class _FoldersTabState extends State<FoldersTab> {
   final ScrollController _scrollController = ScrollController();
   final List<String> _alphabet = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
   String? _draggedLetter;
+  final double _itemHeight = 82.0;
 
   @override
   void dispose() {
@@ -23,28 +26,44 @@ class _FoldersTabState extends State<FoldersTab> {
     super.dispose();
   }
 
+  Map<String, int> _getLetterIndexMap(List<String> folderPaths) {
+    Map<String, int> map = {};
+    for (int i = 0; i < folderPaths.length; i++) {
+      String folderName = folderPaths[i].split('/').last;
+      if (folderName.isEmpty) continue;
+      String firstLetter = folderName[0].toUpperCase();
+      if (!RegExp(r'[A-Z]').hasMatch(firstLetter)) {
+        if (!map.containsKey("#")) map["#"] = i;
+      } else {
+        if (!map.containsKey(firstLetter)) map[firstLetter] = i;
+      }
+    }
+    return map;
+  }
+
   void _scrollToLetter(String letter, List<String> folderPaths) {
-    int index = -1;
-    if (letter == "#") {
-      index = 0;
+    final map = _getLetterIndexMap(folderPaths);
+    int? index;
+
+    if (map.containsKey(letter)) {
+      index = map[letter];
     } else {
-      // Find the first folder that starts with this letter or the next available letter
-      index = folderPaths.indexWhere((fullPath) {
-        final name = fullPath.split('/').last.toUpperCase();
-        return name.startsWith(letter);
-      });
-      
-      // If no folder starts with this letter, find the next closest one
-      if (index == -1) {
-        index = folderPaths.indexWhere((fullPath) {
-          final name = fullPath.split('/').last.toUpperCase();
-          return name.compareTo(letter) > 0;
-        });
+      // Find the next available letter in the alphabet
+      int alphabetIndex = _alphabet.indexOf(letter);
+      for (int i = alphabetIndex + 1; i < _alphabet.length; i++) {
+        if (map.containsKey(_alphabet[i])) {
+          index = map[_alphabet[i]];
+          break;
+        }
       }
     }
 
-    if (index != -1) {
-      _scrollController.jumpTo(index * 72.0);
+    if (index != null) {
+      _scrollController.animateTo(
+        index * _itemHeight,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     }
   }
 
@@ -72,19 +91,23 @@ class _FoldersTabState extends State<FoldersTab> {
             ListView.builder(
               controller: _scrollController,
               itemCount: folderPaths.length,
+              itemExtent: _itemHeight,
               itemBuilder: (context, index) {
                 final folderPath = folderPaths[index];
                 final folderName = folderPath.split('/').last;
                 final folderSongs = allSongs
-                    .where((song) => song.data.startsWith(folderPath + '/') && 
-                                     song.data.split('/').length == folderPath.split('/').length + 1)
+                    .where((song) => song.data.startsWith(folderPath + '/') || song.data.startsWith(folderPath + '\\'))
+                    .where((song) {
+                      final songDir = path.dirname(song.data);
+                      return songDir == folderPath;
+                    })
                     .toList();
                 
                 if (folderSongs.isEmpty) return const SizedBox.shrink();
 
                 return FolderListTile(
                   folderName: folderName,
-                  songCount: folderSongs.length,
+                  songs: folderSongs,
                   onTap: () {
                     Navigator.push(
                       context,
@@ -103,16 +126,19 @@ class _FoldersTabState extends State<FoldersTab> {
             // Alphabet Sidebar
             Positioned(
               right: 0,
-              top: 0,
-              bottom: 0,
-              width: 40,
+              top: 20,
+              bottom: 20,
+              width: 30,
               child: GestureDetector(
-                onVerticalDragStart: (details) => _handleScroll(details.localPosition, constraints.maxHeight, folderPaths),
-                onVerticalDragUpdate: (details) => _handleScroll(details.localPosition, constraints.maxHeight, folderPaths),
+                onVerticalDragStart: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, folderPaths),
+                onVerticalDragUpdate: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, folderPaths),
                 onVerticalDragEnd: (_) => setState(() => _draggedLetter = null),
-                onTapDown: (details) => _handleScroll(details.localPosition, constraints.maxHeight, folderPaths),
+                onTapDown: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, folderPaths),
                 child: Container(
-                  color: Colors.transparent, 
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: _alphabet.map((letter) {
@@ -120,9 +146,9 @@ class _FoldersTabState extends State<FoldersTab> {
                       return Text(
                         letter,
                         style: TextStyle(
-                          color: isDragging ? Colors.white : Colors.grey, 
-                          fontSize: isDragging ? 14 : 10, 
-                          fontWeight: FontWeight.bold
+                          color: isDragging ? AppTheme.primaryColor : Colors.white60, 
+                          fontSize: isDragging ? 13 : 9, 
+                          fontWeight: isDragging ? FontWeight.bold : FontWeight.normal
                         ),
                       );
                     }).toList(),
@@ -135,14 +161,17 @@ class _FoldersTabState extends State<FoldersTab> {
             if (_draggedLetter != null)
               Center(
                 child: Container(
-                  padding: const EdgeInsets.all(24),
+                  height: 100,
+                  width: 100,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.black87,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.primaryColor, width: 2),
                   ),
                   child: Text(
                     _draggedLetter!,
-                    style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),

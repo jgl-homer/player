@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/song_list_tile.dart';
 import 'folder_detail_screen.dart';
 import 'artist_detail_screen.dart';
+import 'album_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -282,8 +283,9 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ArtistDetailScreen( // ArtistDetailScreen already handles album groupings
-            artistName: album.artist ?? "Desconocido",
+          builder: (_) => AlbumDetailScreen(
+            albumName: album.album,
+            albumId: album.id,
             songs: albumSongs,
           ),
         ),

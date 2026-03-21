@@ -39,6 +39,15 @@ class MainActivity : AudioServiceActivity() {
                         result.error("INVALID_ARGUMENT", "Song ID is required and must be a number (got: $idArg)", null)
                     }
                 }
+                "extract_metadata" -> {
+                    val path = call.argument<String>("path")
+                    if (path != null) {
+                        val metadata = MediaUtils.getSongMetadata(path)
+                        result.success(metadata)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Path is required", null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../providers/audio_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../album_detail_screen.dart';
 
 class AlbumsTab extends StatelessWidget {
   const AlbumsTab({super.key});
@@ -53,6 +54,20 @@ class AlbumsTab extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
+              onTap: () {
+                final albumModel = albums[index];
+                final albumSongs = audioProvider.allSongs.where((s) => s.albumId == albumModel.id).toList();
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AlbumDetailScreen(
+                      albumName: albumModel.album,
+                      albumId: albumModel.id,
+                      songs: albumSongs,
+                    ),
+                  ),
+                );
+              },
             );
           },
         );

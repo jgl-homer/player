@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
+import 'song_info_modal.dart';
 import '../providers/audio_provider.dart';
 
 import '../theme/app_theme.dart';
@@ -10,12 +11,14 @@ class SongListTile extends StatelessWidget {
   final SongModel song;
   final VoidCallback onTap;
   final bool isSelected;
+  final bool showTrailing;
 
   const SongListTile({
     super.key,
     required this.song,
     required this.onTap,
     this.isSelected = false,
+    this.showTrailing = true,
   });
 
   String _formatDuration(int? milliseconds) {
@@ -28,6 +31,14 @@ class SongListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String displayTitle = (song.title.trim().isEmpty || song.title == '<unknown>') 
+        ? (song.displayName.trim().isEmpty ? "Canción Desconocida" : song.displayName) 
+        : song.title;
+        
+    final String displayArtist = (song.artist == null || song.artist!.trim().isEmpty || song.artist == '<unknown>') 
+        ? "Artista Desconocido" 
+        : song.artist!;
+
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       leading: ClipRRect(
@@ -40,25 +51,26 @@ class SongListTile extends StatelessWidget {
           nullArtworkWidget: Container(
             height: 50,
             width: 50,
-            color: Colors.grey[800],
+            color: Colors.grey[900],
             child: const Icon(Icons.music_note, color: Colors.grey),
           ),
         ),
       ),
       title: MarqueeText(
-        text: (song.title.trim().isEmpty || song.title == '<unknown>') ? song.displayName : song.title,
+        text: displayTitle,
         style: TextStyle(
           color: isSelected ? AppTheme.primaryColor : AppTheme.textMain,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
         ),
       ),
       subtitle: Text(
-        "${song.artist ?? 'Desconocido'} • ${_formatDuration(song.duration)}",
+        "$displayArtist • ${_formatDuration(song.duration)}",
         style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: PopupMenuButton<String>(
+      trailing: showTrailing ? PopupMenuButton<String>(
         icon: const Icon(Icons.more_vert, color: AppTheme.textSecondary),
         color: AppTheme.surfaceColor,
         onSelected: (value) {
@@ -67,8 +79,13 @@ class SongListTile extends StatelessWidget {
             audioProvider.toggleFavorite(song);
           } else if (value == 'eliminar') {
             _showDeleteDialog(context, audioProvider);
+          } else if (value == 'reproducir') {
+            audioProvider.insertNextInQueue(song);
+          } else if (value == 'encolar') {
+            audioProvider.addToQueue(song);
+          } else if (value == 'info') {
+            showSongInfo(context, song);
           }
-          // Otros casos...
         },
         itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
           const PopupMenuItem<String>(
@@ -76,19 +93,26 @@ class SongListTile extends StatelessWidget {
             child: Text('Reproducir a continuación'),
           ),
           const PopupMenuItem<String>(
-            value: 'favorito',
-            child: Text('Favorito'),
+            value: 'encolar',
+            child: Text('Añadir a la cola'),
           ),
-          const PopupMenuItem<String>(
-            value: 'eliminar',
-            child: Text('Eliminar del dispositivo', style: TextStyle(color: Colors.red)),
+          PopupMenuItem<String>(
+            value: 'favorito',
+            child: Consumer<AudioProvider>(
+              builder: (context, ap, _) => Text(ap.isFavorite(song.id) ? 'Quitar de favoritos' : 'Añadir a favoritos'),
+            ),
           ),
           const PopupMenuItem<String>(
             value: 'info',
             child: Text('Información'),
           ),
+          const PopupMenuDivider(),
+          const PopupMenuItem<String>(
+            value: 'eliminar',
+            child: Text('Eliminar del dispositivo', style: TextStyle(color: Colors.red)),
+          ),
         ],
-      ),
+      ) : null,
       onTap: onTap,
     );
   }

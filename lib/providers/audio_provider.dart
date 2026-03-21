@@ -118,18 +118,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
       }
     }
- else if (lastSongId != null && _allSongs.isNotEmpty) {
-      // Fallback for older persistence format
-      final lastSongIndex = _allSongs.indexWhere((s) => s.id == lastSongId);
-      if (lastSongIndex != -1) {
-        _currentIndex = lastSongIndex;
-        _currentPlaylist = _allSongs;
-        
-        final source = _createAudioSource(_allSongs[lastSongIndex]);
-        await _player.setAudioSource(source, initialPosition: Duration(seconds: lastPosition));
-        notifyListeners();
+  }
+
+  /// Fetches metadata using native MediaMetadataRetriever (fallback)
+  Future<Map<String, String>> getNativeMetadata(String path) async {
+    try {
+      final Map<dynamic, dynamic>? result = await _mediaChannel.invokeMethod('extract_metadata', {'path': path});
+      if (result != null) {
+        return result.map((key, value) => MapEntry(key.toString(), value.toString()));
       }
+    } catch (e) {
+      debugPrint("Error fetching native metadata: $e");
     }
+    return {};
   }
 
   // ─── Play Next (adds song right after current) ───────────
@@ -478,12 +479,68 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   void toggleShuffle() {
     _shuffle = !_shuffle;
     _player.setShuffleModeEnabled(_shuffle);
+    if (_shuffle) {
+      _player.shuffle();
+    }
     notifyListeners();
   }
 
   void toggleLoop() {
-    _loopMode = _loopMode == LoopMode.off ? LoopMode.all : LoopMode.off;
+    if (_loopMode == LoopMode.off) {
+      _loopMode = LoopMode.all;
+    } else if (_loopMode == LoopMode.all) {
+      _loopMode = LoopMode.one;
+    } else {
+      _loopMode = LoopMode.off;
+    }
     _player.setLoopMode(_loopMode);
+    notifyListeners();
+  }
+
+  /// Inserts a song immediately after the current playing track.
+  void insertNextInQueue(SongModel song) {
+    if (_activePlaylistSource == null || _currentPlaylist.isEmpty) {
+      playPlaylist([song], 0);
+      return;
+    }
+    final insertIndex = (_currentIndex + 1).clamp(0, _currentPlaylist.length);
+    _currentPlaylist.insert(insertIndex, song);
+    _activePlaylistSource!.insert(insertIndex, _createAudioSource(song));
+    notifyListeners();
+  }
+
+  /// Appends a song to the end of the current play queue.
+  void addToQueue(SongModel song) {
+    if (_activePlaylistSource == null || _currentPlaylist.isEmpty) {
+      playPlaylist([song], 0);
+      return;
+    }
+    _currentPlaylist.add(song);
+    _activePlaylistSource!.add(_createAudioSource(song));
+    notifyListeners();
+  }
+
+  /// Appends multiple songs to the end of the current play queue.
+  void addAllToQueue(List<SongModel> songs) {
+    if (_activePlaylistSource == null || _currentPlaylist.isEmpty) {
+      playPlaylist(songs, 0);
+      return;
+    }
+    _currentPlaylist.addAll(songs);
+    _activePlaylistSource!.addAll(songs.map((s) => _createAudioSource(s)).toList());
+    notifyListeners();
+  }
+
+  /// Removes all songs in a folder from the local state list.
+  void deleteFolder(String folderPath) {
+    // Only remove from local lists, do not delete files yet as per prompt requirement
+    _allSongs.removeWhere((s) {
+      final path = s.data;
+      return path.startsWith(folderPath + '/') || path.startsWith(folderPath + '\\');
+    });
+    
+    // If we're playing from this folder, we might want to stop or skip, 
+    // but for now, just updating the list is what was requested.
     notifyListeners();
   }
 
