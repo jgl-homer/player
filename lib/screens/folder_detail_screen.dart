@@ -35,10 +35,23 @@ class FolderDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
+    
+    // Filter the songs to ensure they still exist in the provider's list
+    final currentFolderSongs = audioProvider.allSongs
+        .where((s) => songs.any((original) => original.id == s.id))
+        .toList();
+
+    if (currentFolderSongs.isEmpty && songs.isNotEmpty) {
+      // If all songs were deleted or the folder is gone, we might want to pop or show empty state
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (Navigator.canPop(context)) Navigator.pop(context);
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     // Get the first available album art from the folder
-    final firstSongWithArt = songs.firstWhere((song) => song.albumId != null, orElse: () => songs.first);
-    final String folderPath = songs.isNotEmpty ? songs.first.data.replaceAll(songs.first.displayName, "") : "Directorio desconocido";
+    final firstSongWithArt = currentFolderSongs.firstWhere((song) => song.albumId != null, orElse: () => currentFolderSongs.isNotEmpty ? currentFolderSongs.first : songs.first);
+    final String folderPath = currentFolderSongs.isNotEmpty ? currentFolderSongs.first.data.replaceAll(currentFolderSongs.first.displayName, "") : "Directorio desconocido";
 
     return Scaffold(
       appBar: AppBar(
@@ -167,18 +180,18 @@ class FolderDetailScreen extends StatelessWidget {
                   SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final song = songs[index];
+                        final song = currentFolderSongs[index];
                         final isSelected = audioProvider.currentSong?.id == song.id;
 
                         return SongListTile(
                           song: song,
                           isSelected: isSelected,
                           onTap: () {
-                            audioProvider.playPlaylist(songs, index);
+                            audioProvider.playPlaylist(currentFolderSongs, index);
                           },
                         );
                       },
-                      childCount: songs.length,
+                      childCount: currentFolderSongs.length,
                     ),
                   ),
                 ],

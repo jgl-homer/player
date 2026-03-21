@@ -6,6 +6,7 @@ import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/song_list_tile.dart';
 import 'folder_detail_screen.dart';
+import 'artist_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -23,7 +24,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 1, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() {});
@@ -50,6 +51,13 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     final filteredAlbums = audioProvider.allAlbums.where((a) =>
         a.album.toLowerCase().contains(_query.toLowerCase()) ||
         (a.artist?.toLowerCase().contains(_query.toLowerCase()) ?? false)).toList();
+
+    final filteredArtists = audioProvider.allSongs
+        .map((s) => s.artist)
+        .whereType<String>()
+        .toSet()
+        .where((artist) => artist.toLowerCase().contains(_query.toLowerCase()))
+        .toList();
 
     final filteredFolders = audioProvider.sortedFolderPaths.where((f) =>
         f.toLowerCase().contains(_query.toLowerCase())).toList();
@@ -106,8 +114,6 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               unselectedLabelColor: Colors.grey,
               tabs: const [
                 Tab(text: "Audio"),
-                Tab(text: "Vídeo"),
-                Tab(text: "Youtuber"),
               ],
             ),
 
@@ -121,6 +127,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                     _filterChip("Todas"),
                     _filterChip("Canciones"),
                     _filterChip("Álbumes"),
+                    _filterChip("Artistas"),
                     _filterChip("Carpetas"),
                   ],
                 ),
@@ -160,9 +167,30 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                                 itemCount: filteredAlbums.length,
                                 itemBuilder: (context, index) {
                                   final album = filteredAlbums[index];
-                                  return _buildAlbumCard(album);
+                                  return GestureDetector(
+                                    onTap: () => _openAlbum(context, audioProvider, album),
+                                    child: _buildAlbumCard(album),
+                                  );
                                 },
                               ),
+                            ),
+                          ),
+                        ],
+
+                        // Artistas Section
+                        if (_selectedFilter == "Todas" || _selectedFilter == "Artistas") ...[
+                          _buildSliverSectionHeader("Artistas", filteredArtists.length),
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final artistName = filteredArtists[index];
+                                return ListTile(
+                                  leading: const Icon(Icons.person, color: Colors.grey),
+                                  title: Text(artistName, style: const TextStyle(color: Colors.white)),
+                                  onTap: () => _openArtist(context, audioProvider, artistName),
+                                );
+                              },
+                              childCount: filteredArtists.length,
                             ),
                           ),
                         ],
@@ -231,6 +259,36 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         ],
       ),
     );
+  }
+
+  void _openArtist(BuildContext context, AudioProvider audioProvider, String artistName) {
+    final artistSongs = audioProvider.allSongs.where((s) => s.artist == artistName).toList();
+    if (artistSongs.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ArtistDetailScreen(
+            artistName: artistName,
+            songs: artistSongs,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _openAlbum(BuildContext context, AudioProvider audioProvider, AlbumModel album) {
+    final albumSongs = audioProvider.allSongs.where((s) => s.albumId == album.id).toList();
+    if (albumSongs.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ArtistDetailScreen( // ArtistDetailScreen already handles album groupings
+            artistName: album.artist ?? "Desconocido",
+            songs: albumSongs,
+          ),
+        ),
+      );
+    }
   }
 
   void _openFolder(BuildContext context, AudioProvider audioProvider, String folderName, String folderPath) {

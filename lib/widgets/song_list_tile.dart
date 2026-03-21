@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'package:provider/provider.dart';
+import '../providers/audio_provider.dart';
 
 import '../theme/app_theme.dart';
+import 'marquee_text.dart';
 
 class SongListTile extends StatelessWidget {
   final SongModel song;
@@ -42,14 +45,12 @@ class SongListTile extends StatelessWidget {
           ),
         ),
       ),
-      title: Text(
-        song.title,
+      title: MarqueeText(
+        text: (song.title.trim().isEmpty || song.title == '<unknown>') ? song.displayName : song.title,
         style: TextStyle(
           color: isSelected ? AppTheme.primaryColor : AppTheme.textMain,
           fontWeight: FontWeight.w500,
         ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
         "${song.artist ?? 'Desconocido'} • ${_formatDuration(song.duration)}",
@@ -61,7 +62,13 @@ class SongListTile extends StatelessWidget {
         icon: const Icon(Icons.more_vert, color: AppTheme.textSecondary),
         color: AppTheme.surfaceColor,
         onSelected: (value) {
-          // Implementar acciones como compartir o añadir a favoritos
+          final audioProvider = Provider.of<AudioProvider>(context, listen: false);
+          if (value == 'favorito') {
+            audioProvider.toggleFavorite(song);
+          } else if (value == 'eliminar') {
+            _showDeleteDialog(context, audioProvider);
+          }
+          // Otros casos...
         },
         itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
           const PopupMenuItem<String>(
@@ -70,15 +77,63 @@ class SongListTile extends StatelessWidget {
           ),
           const PopupMenuItem<String>(
             value: 'favorito',
-            child: Text('Añadir a favoritos'),
+            child: Text('Favorito'),
+          ),
+          const PopupMenuItem<String>(
+            value: 'eliminar',
+            child: Text('Eliminar del dispositivo', style: TextStyle(color: Colors.red)),
           ),
           const PopupMenuItem<String>(
             value: 'info',
-            child: Text('Información de la canción'),
+            child: Text('Información'),
           ),
         ],
       ),
       onTap: onTap,
     );
   }
+
+  Future<void> _showDeleteDialog(BuildContext context, AudioProvider audioProvider) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceColor,
+        title: const Text("Eliminar canción", style: TextStyle(color: Colors.white)),
+        content: Text(
+          "¿Estás seguro de que quieres eliminar '${song.title}' permanentemente de tu dispositivo?",
+          style: const TextStyle(color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("CANCELAR", style: TextStyle(color: AppTheme.primaryColor)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("ELIMINAR", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && context.mounted) {
+      final success = await audioProvider.deleteSong(song);
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              success 
+                ? "Canción eliminada correctamente" 
+                : "No se pudo eliminar la canción. Verifica los permisos.",
+            ),
+            backgroundColor: success ? Colors.green[800] : Colors.red[800],
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
 }

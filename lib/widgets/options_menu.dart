@@ -56,24 +56,31 @@ class _OptionsMenuContent extends StatelessWidget {
   }
 
   void _showDeleteDialog(BuildContext context, AudioProvider provider) {
+    final song = provider.currentSong;
+    if (song == null) return;
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF222222),
         title: const Text("Confirmar eliminación", style: TextStyle(color: Colors.white)),
-        content: Text("¿Eliminar '${provider.currentSong?.title}' del dispositivo?", style: const TextStyle(color: Colors.white70)),
+        content: Text("¿Eliminar '${song.title}' del dispositivo?", style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              try {
-                final file = File(provider.currentSong!.data);
-                if (await file.exists()) await file.delete();
-                provider.removeCurrentSong();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Archivo eliminado correctamente.", style: TextStyle(color: Colors.white)), backgroundColor: Colors.black87));
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error al eliminar: $e", style: const TextStyle(color: Colors.white)), backgroundColor: Colors.red));
+              final success = await provider.deleteSong(song);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      success ? "Archivo eliminado correctamente." : "Error al eliminar. Verifica los permisos.",
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    backgroundColor: success ? Colors.black87 : Colors.red,
+                  ),
+                );
               }
             },
             child: const Text("Eliminar", style: TextStyle(color: Colors.redAccent)),

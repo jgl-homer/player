@@ -181,7 +181,7 @@ class ArtistDetailScreen extends StatelessWidget {
                     ),
                   ),
                   title: Text(
-                    s.title,
+                    (s.title.trim().isEmpty || s.title == '<unknown>') ? s.displayName : s.title,
                     style: TextStyle(color: isPlaying ? const Color(0xFFE91E63) : Colors.white, fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

@@ -6,6 +6,7 @@ import '../../widgets/mini_player.dart';
 import 'search_screen.dart';
 import 'tabs/folders_tab.dart';
 import 'tabs/songs_tab.dart';
+import 'tabs/favorites_tab.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -15,7 +16,7 @@ class HomeScreen extends StatelessWidget {
     final audioProvider = Provider.of<AudioProvider>(context);
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text("Player", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -34,6 +35,7 @@ class HomeScreen extends StatelessWidget {
             tabs: [
               Tab(text: "Carpetas"),
               Tab(text: "Canciones"),
+              Tab(text: "Favoritos"),
             ],
           ),
         ),
@@ -44,6 +46,7 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   const FoldersTab(),
                   const SongsTab(),
+                  const FavoritesTab(),
                 ],
               ),
             ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:on_audio_query/on_audio_query.dart';
 
 import '../../../providers/audio_provider.dart';
 import '../../../widgets/song_list_tile.dart';
@@ -43,9 +44,15 @@ class _SongsTabState extends State<SongsTab> {
     }
 
     if (index != -1) {
-      // ListTile height is roughly 72.0 on standard devices
-      // We can iterate more precisely later if needed.
-      _scrollController.jumpTo(index * 72.0);
+      // SongListTile height is exactly 64.0 (48 image + 8*2 padding) + 8 vertical padding total??
+      // Looking at song_list_tile.dart: contentPadding: horizontal: 16, vertical: 4.
+      // 4 + 48 + 4 = 56?? No, ListTile has some internal padding.
+      // Usually it's around 72.0. Let's use 72.0 but ensure it's consistent.
+      _scrollController.animateTo(
+        index * 72.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     }
   }
 
@@ -68,7 +75,8 @@ class _SongsTabState extends State<SongsTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final songs = audioProvider.allSongs;
+    final songs = List<SongModel>.from(audioProvider.allSongs)
+      ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
 
     if (songs.isEmpty) {
       return const Center(child: Text("No se encontraron canciones"));
@@ -85,12 +93,29 @@ class _SongsTabState extends State<SongsTab> {
                 final song = songs[index];
                 final isSelected = audioProvider.currentSong?.id == song.id;
 
-                return SongListTile(
-                  song: song,
-                  isSelected: isSelected,
-                  onTap: () {
-                    audioProvider.playPlaylist(songs, index);
+                return Dismissible(
+                  key: ValueKey(song.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20.0),
+                    color: Colors.red,
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  confirmDismiss: (direction) async {
+                    return await _showDeleteConfirmation(context, song, audioProvider);
                   },
+                  onDismissed: (direction) {
+                    // Actual deletion is handled in confirmDismiss to show SnackBar
+                    // or here if we want to be sure it's removed from local UI first.
+                  },
+                  child: SongListTile(
+                    song: song,
+                    isSelected: isSelected,
+                    onTap: () {
+                      audioProvider.playPlaylist(songs, index);
+                    },
+                  ),
                 );
               },
             ),
@@ -145,5 +170,44 @@ class _SongsTabState extends State<SongsTab> {
         );
       }
     );
+  }
+
+  Future<bool> _showDeleteConfirmation(BuildContext context, SongModel song, AudioProvider provider) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text("Eliminar canción", style: TextStyle(color: Colors.white)),
+        content: Text(
+          "¿Estás seguro de que quieres eliminar '${song.title}' permanentemente?",
+          style: const TextStyle(color: Colors.grey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("CANCELAR", style: TextStyle(color: Colors.teal)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("ELIMINAR", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      final success = await provider.deleteSong(song);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success ? "Eliminado" : "Error al eliminar"),
+            backgroundColor: success ? Colors.green : Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return success;
+    }
+    return false;
   }
 }
