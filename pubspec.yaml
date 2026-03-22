@@ -13,7 +13,7 @@ dependencies:
 
   cupertino_icons: ^1.0.8
   just_audio: ^0.10.5
-  just_audio_background: ^0.0.1-beta.11
+  audio_service: ^0.18.15
   permission_handler: ^12.0.1
   audio_session: ^0.2.2
   rxdart: ^0.28.0

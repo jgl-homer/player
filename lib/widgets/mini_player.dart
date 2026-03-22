@@ -85,6 +85,14 @@ class MiniPlayer extends StatelessWidget {
                       ],
                     ),
                   ),
+                  IconButton(
+                    icon: Icon(
+                      audioProvider.isFavorite(song.id) ? Icons.favorite : Icons.favorite_border,
+                      color: audioProvider.isFavorite(song.id) ? Colors.redAccent : AppTheme.textSecondary,
+                      size: 24,
+                    ),
+                    onPressed: () => audioProvider.toggleFavorite(song),
+                  ),
                   StreamBuilder<bool>(
                     stream: audioProvider.player.playingStream,
                     builder: (context, snapshot) {
@@ -100,10 +108,11 @@ class MiniPlayer extends StatelessWidget {
                     },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.queue_music, color: AppTheme.textMain),
+                    icon: const Icon(Icons.queue_music, color: AppTheme.textSecondary, size: 24),
                     onPressed: () {
                       showQueueBottomSheet(context);
                     },
+                    tooltip: "Cola de reproducción",
                   ),
                 ],
               ),
@@ -163,66 +172,69 @@ class _PlayerModalContent extends StatelessWidget {
         child: SafeArea(
           child: Column(
             children: [
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              const SizedBox(height: 38), 
+              Stack(
+                alignment: Alignment.center,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 30),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text(
-                          "REPRODUCIENDO DESDE",
-                          style: TextStyle(
-                            color: Colors.white54,
-                            fontSize: 10,
-                            letterSpacing: 1.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            if (song.albumId != null) {
-                              final albumSongs = audioProvider.allSongs.where((s) => s.albumId == song.albumId).toList();
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => AlbumDetailScreen(
-                                    albumName: song.album ?? "Unknown Album",
-                                    albumId: song.albumId!,
-                                    songs: albumSongs,
-                                  ),
-                                ),
-                              );
-                            }
-                          },
-                          child: Text(
-                            song.album ?? "Desconocido",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white, size: 30),
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.more_vert, color: Colors.white, size: 26),
-                    onPressed: () => showOptionsMenu(context, audioProvider),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        "REPRODUCIENDO DESDE",
+                        style: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 10,
+                          letterSpacing: 1.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          if (song.albumId != null) {
+                            final albumSongs = audioProvider.allSongs.where((s) => s.albumId == song.albumId).toList();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => AlbumDetailScreen(
+                                  albumName: song.album ?? "Unknown Album",
+                                  albumId: song.albumId!,
+                                  songs: albumSongs,
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        child: Text(
+                          song.album ?? "Desconocido",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      icon: const Icon(Icons.more_vert, color: Colors.white, size: 26),
+                      onPressed: () => showOptionsMenu(context, audioProvider),
+                    ),
                   ),
                 ],
               ),
               const Spacer(flex: 2),
               
-              // Portada (Centrada - con Doble Tap Seek)
               Expanded(
                 flex: 10,
                 child: Center(
@@ -255,28 +267,25 @@ class _PlayerModalContent extends StatelessWidget {
                                 artworkHeight: double.infinity,
                                 artworkWidth: double.infinity,
                                 nullArtworkWidget: Container(
-                                  color: Colors.grey[900],
-                                  child: const Icon(Icons.music_note, color: Colors.white24, size: 100),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Colors.grey[800]!,
+                                        Colors.grey[900]!,
+                                        Colors.black,
+                                      ],
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.music_note_rounded,
+                                      color: Colors.white.withOpacity(0.15),
+                                      size: 140,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            top: 15,
-                            right: 15,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.black45,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white10, width: 1),
-                              ),
-                              child: IconButton(
-                                icon: Icon(
-                                  audioProvider.isFavorite(song.id) ? Icons.favorite : Icons.favorite_border,
-                                  color: audioProvider.isFavorite(song.id) ? Colors.redAccent : Colors.white,
-                                  size: 28,
-                                ),
-                                onPressed: () => audioProvider.toggleFavorite(song),
                               ),
                             ),
                           ),
@@ -289,7 +298,6 @@ class _PlayerModalContent extends StatelessWidget {
               
               const SizedBox(height: 15),
 
-              // Controles Secundarios (Shuffle, Carpetas, Repeat, Cola)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -346,59 +354,71 @@ class _PlayerModalContent extends StatelessWidget {
 
               const Spacer(flex: 2),
 
-              // Información (Título y Artista)
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Row(
                 children: [
-                  GestureDetector(
-                    onTap: () => showSongInfo(context, song),
-                    child: SizedBox(
-                      width: MediaQuery.of(context).size.width * 0.85, 
-                      height: 45,
-                      child: MarqueeText(
-                        text: (song.title.trim().isEmpty || song.title == '<unknown>') 
-                            ? song.displayName 
-                            : song.title.trim(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        GestureDetector(
+                          onTap: () => showSongInfo(context, song),
+                          child: SizedBox(
+                            width: MediaQuery.of(context).size.width * 0.75, 
+                            height: 45,
+                            child: MarqueeText(
+                              text: (song.title.trim().isEmpty || song.title == '<unknown>') 
+                                  ? path.basenameWithoutExtension(song.data) 
+                                  : song.title.trim(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              velocity: 35.0,
+                              gap: 60.0,
+                            ),
+                          ),
                         ),
-                        velocity: 35.0,
-                        gap: 60.0,
-                      ),
+                        const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: () {
+                            final artistName = (song.artist == null || song.artist == "<unknown>") ? "Artista Desconocido" : song.artist!;
+                            final artistSongs = audioProvider.allSongs.where((s) => s.artist == song.artist).toList();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ArtistDetailScreen(artistName: artistName, songs: artistSongs),
+                              ),
+                            );
+                          },
+                          child: Text(
+                            artista,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w400,
+                            ),
+                            textAlign: TextAlign.left,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  GestureDetector(
-                    onTap: () {
-                      final artistName = (song.artist == null || song.artist == "<unknown>") ? "Artista Desconocido" : song.artist!;
-                      final artistSongs = audioProvider.allSongs.where((s) => s.artist == song.artist).toList();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ArtistDetailScreen(artistName: artistName, songs: artistSongs),
-                        ),
-                      );
-                    },
-                    child: Text(
-                      artista,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  IconButton(
+                    icon: Icon(
+                      audioProvider.isFavorite(song.id) ? Icons.favorite : Icons.favorite_border,
+                      color: audioProvider.isFavorite(song.id) ? Colors.redAccent : Colors.white,
+                      size: 32,
                     ),
+                    onPressed: () => audioProvider.toggleFavorite(song),
                   ),
                 ],
               ),
 
               const Spacer(flex: 2),
 
-              // Barra de progreso
               StreamBuilder<DurationState>(
                 stream: audioProvider.durationStateStream,
                 builder: (context, snapshot) {
@@ -448,47 +468,69 @@ class _PlayerModalContent extends StatelessWidget {
 
               const Spacer(flex: 2),
 
-              // Controles principales (Play, Prev, Next)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  const SizedBox(width: 48), 
                   IconButton(
-                    icon: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 55),
-                    onPressed: audioProvider.previous,
+                    icon: const Icon(Icons.replay_10_rounded, color: Colors.white, size: 38),
+                    onPressed: () {
+                      final currentPos = audioProvider.player.position;
+                      audioProvider.player.seek(currentPos - const Duration(seconds: 10));
+                    },
+                    tooltip: "-10s",
                   ),
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: Icon(
-                        audioProvider.player.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        color: Colors.black,
-                        size: 50,
-                      ),
-                      onPressed: audioProvider.togglePlayPause,
-                    ),
+                  GestureDetector(
+                    onTap: () => audioProvider.previousSmart(),
+                    child: const Icon(Icons.skip_previous_rounded, color: Colors.white, size: 65),
+                  ),
+                  StreamBuilder<bool>(
+                    stream: audioProvider.player.playingStream,
+                    builder: (context, snapshot) {
+                      final isPlaying = snapshot.data ?? false;
+                      return Container(
+                        width: 85,
+                        height: 85,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 5)),
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: Icon(
+                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            color: Colors.black,
+                            size: 55,
+                          ),
+                          onPressed: audioProvider.togglePlayPause,
+                        ),
+                      );
+                    },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 55),
+                    icon: const Icon(Icons.skip_next_rounded, color: Colors.white, size: 65),
                     onPressed: audioProvider.next,
+                    padding: EdgeInsets.zero,
                   ),
-                  const SizedBox(width: 48), 
+                  IconButton(
+                    icon: const Icon(Icons.forward_10_rounded, color: Colors.white, size: 38),
+                    onPressed: () {
+                      final currentPos = audioProvider.player.position;
+                      audioProvider.player.seek(currentPos + const Duration(seconds: 10));
+                    },
+                    tooltip: "+10s",
+                  ),
                 ],
               ),
 
               const Spacer(flex: 3),
 
-              // Ruta del archivo (Directorio solamente)
               Center(
                 child: Padding(
                   padding: const EdgeInsets.only(bottom: 15.0),
                   child: Text(
-                    path.dirname(song.data), // Mostramos solo la carpeta
+                    path.dirname(song.data), 
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white54, fontSize: 11, letterSpacing: 0.5),
                     maxLines: 1,

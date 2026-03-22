@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
-
+import 'package:path/path.dart' as path;
+import 'package:audio_service/audio_service.dart';
 import '../models/duration_state.dart';
+import '../services/audio_handler.dart';
 
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
-  final AudioPlayer _player = AudioPlayer();
+  final MyAudioHandler _handler;
+  late final AudioPlayer _player;
   static const _mediaChannel = MethodChannel('com.example.player/media_utils');
   
   List<SongModel> _allSongs = [];
@@ -22,41 +24,67 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _shuffle = false;
   LoopMode _loopMode = LoopMode.off;
+  SongModel? _currentSong;
+  Set<int> _favoriteIds = {};
+  DateTime? _lastTapTime;
 
+  // Getters
   List<SongModel> get allSongs => _allSongs;
   List<AlbumModel> get allAlbums => _allAlbums;
   List<SongModel> get currentPlaylist => _currentPlaylist;
   bool get isLoading => _isLoading;
   int get currentIndex => _currentIndex;
-  SongModel? get currentSong => _currentPlaylist.isNotEmpty ? _currentPlaylist[_currentIndex] : null;
+  SongModel? get currentSong => _currentSong;
   bool get isShuffle => _shuffle;
   LoopMode get loopMode => _loopMode;
   AudioPlayer get player => _player;
   OnAudioQuery get audioQuery => _audioQuery;
-  
-
-  // ─── Favorites ──────────────────────────────────────────
-  Set<int> _favoriteIds = {};
   Set<int> get favoriteIds => _favoriteIds;
 
-  bool isFavorite(int songId) => _favoriteIds.contains(songId);
-
-  Future<void> toggleFavorite(SongModel song) async {
-    if (_favoriteIds.contains(song.id)) {
-      _favoriteIds.remove(song.id);
-    } else {
-      _favoriteIds.add(song.id);
-    }
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('favorites', _favoriteIds.map((id) => id.toString()).toList());
+  AudioProvider(AudioHandler handler) : _handler = handler as MyAudioHandler {
+    _player = _handler.player;
+    _init();
+    WidgetsBinding.instance.addObserver(this);
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _player.dispose();
-    super.dispose();
+  Future<void> _init() async {
+    await _requestInitialPermissions();
+    _allSongs = await _audioQuery.querySongs(
+      sortType: SongSortType.DISPLAY_NAME,
+      orderType: OrderType.ASC_OR_SMALLER,
+      uriType: UriType.EXTERNAL,
+    );
+    _allAlbums = await _audioQuery.queryAlbums();
+    _currentPlaylist = _allSongs;
+    _isLoading = false;
+    
+    await _loadPlaybackState();
+    notifyListeners();
+
+    _player.currentIndexStream.listen((index) {
+      if (index != null && index != _currentIndex && index < _currentPlaylist.length) {
+        _currentIndex = index;
+        _currentSong = _currentPlaylist[_currentIndex];
+        _savePlaybackState();
+        notifyListeners();
+      }
+    });
+
+    _handler.onToggleFavorite = () {
+      if (_currentSong != null) toggleFavorite(_currentSong!);
+    };
+
+    // Al iniciar, si hay una canción cargada en el player pero la UI no la tiene, sincronizar
+    _player.sequenceStateStream.listen((state) {
+      if (_currentSong == null && _player.currentIndex != null && _allSongs.isNotEmpty) {
+        final index = _player.currentIndex!;
+        if (index < _currentPlaylist.length) {
+          _currentIndex = index;
+          _currentSong = _currentPlaylist[index];
+          notifyListeners();
+        }
+      }
+    });
   }
 
   @override
@@ -66,343 +94,66 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  // ─── Persistence ─────────────────────────────────────────
-  Future<void> _savePlaybackState() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (currentSong != null) {
-      await prefs.setInt('last_song_id', currentSong!.id);
-      await prefs.setInt('last_position', _player.position.inSeconds);
-      await prefs.setInt('last_index', _currentIndex);
-      await prefs.setBool('last_playing', _player.playing);
-      await prefs.setStringList('last_queue_ids', _currentPlaylist.map((s) => s.id.toString()).toList());
-    }
-  }
-
-  Future<void> _loadPlaybackState() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    // Load favorites
-    final favList = prefs.getStringList('favorites') ?? [];
-    _favoriteIds = favList.map((id) => int.parse(id)).toSet();
-
-    final lastSongId = prefs.getInt('last_song_id');
-    final lastPosition = prefs.getInt('last_position') ?? 0;
-    final lastIndex = prefs.getInt('last_index') ?? 0;
-    final lastPlaying = prefs.getBool('last_playing') ?? false;
-    final lastQueueIds = prefs.getStringList('last_queue_ids') ?? [];
-
-    if (lastQueueIds.isNotEmpty && _allSongs.isNotEmpty) {
-      // Reconstruct the queue based on saved IDs
-      final idMap = {for (var s in _allSongs) s.id: s};
-      final restoredQueue = lastQueueIds
-          .map((id) => idMap[int.tryParse(id)])
-          .whereType<SongModel>()
-          .toList();
-      
-      if (restoredQueue.isNotEmpty) {
-        _currentPlaylist = restoredQueue;
-        _currentIndex = (lastIndex < restoredQueue.length) ? lastIndex : 0;
-        
-
-        // Prepare the player without auto-playing initially
-        _activePlaylistSource = ConcatenatingAudioSource(
-          useLazyPreparation: true,
-          children: _currentPlaylist.map((s) => _createAudioSource(s)).toList(),
-        );
-        
-        await _player.setAudioSource(_activePlaylistSource!, initialIndex: _currentIndex, initialPosition: Duration(seconds: lastPosition));
-        
-        if (lastPlaying) {
-          _player.play();
-        }
-        notifyListeners();
-      }
-    }
-  }
-
-  /// Fetches metadata using native MediaMetadataRetriever (fallback)
-  Future<Map<String, String>> getNativeMetadata(String path) async {
-    try {
-      final Map<dynamic, dynamic>? result = await _mediaChannel.invokeMethod('extract_metadata', {'path': path});
-      if (result != null) {
-        return result.map((key, value) => MapEntry(key.toString(), value.toString()));
-      }
-    } catch (e) {
-      debugPrint("Error fetching native metadata: $e");
-    }
-    return {};
-  }
-
-  // ─── Play Next (adds song right after current) ───────────
-  void addToPlayNext(SongModel song) {
-    final insertAt = _currentIndex + 1;
-    if (insertAt >= _currentPlaylist.length) {
-      _currentPlaylist.add(song);
-    } else {
-      _currentPlaylist.insert(insertAt, song);
-    }
-    notifyListeners();
-  }
-
-  AudioProvider() {
-    _init();
-  }
-
-  Future<void> _init() async {
-    WidgetsBinding.instance.addObserver(this);
-    // Request initial permissions
-    await _requestInitialPermissions();
-
-    final allQueriedSongs = await _audioQuery.querySongs(
-      sortType: SongSortType.DISPLAY_NAME,
-      orderType: OrderType.ASC_OR_SMALLER,
-      uriType: UriType.EXTERNAL,
-    );
-
-    // Filtrar carpetas no deseadas (notificaciones, audiolibros, tonos, etc.)
-    final List<String> ignoredFolders = [
-      'notifications',
-      'audiobook',
-      'audiobooks',
-      'ringtone',
-      'ringtones',
-      'alarm',
-      'alarms',
-      'podcast',
-      'podcasts',
-      'android/media'
-    ];
-
-    _allSongs = allQueriedSongs.where((song) {
-      final path = song.data.toLowerCase();
-      // Omitir si la ruta contiene alguna de las carpetas ignoradas
-      return !ignoredFolders.any((folder) => path.contains('/$folder/'));
-    }).toList();
-
-    _allAlbums = await _audioQuery.queryAlbums(
-      sortType: AlbumSortType.ALBUM,
-      orderType: OrderType.ASC_OR_SMALLER,
-      uriType: UriType.EXTERNAL,
-    );
-
-    _currentPlaylist = _allSongs;
-    _isLoading = false;
-    
-    await _loadPlaybackState();
-    notifyListeners();
-
-    // Mantener la UI actualizada cuando pasemos a la siguiente canción
-    _player.currentIndexStream.listen((index) {
-      if (index != null && index != _currentIndex && index < _currentPlaylist.length) {
-        _currentIndex = index;
-        _savePlaybackState();
-        notifyListeners();
-      }
-    });
-
-    _player.positionStream.listen((pos) {
-      // Periodic save every 10 seconds to not spam prefs
-      if (pos.inSeconds % 10 == 0) {
-        _savePlaybackState();
-      }
-    });
-
-    // Auto-brinco a la siguiente carpeta al terminar la cola
-    _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) {
-        // Solo brinca si no estamos en modo loop (repetir una o todas)
-        if (_loopMode == LoopMode.off) {
-          playNext(); // Enhanced logic
-        }
-      }
-    });
-  }
-
-  Future<void> _requestInitialPermissions() async {
-    if (Platform.isAndroid) {
-      if (await Permission.audio.isDenied) {
-        await Permission.audio.request();
-      }
-      if (await Permission.storage.isDenied) {
-        await Permission.storage.request();
-      }
-    }
-  }
-
-  Future<bool> checkAndRequestDeletionPermissions() async {
-    if (!Platform.isAndroid) return true;
-
-    bool hasBasic = false;
-    if (await Permission.audio.isGranted || await Permission.storage.isGranted) {
-      hasBasic = true;
-    } else {
-      final status = await [Permission.audio, Permission.storage].request();
-      hasBasic = status.values.any((s) => s.isGranted);
-    }
-    return hasBasic;
-  }
-
-  ConcatenatingAudioSource? _activePlaylistSource;
+  // --- Playback Logic ---
 
   Future<void> playPlaylist(List<SongModel> songs, int startIndex) async {
-    _currentPlaylist = List.from(songs); // Copy to allow independent mutation
+    _currentPlaylist = List.from(songs);
     _currentIndex = startIndex;
+    _currentSong = _currentPlaylist[_currentIndex];
     notifyListeners();
 
-
-    _activePlaylistSource = ConcatenatingAudioSource(
-      useLazyPreparation: true,
-      children: _currentPlaylist.map((s) => _createAudioSource(s)).toList(),
-    );
+    final mediaItems = _currentPlaylist.map(_songToMediaItem).toList();
 
     try {
-      await _player.setAudioSource(_activePlaylistSource!, initialIndex: startIndex, initialPosition: Duration.zero);
-      _player.setShuffleModeEnabled(_shuffle);
-      _player.setLoopMode(_loopMode);
-      _player.play();
+      await _handler.updateQueue(mediaItems);
+      await _handler.skipToQueueItem(startIndex);
+      await _handler.play();
       _savePlaybackState();
     } catch (e) {
-      debugPrint("Error loading audio source: $e");
+      debugPrint("Error: $e");
     }
   }
 
-  AudioSource _createAudioSource(SongModel s) {
-    final displayTitle = (s.title.trim().isEmpty || s.title == '<unknown>') ? s.displayName : s.title;
-    return AudioSource.uri(
-      Uri.parse(s.data),
-      tag: MediaItem(
-        id: s.id.toString(),
-        album: s.album ?? 'Desconocido',
-        title: displayTitle,
-        artist: (s.artist == null || s.artist == "<unknown>") ? "Artista Desconocido" : s.artist,
-        artUri: Uri.parse('content://media/external/audio/albumart/${s.albumId}'),
-      ),
-    );
+  Future<void> playSong(SongModel song, {List<SongModel>? playlist}) async {
+    final targetPlaylist = playlist ?? _allSongs;
+    final index = targetPlaylist.indexOf(song);
+    await playPlaylist(targetPlaylist, index >= 0 ? index : 0);
   }
 
-
-  void reorderQueue(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex -= 1;
-    
-    // Update local list
-    final song = _currentPlaylist.removeAt(oldIndex);
-    _currentPlaylist.insert(newIndex, song);
-    
-    // Update player source without stopping
-    _activePlaylistSource?.move(oldIndex, newIndex);
-    
+  void togglePlayPause() => _player.playing ? _player.pause() : _player.play();
+  void stop() {
+    _player.stop();
+    _player.seek(Duration.zero);
     notifyListeners();
   }
+  void next() => _handler.skipToNext();
+  void previous() => _handler.skipToPrevious();
 
-  void removeFromQueue(int index) {
-    if (_currentPlaylist.length <= 1) {
-      _player.stop();
-      _currentPlaylist.clear();
-      _currentIndex = -1;
+  void previousSmart() {
+    final now = DateTime.now();
+    if (_lastTapTime != null && now.difference(_lastTapTime!) < const Duration(milliseconds: 700)) {
+      // Doble toque rápido: anterior
+      _handler.skipToPrevious();
     } else {
-      _currentPlaylist.removeAt(index);
-      _activePlaylistSource?.removeAt(index);
+      // Un toque: reiniciar canción
+      _player.seek(Duration.zero);
     }
+    _lastTapTime = now;
+  }
+
+  void toggleShuffle() {
+    _shuffle = !_shuffle;
+    _player.setShuffleModeEnabled(_shuffle);
     notifyListeners();
   }
 
-  /// Removes the currently playing song from the queue and advances to the next.
-  void removeCurrentSong() {
-    removeFromQueue(_currentIndex);
-  }
-
-  /// Deletes a song from the device storage.
-  /// 
-  /// [File vs MediaStore]:
-  /// - File API (dart:io): Works only on older Android versions or app-private storage.
-  /// - MediaStore (MethodChannel): Required for Android 10+ (Scoped Storage) to delete
-  ///   public media files not owned by the app. It triggers a system confirmation dialog.
-  Future<bool> deleteSong(SongModel song) async {
-    try {
-      // 1. Validar existencia básica
-      final file = File(song.data);
-      if (!await file.exists()) {
-        debugPrint("File does not exist: ${song.data}");
-        return false;
-      }
-
-      // 2. Manejo de Permisos (permission_handler)
-      if (!await checkAndRequestDeletionPermissions()) {
-        debugPrint("Permissions denied for deletion");
-        return false;
-      }
-
-      // 3. Intento de borrado vía MediaStore (Recomendado para Android 10+)
-      // Esto disparará el diálogo nativo de Android 11+ (Scoped Storage)
-      final bool? success = await _mediaChannel.invokeMethod('delete_media', {'id': song.id});
-      
-      if (success == true) {
-        // Remoción confirmada por el usuario y el sistema
-        _removeSongFromLocalState(song);
-        return true;
-      }
-    } catch (e) {
-      debugPrint("Error deleting song via native channel: $e");
-      
-      // 4. Fallback a borrado de archivo directo (Solo funciona si hay permisos de escritura 
-      // y no hay restricciones de Scoped Storage, o si el archivo es "huérfano")
-      try {
-        final file = File(song.data);
-        if (await file.exists()) {
-          await file.delete();
-          _removeSongFromLocalState(song);
-          return true;
-        }
-      } catch (e2) {
-        debugPrint("Fallback deletion failed: $e2");
-      }
-    }
-    return false;
-  }
-
-  void _removeSongFromLocalState(SongModel song) {
-    final indexInQueue = _currentPlaylist.indexWhere((s) => s.id == song.id);
-    final isDeletingCurrent = currentSong?.id == song.id;
-
-    if (indexInQueue != -1) {
-      if (_activePlaylistSource != null) {
-        _activePlaylistSource!.removeAt(indexInQueue);
-      }
-      _currentPlaylist.removeAt(indexInQueue);
-    }
-    
-    _allSongs.removeWhere((s) => s.id == song.id);
-    
-    if (isDeletingCurrent) {
-      if (_currentPlaylist.isNotEmpty) {
-        // Just-audio handles the index change if we removed from source, 
-        // but we ensure things are synced.
-      } else {
-        _player.stop();
-      }
-    }
+  void toggleLoop() {
+    _loopMode = _loopMode == LoopMode.off ? LoopMode.all : (_loopMode == LoopMode.all ? LoopMode.one : LoopMode.off);
+    _player.setLoopMode(_loopMode);
     notifyListeners();
   }
 
-  /// Updates local memory for song metadata
-  void updateSongMetadata(String newTitle, String newArtist) {
-    if (_currentPlaylist.isEmpty || _currentIndex < 0) return;
-
-    final song = _currentPlaylist[_currentIndex];
-    final map = Map<String, dynamic>.from(song.getMap);
-    map['title'] = newTitle;
-    map['artist'] = newArtist;
-    
-    final updatedSong = SongModel(map);
-    _currentPlaylist[_currentIndex] = updatedSong;
-
-    // We notify listeners so the UI displays the New Title/Artist immediately!
-    notifyListeners();
-
-    // To properly update the lock screen and notification handle, 
-    // it would require reloading the AudioSource playlist, but for visual 
-    // feedback in the app, this is very effective.
-  }
+  // --- Folder Management ---
 
   List<String> get sortedFolderPaths {
     return _allSongs
@@ -418,130 +169,153 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   String _getParentPath(SongModel song) {
     final parts = song.data.split('/');
-    if (parts.length > 1) {
-      return parts.sublist(0, parts.length - 1).join('/');
-    }
-    return "Desconocido";
+    return parts.length > 1 ? parts.sublist(0, parts.length - 1).join('/') : "Desconocido";
   }
 
-  void playNextFolder() {
-    _changeFolder(1);
-  }
-
-  void playPreviousFolder() {
-    _changeFolder(-1);
-  }
+  void playNextFolder() => _changeFolder(1);
+  void playPreviousFolder() => _changeFolder(-1);
 
   void _changeFolder(int offset) {
-    if (_allSongs.isEmpty || currentSong == null) return;
-    
+    if (_allSongs.isEmpty || _currentSong == null) return;
     final paths = sortedFolderPaths;
-    final currentPath = _getParentPath(currentSong!);
-    int currentIndex = paths.indexOf(currentPath);
-    
-    if (currentIndex == -1) return;
-    
-    int nextIndex = (currentIndex + offset) % paths.length;
+    final currentPath = _getParentPath(_currentSong!);
+    int index = paths.indexOf(currentPath);
+    if (index == -1) return;
+    int nextIndex = (index + offset) % paths.length;
     if (nextIndex < 0) nextIndex = paths.length - 1;
-    
     final nextPath = paths[nextIndex];
-    final folderSongs = _allSongs
-        .where((song) => _getParentPath(song) == nextPath)
-        .toList();
-    
-    if (folderSongs.isNotEmpty) {
-      playPlaylist(folderSongs, 0);
-    }
+    final folderSongs = _allSongs.where((s) => _getParentPath(s) == nextPath).toList();
+    if (folderSongs.isNotEmpty) playPlaylist(folderSongs, 0);
   }
 
-  void next() {
-    if (_player.hasNext) {
-      _player.seekToNext();
-    } else {
-      // Al acabar la lista, brincar a la siguiente carpeta o repetir álbum??
-      // Implementamos el brinco a la siguiente carpeta por defecto
-      playNextFolder();
-    }
-  }
-  
-  void playNext() => next();
-
-  void previous() => _player.seekToPrevious();
-  
-  void togglePlayPause() {
-    if (_player.playing) {
-      _player.pause();
-    } else {
-      _player.play();
-    }
-  }
-
-  void toggleShuffle() {
-    _shuffle = !_shuffle;
-    _player.setShuffleModeEnabled(_shuffle);
-    if (_shuffle) {
-      _player.shuffle();
-    }
-    notifyListeners();
-  }
-
-  void toggleLoop() {
-    if (_loopMode == LoopMode.off) {
-      _loopMode = LoopMode.all;
-    } else if (_loopMode == LoopMode.all) {
-      _loopMode = LoopMode.one;
-    } else {
-      _loopMode = LoopMode.off;
-    }
-    _player.setLoopMode(_loopMode);
-    notifyListeners();
-  }
-
-  /// Inserts a song immediately after the current playing track.
-  void insertNextInQueue(SongModel song) {
-    if (_activePlaylistSource == null || _currentPlaylist.isEmpty) {
-      playPlaylist([song], 0);
-      return;
-    }
-    final insertIndex = (_currentIndex + 1).clamp(0, _currentPlaylist.length);
-    _currentPlaylist.insert(insertIndex, song);
-    _activePlaylistSource!.insert(insertIndex, _createAudioSource(song));
-    notifyListeners();
-  }
-
-  /// Appends a song to the end of the current play queue.
-  void addToQueue(SongModel song) {
-    if (_activePlaylistSource == null || _currentPlaylist.isEmpty) {
-      playPlaylist([song], 0);
-      return;
-    }
-    _currentPlaylist.add(song);
-    _activePlaylistSource!.add(_createAudioSource(song));
-    notifyListeners();
-  }
-
-  /// Appends multiple songs to the end of the current play queue.
-  void addAllToQueue(List<SongModel> songs) {
-    if (_activePlaylistSource == null || _currentPlaylist.isEmpty) {
-      playPlaylist(songs, 0);
-      return;
-    }
-    _currentPlaylist.addAll(songs);
-    _activePlaylistSource!.addAll(songs.map((s) => _createAudioSource(s)).toList());
-    notifyListeners();
-  }
-
-  /// Removes all songs in a folder from the local state list.
   void deleteFolder(String folderPath) {
-    // Only remove from local lists, do not delete files yet as per prompt requirement
-    _allSongs.removeWhere((s) {
-      final path = s.data;
-      return path.startsWith(folderPath + '/') || path.startsWith(folderPath + '\\');
-    });
-    
-    // If we're playing from this folder, we might want to stop or skip, 
-    // but for now, just updating the list is what was requested.
+    _allSongs.removeWhere((s) => s.data.startsWith(folderPath));
     notifyListeners();
+  }
+
+  // --- Queue Management ---
+
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    final song = _currentPlaylist.removeAt(oldIndex);
+    _currentPlaylist.insert(newIndex, song);
+    await _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+    notifyListeners();
+  }
+
+  Future<void> removeFromQueue(int index) async {
+    _currentPlaylist.removeAt(index);
+    await _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+    notifyListeners();
+  }
+
+  Future<void> insertNextInQueue(SongModel song) async {
+    final insertIndex = _currentIndex + 1;
+    _currentPlaylist.insert(insertIndex, song);
+    await _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+    notifyListeners();
+  }
+
+  Future<void> addToQueue(SongModel song) async {
+    _currentPlaylist.add(song);
+    await _handler.addQueueItem(_songToMediaItem(song));
+    notifyListeners();
+  }
+
+  Future<void> addAllToQueue(List<SongModel> songs) async {
+    _currentPlaylist.addAll(songs);
+    await _handler.addQueueItems(songs.map(_songToMediaItem).toList());
+    notifyListeners();
+  }
+
+  // --- Metadata & Deletion ---
+
+  bool isFavorite(int songId) => _favoriteIds.contains(songId);
+  Future<void> toggleFavorite(SongModel song) async {
+    _favoriteIds.contains(song.id) ? _favoriteIds.remove(song.id) : _favoriteIds.add(song.id);
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('favorites', _favoriteIds.map((id) => id.toString()).toList());
+  }
+
+  void updateSongMetadata(String newTitle, String newArtist) {
+    if (_currentSong == null) return;
+    final index = _currentPlaylist.indexOf(_currentSong!);
+    if (index != -1) {
+      final map = Map<String, dynamic>.from(_currentSong!.getMap);
+      map['title'] = newTitle;
+      map['artist'] = newArtist;
+      _currentSong = SongModel(map);
+      _currentPlaylist[index] = _currentSong!;
+      _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+      notifyListeners();
+    }
+  }
+
+  Future<bool> deleteSong(SongModel song) async {
+    try {
+      final bool? success = await _mediaChannel.invokeMethod('delete_media', {'id': song.id});
+      if (success == true) {
+        _allSongs.removeWhere((s) => s.id == song.id);
+        _currentPlaylist.removeWhere((s) => s.id == song.id);
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      debugPrint("Error: $e");
+    }
+    return false;
+  }
+
+  MediaItem _songToMediaItem(SongModel s) {
+    String title = (s.title.trim().isEmpty || s.title == '<unknown>') ? s.displayName : s.title;
+    if (title.isEmpty || title == '<unknown>') title = path.basenameWithoutExtension(s.data);
+
+    return MediaItem(
+      id: s.data,
+      album: s.album ?? 'Desconocido',
+      title: title,
+      artist: (s.artist == null || s.artist == "<unknown>") ? "Artista Desconocido" : s.artist,
+      artUri: Uri.parse('content://media/external/audio/albumart/${s.albumId}'),
+      duration: Duration(milliseconds: s.duration ?? 0),
+    );
+  }
+
+  // --- Internals ---
+
+  Future<void> _savePlaybackState() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_currentSong != null) {
+      await prefs.setInt('last_song_id', _currentSong!.id);
+      await prefs.setInt('last_position', _player.position.inSeconds);
+      debugPrint("Posición guardada: ${_player.position.inSeconds}s");
+    }
+  }
+
+  Future<void> _loadPlaybackState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favList = prefs.getStringList('favorites') ?? [];
+    _favoriteIds = favList.map((id) => int.parse(id)).toSet();
+
+    final lastSongId = prefs.getInt('last_song_id');
+    final lastPositionSeconds = prefs.getInt('last_position') ?? 0;
+
+    if (lastSongId != null) {
+      final lastSong = _allSongs.firstWhere((s) => s.id == lastSongId, orElse: () => _allSongs.first);
+      _currentSong = lastSong;
+      _currentIndex = _allSongs.indexOf(lastSong);
+        
+      // Cargar en el player pero no reproducir automáticamente
+      final mediaItems = _allSongs.map(_songToMediaItem).toList();
+      await _handler.updateQueue(mediaItems);
+      await _handler.skipToQueueItem(_currentIndex);
+      await _player.seek(Duration(seconds: lastPositionSeconds));
+      debugPrint("Posición cargada: ${lastPositionSeconds}s");
+    }
+  }
+
+  Future<void> _requestInitialPermissions() async {
+    if (Platform.isAndroid) await [Permission.audio, Permission.storage].request();
   }
 
   Stream<DurationState> get durationStateStream =>
@@ -550,4 +324,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _player.durationStream,
         (position, duration) => DurationState(position, duration ?? Duration.zero),
       );
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
 }
