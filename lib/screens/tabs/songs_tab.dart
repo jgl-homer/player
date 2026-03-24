@@ -5,6 +5,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../../../providers/audio_provider.dart';
 import '../../../widgets/song_list_tile.dart';
 import '../../../utils/title_utils.dart';
+import '../../../theme/app_theme.dart';
 
 class SongsTab extends StatefulWidget {
   const SongsTab({super.key});
@@ -24,40 +25,48 @@ class _SongsTabState extends State<SongsTab> {
     super.dispose();
   }
 
-  void _scrollToLetter(String letter, List songs) {
-    int index = -1;
-    if (letter == "#") {
-      index = 0;
-    } else {
-      // Find the first song that starts with this letter or the next available letter
-      index = songs.indexWhere((s) {
-        final title = TitleUtils.getDisplayTitle(s).toUpperCase();
-        return title.startsWith(letter);
-      });
+  Map<String, int> _getLetterIndexMap(List<SongModel> songs) {
+    Map<String, int> map = {};
+    for (int i = 0; i < songs.length; i++) {
+      String title = TitleUtils.getDisplayTitle(songs[i]).trim();
+      if (title.isEmpty) continue;
       
-      // If no song starts with this letter, find the next closest one
-      if (index == -1) {
-        index = songs.indexWhere((s) {
-          final title = TitleUtils.getDisplayTitle(s).toUpperCase();
-          return title.compareTo(letter) > 0;
-        });
+      String firstLetter = title[0].toUpperCase();
+      if (!RegExp(r'[A-Z]').hasMatch(firstLetter)) {
+        if (!map.containsKey("#")) map["#"] = i;
+      } else {
+        if (!map.containsKey(firstLetter)) map[firstLetter] = i;
+      }
+    }
+    return map;
+  }
+
+  void _scrollToLetter(String letter, List<SongModel> songs) {
+    final map = _getLetterIndexMap(songs);
+    int? index;
+
+    if (map.containsKey(letter)) {
+      index = map[letter];
+    } else {
+      int alphabetIndex = _alphabet.indexOf(letter);
+      for (int i = alphabetIndex + 1; i < _alphabet.length; i++) {
+        if (map.containsKey(_alphabet[i])) {
+          index = map[_alphabet[i]];
+          break;
+        }
       }
     }
 
-    if (index != -1) {
-      // SongListTile height is exactly 64.0 (48 image + 8*2 padding) + 8 vertical padding total??
-      // Looking at song_list_tile.dart: contentPadding: horizontal: 16, vertical: 4.
-      // 4 + 48 + 4 = 56?? No, ListTile has some internal padding.
-      // Usually it's around 72.0. Let's use 72.0 but ensure it's consistent.
+    if (index != null) {
       _scrollController.animateTo(
-        index * 72.0,
+        index * 64.0,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
     }
   }
 
-  void _handleScroll(Offset localPosition, double sidebarHeight, List songs) {
+  void _handleScroll(Offset localPosition, double sidebarHeight, List<SongModel> songs) {
     final double y = localPosition.dy;
     final int letterIndex = ((y / sidebarHeight) * _alphabet.length).floor().clamp(0, _alphabet.length - 1);
     final String letter = _alphabet[letterIndex];
@@ -90,6 +99,7 @@ class _SongsTabState extends State<SongsTab> {
             ListView.builder(
               controller: _scrollController,
               itemCount: songs.length,
+              itemExtent: 64.0,
               itemBuilder: (context, index) {
                 final song = songs[index];
                 final isSelected = audioProvider.currentSong?.id == song.id;
@@ -124,16 +134,19 @@ class _SongsTabState extends State<SongsTab> {
             // Alphabet Sidebar
             Positioned(
               right: 0,
-              top: 0,
-              bottom: 0,
-              width: 40,
+              top: 20,
+              bottom: 20,
+              width: 30,
               child: GestureDetector(
-                onVerticalDragStart: (details) => _handleScroll(details.localPosition, constraints.maxHeight, songs),
-                onVerticalDragUpdate: (details) => _handleScroll(details.localPosition, constraints.maxHeight, songs),
+                onVerticalDragStart: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, songs),
+                onVerticalDragUpdate: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, songs),
                 onVerticalDragEnd: (_) => setState(() => _draggedLetter = null),
-                onTapDown: (details) => _handleScroll(details.localPosition, constraints.maxHeight, songs),
+                onTapDown: (details) => _handleScroll(details.localPosition, constraints.maxHeight - 40, songs),
                 child: Container(
-                  color: Colors.transparent, // Capture gestures even on empty spaces
+                  decoration: BoxDecoration(
+                    color: Colors.black26,
+                    borderRadius: BorderRadius.circular(15),
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: _alphabet.map((letter) {
@@ -141,9 +154,9 @@ class _SongsTabState extends State<SongsTab> {
                       return Text(
                         letter,
                         style: TextStyle(
-                          color: isDragging ? Colors.white : Colors.grey, 
-                          fontSize: isDragging ? 14 : 10, 
-                          fontWeight: FontWeight.bold
+                          color: isDragging ? AppTheme.primaryColor : Colors.white60, 
+                          fontSize: isDragging ? 13 : 9, 
+                          fontWeight: isDragging ? FontWeight.bold : FontWeight.normal
                         ),
                       );
                     }).toList(),
@@ -156,14 +169,17 @@ class _SongsTabState extends State<SongsTab> {
             if (_draggedLetter != null)
               Center(
                 child: Container(
-                  padding: const EdgeInsets.all(24),
+                  height: 100,
+                  width: 100,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.black87,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.primaryColor, width: 2),
                   ),
                   child: Text(
                     _draggedLetter!,
-                    style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
