@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import '../utils/title_utils.dart';
 
 import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
@@ -69,7 +70,7 @@ class SongSearchDelegate extends SearchDelegate<SongModel?> {
     }
 
     final results = audioProvider.allSongs.where((song) {
-      final titleMatch = song.title.toLowerCase().contains(query.toLowerCase());
+      final titleMatch = TitleUtils.getDisplayTitle(song).toLowerCase().contains(query.toLowerCase());
       final artistMatch = (song.artist ?? "").toLowerCase().contains(query.toLowerCase());
       return titleMatch || artistMatch;
     }).toList();

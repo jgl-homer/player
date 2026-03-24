@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import '../utils/title_utils.dart';
 import 'package:provider/provider.dart';
 import 'song_info_modal.dart';
 import '../providers/audio_provider.dart';
 
 import '../theme/app_theme.dart';
-import 'marquee_text.dart';
 
 class SongListTile extends StatelessWidget {
   final SongModel song;
@@ -31,9 +31,7 @@ class SongListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String displayTitle = (song.title.trim().isEmpty || song.title == '<unknown>') 
-        ? (song.displayName.trim().isEmpty ? "Canción Desconocida" : song.displayName) 
-        : song.title;
+    final String displayTitle = TitleUtils.getDisplayTitle(song);
         
     final String displayArtist = (song.artist == null || song.artist!.trim().isEmpty || song.artist == '<unknown>') 
         ? "Artista Desconocido" 
@@ -42,37 +40,42 @@ class SongListTile extends StatelessWidget {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
       leading: ClipRRect(
-        borderRadius: BorderRadius.circular(4.0),
+        borderRadius: BorderRadius.circular(5.0),
         child: QueryArtworkWidget(
           id: song.id,
           type: ArtworkType.AUDIO,
-          artworkHeight: 50,
-          artworkWidth: 50,
+          artworkHeight: 56,
+          artworkWidth: 56,
           nullArtworkWidget: Container(
-            height: 50,
-            width: 50,
-            color: Colors.grey[900],
+            height: 56,
+            width: 56,
+            color: const Color(0xFF1E1E1E),
             child: const Icon(Icons.music_note, color: Colors.grey),
           ),
         ),
       ),
-      title: MarqueeText(
-        text: displayTitle,
+      title: Text(
+        displayTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: isSelected ? AppTheme.primaryColor : AppTheme.textMain,
+          color: isSelected ? AppTheme.primaryColor : Colors.white,
           fontWeight: FontWeight.w600,
           fontSize: 16,
         ),
       ),
-      subtitle: Text(
-        "$displayArtist • ${_formatDuration(song.duration)}",
-        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 2.0),
+        child: Text(
+          "$displayArtist • ${_formatDuration(song.duration)}",
+          style: TextStyle(color: Colors.grey[400], fontSize: 13),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       trailing: showTrailing ? PopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert, color: AppTheme.textSecondary),
-        color: AppTheme.surfaceColor,
+        icon: Icon(Icons.more_vert, color: Colors.grey[500]),
+        color: const Color(0xFF222222),
         onSelected: (value) {
           final audioProvider = Provider.of<AudioProvider>(context, listen: false);
           if (value == 'favorito') {
@@ -124,7 +127,7 @@ class SongListTile extends StatelessWidget {
         backgroundColor: AppTheme.surfaceColor,
         title: const Text("Eliminar canción", style: TextStyle(color: Colors.white)),
         content: Text(
-          "¿Estás seguro de que quieres eliminar '${song.title}' permanentemente de tu dispositivo?",
+          "¿Estás seguro de que quieres eliminar '${TitleUtils.getDisplayTitle(song)}' permanentemente de tu dispositivo?",
           style: const TextStyle(color: AppTheme.textSecondary),
         ),
         actions: [

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import '../utils/title_utils.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
 
@@ -126,7 +127,7 @@ class AlbumDetailScreen extends StatelessWidget {
                     ),
                   ),
                   title: Text(
-                    (song.title.trim().isEmpty || song.title == '<unknown>') ? song.displayName : song.title,
+                    TitleUtils.getDisplayTitle(song),
                     style: TextStyle(
                       color: isPlaying ? const Color(0xFF4CAF50) : Colors.white,
                       fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,

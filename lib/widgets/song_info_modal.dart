@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import '../utils/title_utils.dart';
 
 class SongInfoModal extends StatelessWidget {
   final SongModel song;
@@ -56,8 +57,8 @@ class SongInfoModal extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            _infoTile("Nombre", song.displayName),
-            _infoTile("Título", (song.title.trim().isEmpty || song.title == '<unknown>') ? song.displayName : song.title),
+            _infoTile("Nombre", song.data.split('/').last),
+            _infoTile("Título", TitleUtils.getDisplayTitle(song)),
             _infoTile("Artista", (song.artist == null || song.artist == "<unknown>") ? "Artista Desconocido" : song.artist!),
             _infoTile("Álbum", song.album ?? "Desconocido"),
             if (song.track != null) _infoTile("Pista", song.track.toString()),

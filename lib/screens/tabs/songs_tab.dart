@@ -4,6 +4,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 
 import '../../../providers/audio_provider.dart';
 import '../../../widgets/song_list_tile.dart';
+import '../../../utils/title_utils.dart';
 
 class SongsTab extends StatefulWidget {
   const SongsTab({super.key});
@@ -30,14 +31,14 @@ class _SongsTabState extends State<SongsTab> {
     } else {
       // Find the first song that starts with this letter or the next available letter
       index = songs.indexWhere((s) {
-        final title = s.title.toUpperCase();
+        final title = TitleUtils.getDisplayTitle(s).toUpperCase();
         return title.startsWith(letter);
       });
       
       // If no song starts with this letter, find the next closest one
       if (index == -1) {
         index = songs.indexWhere((s) {
-          final title = s.title.toUpperCase();
+          final title = TitleUtils.getDisplayTitle(s).toUpperCase();
           return title.compareTo(letter) > 0;
         });
       }
@@ -76,7 +77,7 @@ class _SongsTabState extends State<SongsTab> {
     }
 
     final songs = List<SongModel>.from(audioProvider.allSongs)
-      ..sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      ..sort((a, b) => TitleUtils.getDisplayTitle(a).toLowerCase().compareTo(TitleUtils.getDisplayTitle(b).toLowerCase()));
 
     if (songs.isEmpty) {
       return const Center(child: Text("No se encontraron canciones"));
@@ -179,7 +180,7 @@ class _SongsTabState extends State<SongsTab> {
         backgroundColor: const Color(0xFF1E1E1E),
         title: const Text("Eliminar canción", style: TextStyle(color: Colors.white)),
         content: Text(
-          "¿Estás seguro de que quieres eliminar '${song.title}' permanentemente?",
+          "¿Estás seguro de que quieres eliminar '${TitleUtils.getDisplayTitle(song)}' permanentemente?",
           style: const TextStyle(color: Colors.grey),
         ),
         actions: [

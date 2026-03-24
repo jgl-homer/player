@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:audiotags/audiotags.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/audio_provider.dart';
+import '../utils/title_utils.dart';
 
 void showOptionsMenu(BuildContext context, AudioProvider audioProvider) {
   showModalBottomSheet(
@@ -64,7 +65,7 @@ class _OptionsMenuContent extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF222222),
         title: const Text("Confirmar eliminación", style: TextStyle(color: Colors.white)),
-        content: Text("¿Eliminar '${song.title}' del dispositivo?", style: const TextStyle(color: Colors.white70)),
+        content: Text("¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?", style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar", style: TextStyle(color: Colors.grey))),
           TextButton(
@@ -117,7 +118,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     super.initState();
     final song = widget.provider.currentSong!;
     final artistText = (song.artist == "<unknown>" || song.artist == null) ? "" : song.artist!;
-    _title       = TextEditingController(text: song.title);
+    _title       = TextEditingController(text: TitleUtils.getDisplayTitle(song));
     _album       = TextEditingController(text: song.album ?? "");
     _artist      = TextEditingController(text: artistText);
     _albumArtist = TextEditingController();

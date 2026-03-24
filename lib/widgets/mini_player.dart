@@ -7,6 +7,7 @@ import '../models/duration_state.dart';
 import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/marquee_text.dart';
+import '../utils/title_utils.dart';
 import '../widgets/options_menu.dart';
 import '../widgets/queue_bottom_sheet.dart';
 import '../widgets/song_info_modal.dart';
@@ -64,7 +65,7 @@ class MiniPlayer extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         MarqueeText(
-                          text: (song.title.trim().isEmpty || song.title == '<unknown>') ? song.displayName : song.title,
+                          text: TitleUtils.getDisplayTitle(song),
                           style: const TextStyle(
                             color: AppTheme.textMain,
                             fontWeight: FontWeight.bold,
@@ -366,9 +367,7 @@ class _PlayerModalContent extends StatelessWidget {
                             width: MediaQuery.of(context).size.width * 0.75, 
                             height: 45,
                             child: MarqueeText(
-                              text: (song.title.trim().isEmpty || song.title == '<unknown>') 
-                                  ? path.basenameWithoutExtension(song.data) 
-                                  : song.title.trim(),
+                              text: TitleUtils.getDisplayTitle(song),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 26,

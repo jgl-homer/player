@@ -5,7 +5,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
-import 'package:path/path.dart' as path;
 import 'package:audio_service/audio_service.dart';
 import 'package:home_widget/home_widget.dart';
 
@@ -13,6 +12,7 @@ import '../models/duration_state.dart';
 import '../services/audio_handler.dart';
 import '../services/state_persistence.dart';
 import '../services/storage_scanner.dart';
+import '../utils/title_utils.dart';
 
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
@@ -362,8 +362,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   MediaItem _songToMediaItem(SongModel s) {
-    String title = (s.title.trim().isEmpty || s.title == '<unknown>') ? s.displayName : s.title;
-    if (title.isEmpty || title == '<unknown>') title = path.basenameWithoutExtension(s.data);
+    String title = TitleUtils.getDisplayTitle(s);
 
     return MediaItem(
       id: s.data,
@@ -379,7 +378,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _updateHomeWidget() async {
     if (_currentSong == null) return;
-    final title = _currentSong!.title.trim().isEmpty ? _currentSong!.displayName : _currentSong!.title;
+    final title = TitleUtils.getDisplayTitle(_currentSong!);
     final artist = (_currentSong!.artist == null || _currentSong!.artist == '<unknown>')
         ? 'Artista Desconocido'
         : _currentSong!.artist!;
