@@ -1,40 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'dart:async';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   final AudioPlayer _player = AudioPlayer();
-  final _playlist = ConcatenatingAudioSource(children: []);
+  ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
 
   VoidCallback? onToggleFavorite;
+  bool _isAdvancing = false;
+  Timer? _debounceTimer;
 
   MyAudioHandler() {
     _init();
   }
 
   Future<void> _init() async {
-    // 1. Propagar el estado del player a la notificación
+    // 1. Propagate player state to notification
     _player.playbackEventStream.listen(_broadcastState);
 
-    // 2. Actualizar el MediaItem cuando cambia la canción
+    // 2. Update MediaItem when song changes
     _player.currentIndexStream.listen((index) {
       if (index != null && index < queue.value.length) {
         mediaItem.add(queue.value[index]);
       }
     });
 
-    // 3. Sincronizar la cola de AudioService con Just Audio
-    _player.sequenceStateStream.listen((state) {
-      final seq = state?.effectiveSequence ?? [];
-      final updated = seq.map((s) => s.tag as MediaItem).toList();
-      queue.add(updated);
+    // 3. Fallback completion detection: Position >= Duration
+    _player.positionStream.listen((position) {
+      final duration = _player.duration;
+      if (duration != null && position >= duration && position.inMilliseconds > 0) {
+        _triggerNextTrackSafe();
+      }
     });
 
-    // 4. Inicializar la fuente de audio
-    try {
-      await _player.setAudioSource(_playlist);
-    } catch (e) {
-      debugPrint("Error inicializando AudioSource: $e");
+    // 4. Listen to standard completed state as well
+    _player.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        _triggerNextTrackSafe();
+      }
+    });
+  }
+
+  void _triggerNextTrackSafe() {
+    if (_isAdvancing) return;
+    _isAdvancing = true;
+    
+    // Prevent multiple triggers within 1.5 seconds
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 1500), () {
+      _isAdvancing = false;
+    });
+
+    if (_player.hasNext) {
+      _player.seekToNext();
+    } else {
+      stop();
     }
   }
 
@@ -102,19 +123,30 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       _player.seek(Duration.zero, index: index);
 
   @override
-  Future<void> addQueueItem(MediaItem item) async {
-    await _playlist.add(_createAudioSource(item));
+  Future<void> updateQueue(List<MediaItem> queue) async {
+    this.queue.add(queue);
   }
 
-  @override
-  Future<void> addQueueItems(List<MediaItem> items) async {
-    await _playlist.addAll(items.map(_createAudioSource).toList());
-  }
-
-  @override
-  Future<void> updateQueue(List<MediaItem> newQueue) async {
-    await _playlist.clear();
-    await _playlist.addAll(newQueue.map(_createAudioSource).toList());
+  Future<void> loadPlaylist(List<MediaItem> newQueue, int initialIndex, [Duration? initialPosition]) async {
+    // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
+    await _player.stop();
+    
+    _playlist = ConcatenatingAudioSource(
+      children: newQueue.map(_createAudioSource).toList()
+    );
+    
+    // Explicitly set the initial index down at the native source creation!
+    await _player.setAudioSource(
+      _playlist, 
+      initialIndex: initialIndex, 
+      initialPosition: initialPosition ?? Duration.zero
+    );
+    
+    this.queue.add(newQueue);
+    
+    if (initialPosition == null) {
+      await _player.play();
+    }
   }
 
   AudioSource _createAudioSource(MediaItem item) =>

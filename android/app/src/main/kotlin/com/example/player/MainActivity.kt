@@ -14,11 +14,17 @@ import com.ryanheise.audioservice.AudioServiceActivity
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
     private val CHANNEL = "com.example.player/media_utils"
+    private val WIDGET_CHANNEL = "com.example.player/widget_actions"
     private var pendingResult: MethodChannel.Result? = null
     private val DELETE_REQUEST_CODE = 1001
+    private var widgetMethodChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // Canal para acciones del widget
+        widgetMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "delete_media" -> {
@@ -77,6 +83,18 @@ class MainActivity : AudioServiceActivity() {
             Log.e(TAG, "Error in deleteMedia: ${e.message}", e)
             result.error("DELETE_FAILED", e.message, null)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val action = intent.getStringExtra("widget_action") ?: return
+        val dartAction = when (action) {
+            MusicWidgetProvider.ACTION_PREVIOUS -> "previous"
+            MusicWidgetProvider.ACTION_PLAY_PAUSE -> "play_pause"
+            MusicWidgetProvider.ACTION_NEXT -> "next"
+            else -> return
+        }
+        widgetMethodChannel?.invokeMethod("widget_action", dartAction)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

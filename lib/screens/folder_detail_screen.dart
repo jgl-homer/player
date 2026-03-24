@@ -157,51 +157,7 @@ class FolderDetailScreen extends StatelessWidget {
                     ),
                   ),
 
-                  // Action Buttons Row
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                if (songs.isNotEmpty) {
-                                  if (audioProvider.isShuffle) audioProvider.toggleShuffle(); // Turn off shuffle
-                                  audioProvider.playPlaylist(songs, 0);
-                                }
-                              },
-                              icon: const Icon(Icons.play_arrow, color: AppTheme.textMain),
-                              label: const Text("REPRODUCIR TODO", style: TextStyle(color: AppTheme.textMain)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.surfaceColor,
-                                padding: const EdgeInsets.symmetric(vertical: 12.0),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6.0)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                if (songs.isNotEmpty) {
-                                  if (!audioProvider.isShuffle) audioProvider.toggleShuffle(); // Turn on shuffle
-                                  audioProvider.playPlaylist(songs, 0);
-                                }
-                              },
-                              icon: const Icon(Icons.shuffle, color: AppTheme.textMain),
-                              label: const Text("ALEATORIO", style: TextStyle(color: AppTheme.textMain)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.surfaceColor,
-                                padding: const EdgeInsets.symmetric(vertical: 12.0),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6.0)),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  // Action Buttons removed per request to enforce strict folder-only context
 
                   // Song List
                   SliverList(
@@ -215,7 +171,7 @@ class FolderDetailScreen extends StatelessWidget {
                           isSelected: isSelected,
                           showTrailing: false,
                           onTap: () {
-                            audioProvider.playPlaylist(currentFolderSongs, index);
+                            audioProvider.playFolderSongs(folderPath, currentFolderSongs, index);
                           },
                         );
                       },
