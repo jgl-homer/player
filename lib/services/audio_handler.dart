@@ -8,6 +8,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
 
   VoidCallback? onToggleFavorite;
+  VoidCallback? onQueueEnd;
   bool _isAdvancing = false;
   Timer? _debounceTimer;
 
@@ -56,6 +57,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       _player.seekToNext();
     } else {
       stop();
+      if (onQueueEnd != null) {
+        onQueueEnd!();
+      }
     }
   }
 

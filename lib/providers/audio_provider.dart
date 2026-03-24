@@ -99,6 +99,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _handler.onToggleFavorite = () {
       if (_currentSong != null) toggleFavorite(_currentSong!);
     };
+
+    _handler.onQueueEnd = () {
+      if (_playbackMode == PlaybackMode.folder) {
+        playNextFolder();
+      }
+    };
   }
 
   @override
@@ -199,6 +205,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (_player.hasNext) {
         await _handler.skipToNext(); 
         _updateHomeWidget();
+      } else if (_playbackMode == PlaybackMode.folder) {
+        await playNextFolder();
       }
     } catch (e) {
       debugPrint("Error skipping to next: $e");
@@ -250,10 +258,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   String _getParentPath(SongModel song) => _getParentPathForString(song.data);
 
-  void playNextFolder() => _changeFolder(1);
-  void playPreviousFolder() => _changeFolder(-1);
+  Future<void> playNextFolder() => _changeFolder(1);
+  Future<void> playPreviousFolder() => _changeFolder(-1);
 
-  void _changeFolder(int offset) {
+  Future<void> _changeFolder(int offset) async {
     if (_allSongs.isEmpty || _currentSong == null) return;
     final paths = sortedFolderPaths;
     
@@ -269,7 +277,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     
     final nextPath = paths[index];
     final folderSongs = _allSongs.where((s) => _getParentPath(s) == nextPath).toList();
-    if (folderSongs.isNotEmpty) playFolderSongs(nextPath, folderSongs, 0);
+    if (folderSongs.isNotEmpty) {
+      await playFolderSongs(nextPath, folderSongs, 0);
+    }
   }
 
   void deleteFolder(String folderPath) {
