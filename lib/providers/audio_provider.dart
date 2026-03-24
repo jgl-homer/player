@@ -118,8 +118,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void setPlaybackMode(PlaybackMode mode, {String? folderPath}) {
     _playbackMode = mode;
-    if (mode == PlaybackMode.folder) {
-      _activeFolderPath = folderPath;
+    if (mode == PlaybackMode.folder && folderPath != null) {
+      if (folderPath.endsWith('/')) {
+        _activeFolderPath = folderPath.substring(0, folderPath.length - 1);
+      } else {
+        _activeFolderPath = folderPath;
+      }
     } else {
       _activeFolderPath = null;
     }
@@ -263,23 +267,39 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _changeFolder(int offset) async {
     if (_allSongs.isEmpty || _currentSong == null) return;
-    final paths = sortedFolderPaths;
+    final allFolders = sortedFolderPaths;
+    String currentPath = _getParentPath(_currentSong!);
     
-    String currentPath = _activeFolderPath ?? _getParentPath(_currentSong!);
-    int index = paths.indexOf(currentPath);
+    final currentIndex = allFolders.indexWhere(
+      (path) => path == currentPath,
+    );
     
-    if (index == -1) {
-       index = 0; 
-    } else {
-       index = (index + offset) % paths.length;
-       if (index < 0) index = paths.length - 1;
+    if (currentIndex == -1) {
+      print("ERROR: Current folder not found");
+      return;
     }
     
-    final nextPath = paths[index];
-    final folderSongs = _allSongs.where((s) => _getParentPath(s) == nextPath).toList();
-    if (folderSongs.isNotEmpty) {
-      await playFolderSongs(nextPath, folderSongs, 0);
+    final nextIndex = currentIndex + offset;
+    
+    if (nextIndex >= allFolders.length || nextIndex < 0) {
+      return; // Stop playback at the absolute end of the library instead of looping to folder A
     }
+    
+    final nextFolderPath = allFolders[nextIndex];
+    final folderSongs = _allSongs.where((s) => _getParentPath(s) == nextFolderPath).toList();
+
+    if (folderSongs.isEmpty) {
+      _activeFolderPath = nextFolderPath;
+      if (offset > 0) playNextFolder();
+      if (offset < 0) playPreviousFolder();
+      return;
+    }
+
+    print("Active folder: $_activeFolderPath");
+    print("All folders: $allFolders");
+    print("Current index: $currentIndex");
+    
+    await playFolderSongs(nextFolderPath, folderSongs, 0);
   }
 
   void deleteFolder(String folderPath) {
