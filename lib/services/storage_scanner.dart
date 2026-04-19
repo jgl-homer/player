@@ -40,6 +40,23 @@ class StorageScanner {
     }
   }
 
+  static Future<bool> hasAudioFiles(String dirPath) async {
+    try {
+      final dir = Directory(dirPath);
+      await for (final entity in dir.list()) {
+        if (entity is File) {
+          final ext = entity.path.split('.').last.toLowerCase();
+          if (['mp3', 'wav', 'flac', 'm4a', 'aac'].contains(ext)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<bool> isValidAudioFile(String filePath, int sizeBytes, String extension) async {
     // Check minimum size: 10KB
     if (sizeBytes < 10240) return false;
@@ -82,5 +99,17 @@ class StorageScanner {
     }
     
     return validSongs;
+  }
+
+  static List<String> filterFolderPaths(List<SongModel> songs) {
+    return songs
+        .map((song) => song.data.substring(0, song.data.lastIndexOf('/')))
+        .toSet()
+        .toList()
+      ..sort((a, b) {
+        final nameA = a.split('/').last.toLowerCase();
+        final nameB = b.split('/').last.toLowerCase();
+        return nameA.compareTo(nameB);
+      });
   }
 }

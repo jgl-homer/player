@@ -20,7 +20,7 @@ Future<void> main() async {
       androidNotificationChannelId: 'com.jesus.player.audio',
       androidNotificationChannelName: 'Reproducción de música',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: false,
+      androidStopForegroundOnPause: true,
       androidNotificationIcon: 'mipmap/ic_launcher',
       androidShowNotificationBadge: true,
       notificationColor: Color(0xFF7B1FA2),

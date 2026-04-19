@@ -14,18 +14,30 @@ import '../services/state_persistence.dart';
 import '../services/storage_scanner.dart';
 import '../utils/title_utils.dart';
 
+enum AudioPreset { studio, hall, room, club }
+
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
   late final AudioPlayer _player;
   static const _mediaChannel = MethodChannel('com.example.player/media_utils');
-  
-  List<SongModel> _allSongs = [];
-  List<AlbumModel> _allAlbums = [];
-  List<SongModel> _currentPlaylist = [];
+  static const _effectsChannel = MethodChannel('com.example.player/audio_effects');
   
   PlaybackMode _playbackMode = PlaybackMode.global;
+  AudioPreset _currentPreset = AudioPreset.studio;
+  double _currentLoudnessGain = 0.0;
+  bool _isEqEnabled = true;
+  bool _isGainEnabled = false;
+  bool _isReverbEnabled = false;
+  bool _isVirtualizerEnabled = false;
+  bool _isBassBoostEnabled = false;
   String? _activeFolderPath;
+
+  List<SongModel> _allSongs = [];
+  List<SongModel> _currentPlaylist = [];
+  List<SongModel> _globalQueue = [];
+  List<SongModel> _folderQueue = [];
+  List<AlbumModel> _allAlbums = [];
 
   bool _isLoading = true;
   int _currentIndex = 0;
@@ -48,6 +60,16 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   AudioPlayer get player => _player;
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
+  AudioPreset get currentPreset => _currentPreset;
+  double get currentLoudnessGain => _currentLoudnessGain;
+  bool get isEqEnabled => _isEqEnabled;
+  bool get isGainEnabled => _isGainEnabled;
+  bool get isReverbEnabled => _isReverbEnabled;
+  bool get isVirtualizerEnabled => _isVirtualizerEnabled;
+  bool get isBassBoostEnabled => _isBassBoostEnabled;
+
+  AndroidEqualizer get equalizer => _handler.equalizer;
+  AndroidLoudnessEnhancer get loudnessEnhancer => _handler.loudnessEnhancer;
 
   AudioProvider(AudioHandler handler) : _handler = handler as MyAudioHandler {
     _player = _handler.player;
@@ -78,10 +100,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     
     // Async filtering of blocked or invisible folders and invalid files
     _allSongs = await StorageScanner.filterSongs(rawSongs);
+    _globalQueue = List.from(_allSongs);
     _allAlbums = await _audioQuery.queryAlbums();
     
     // Start global by default
-    _currentPlaylist = _allSongs;
+    _currentPlaylist = _globalQueue;
     _isLoading = false;
     notifyListeners();
     
@@ -96,15 +119,224 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     });
 
+    _player.androidAudioSessionIdStream.listen((sessionId) {
+      if (sessionId != null && sessionId != 0) {
+        // Enforce the effects whenever Android allocates a new audio session
+        _applyNativeEffectsToSession(sessionId);
+      }
+    });
+
     _handler.onToggleFavorite = () {
       if (_currentSong != null) toggleFavorite(_currentSong!);
     };
 
-    _handler.onQueueEnd = () {
+    _handler.onTrackCompleted = () {
       if (_playbackMode == PlaybackMode.folder) {
         playNextFolder();
       }
     };
+  }
+
+  // --- Audio Effects & Reverb ---
+  Future<void> setAudioPreset(AudioPreset preset) async {
+    _currentPreset = preset;
+    notifyListeners();
+
+    final eqParams = await equalizer.parameters;
+
+    // Reset EQ and BassBoost before applying new presets to prevent audio spikes
+    for (var band in eqParams.bands) {
+      await band.setGain(0.0);
+    }
+    await loudnessEnhancer.setTargetGain(0.0);
+
+    int reverbPresetValue = 0;
+
+    switch (preset) {
+      case AudioPreset.studio:
+        reverbPresetValue = 0;
+        _isReverbEnabled = false;
+        _isVirtualizerEnabled = false;
+        _isBassBoostEnabled = false;
+        _isGainEnabled = false;
+        _isEqEnabled = true;
+        await loudnessEnhancer.setEnabled(false);
+        await equalizer.setEnabled(true);
+        break;
+      case AudioPreset.hall:
+        reverbPresetValue = 4;
+        _isReverbEnabled = true;
+        _isVirtualizerEnabled = true;
+        _isBassBoostEnabled = true;
+        _isGainEnabled = false;
+        _isEqEnabled = true;
+        await loudnessEnhancer.setEnabled(false);
+        await equalizer.setEnabled(true);
+        if (eqParams.bands.isNotEmpty) {
+           await _applyConcertHallEqCurve(eqParams);
+        }
+        break;
+      case AudioPreset.room:
+        reverbPresetValue = 1;
+        _isReverbEnabled = true;
+        _isVirtualizerEnabled = true;
+        _isBassBoostEnabled = true;
+        _isGainEnabled = false;
+        _isEqEnabled = true;
+        await loudnessEnhancer.setEnabled(false);
+        break;
+      case AudioPreset.club:
+        _isReverbEnabled = true;
+        _isVirtualizerEnabled = true;
+        _isBassBoostEnabled = true;
+        _isGainEnabled = true;
+        _isEqEnabled = true;
+        await loudnessEnhancer.setEnabled(true);
+        // Usamos Loudness solo como PreAmp
+        await loudnessEnhancer.setTargetGain(800.0);
+        await equalizer.setEnabled(true);
+        // Slight V-shape for energy
+        if (eqParams.bands.isNotEmpty) {
+           await _applyTargetEqCurve(eqParams);
+        }
+        break;
+    }
+
+    // Call native method channel to set Effects DSP
+    try {
+      final sessionId = await _handler.getAndroidAudioSessionId();
+      if (sessionId != null && sessionId != 0) {
+        await _applyNativeEffectsToSession(sessionId);
+      }
+    } catch (e) {
+      debugPrint("Error setting native dsp: \$e");
+    }
+  }
+
+  Future<void> _applyNativeEffectsToSession(int sessionId) async {
+    try {
+      // Configuraciones Extremos Concert Hall / Sonidero (Restauradas al tope sin ringing)
+      await _effectsChannel.invokeMethod('initDSP', {
+        'sessionId': sessionId,
+        'decayTime': 10000,          // 10 Segundos de cola de eco masiva
+        'decayHFRatio': 1000,        // ANULADOR DE ARENA: Mantenido natural (100% en lugar de 200%).
+        'reflectionsLevel': 1000,    // RESTAURADO: Nivel máximo absoluto de reflejos
+        'reverbLevel': 2000,         // RESTAURADO: Nivel máximo absoluto de Reverb (+2000mB)
+        'roomLevel': 0,              // RESTAURADO: Nivel máximo de cuarto acústico
+        'density': 1000,             
+        'diffusion': 1000,           
+        'virtualizerStrength': 1000, // RESTAURADO: Paneo 3D al límite
+        'bassBoostStrength': 1000,   // RESTAURADO: Impacto al tope
+      });
+      // Inmediatamente habilitamos/deshabilitamos basado en su estado individual
+      await _effectsChannel.invokeMethod('toggleReverb', {'enable': _isReverbEnabled});
+      await _effectsChannel.invokeMethod('toggleVirtualizer', {'enable': _isVirtualizerEnabled});
+      await _effectsChannel.invokeMethod('toggleBass', {'enable': _isBassBoostEnabled});
+    } catch (e) {
+      debugPrint("Error applying native dsp to session: \$e");
+    }
+  }
+
+  Future<void> _applyTargetEqCurve(AndroidEqualizerParameters eqParams) async {
+    // 60Hz -> +3dB, 230Hz -> +1dB, 910Hz -> 0, 3kHz -> +2dB, 14kHz -> +3dB 
+    final targetFrequencies = {
+      60.0: 3.0,
+      230.0: 1.0,
+      910.0: 0.0,
+      3000.0: 2.0,
+      14000.0: 3.0,
+    };
+    
+    for (var band in eqParams.bands) {
+      double bandFreq = band.centerFrequency / 1000.0; // center frequency in Hz
+      double closestTargetFreq = targetFrequencies.keys.first;
+      double minDiff = (bandFreq - closestTargetFreq).abs();
+      for (var target in targetFrequencies.keys) {
+        double diff = (bandFreq - target).abs();
+        if (diff < minDiff) {
+          closestTargetFreq = target;
+          minDiff = diff;
+        }
+      }
+      
+      // Aplicar el target clamp dentro del min/max del band
+      double targetGain = targetFrequencies[closestTargetFreq]!;
+      // Suponemos que band.gain se configura tal cual en las unidades expuestas que generalmente son dB.
+      await band.setGain(targetGain.clamp(eqParams.minDecibels, eqParams.maxDecibels));
+    }
+  }
+
+  Future<void> _applyConcertHallEqCurve(AndroidEqualizerParameters eqParams) async {
+    // Curva en "V" exagerada tipo Sonidero para que resalte el brillo de la reverberación
+    // 60Hz -> +4dB (Graves profundos)
+    // 230Hz -> -2dB (Limpieza de medios-bajos para quitar el sonido a "cajón" o "ahogado")
+    // 910Hz -> -3dB (Vaciado de medios para que la reverberación se perciba más amplia)
+    // 3kHz -> +2dB (Claridad de las voces y claps)
+    // 14kHz -> +6dB (Mucho aire y brillo para el efecto "cristalino" del reverb largo)
+    final targetFrequencies = {
+      60.0: 6.0,    // RESTAURADO
+      230.0: -4.0,  
+      910.0: -5.0,  
+      3000.0: 4.0,  // RESTAURADO
+      14000.0: 10.0, // RESTAURADO: Vuelve el súper brillo
+    };
+    
+    for (var band in eqParams.bands) {
+      double bandFreq = band.centerFrequency / 1000.0;
+      double closestTargetFreq = targetFrequencies.keys.first;
+      double minDiff = (bandFreq - closestTargetFreq).abs();
+      for (var target in targetFrequencies.keys) {
+        double diff = (bandFreq - target).abs();
+        if (diff < minDiff) {
+          closestTargetFreq = target;
+          minDiff = diff;
+        }
+      }
+      
+      double targetGain = targetFrequencies[closestTargetFreq]!;
+      await band.setGain(targetGain.clamp(eqParams.minDecibels, eqParams.maxDecibels));
+    }
+  }
+
+  Future<void> setLoudnessGain(double gain) async {
+    _currentLoudnessGain = gain;
+    notifyListeners();
+    if (_isGainEnabled) {
+      await loudnessEnhancer.setTargetGain(gain);
+    }
+  }
+
+  Future<void> toggleEq(bool enabled) async {
+    _isEqEnabled = enabled;
+    notifyListeners();
+    await equalizer.setEnabled(enabled);
+  }
+
+  Future<void> toggleGain(bool enabled) async {
+    _isGainEnabled = enabled;
+    notifyListeners();
+    await loudnessEnhancer.setEnabled(enabled);
+    if (enabled) {
+      await loudnessEnhancer.setTargetGain(_currentLoudnessGain);
+    }
+  }
+
+  Future<void> toggleReverb(bool enabled) async {
+    _isReverbEnabled = enabled;
+    notifyListeners();
+    await _effectsChannel.invokeMethod('toggleReverb', {'enable': enabled});
+  }
+
+  Future<void> toggleVirtualizer(bool enabled) async {
+    _isVirtualizerEnabled = enabled;
+    notifyListeners();
+    await _effectsChannel.invokeMethod('toggleVirtualizer', {'enable': enabled});
+  }
+
+  Future<void> toggleBass(bool enabled) async {
+    _isBassBoostEnabled = enabled;
+    notifyListeners();
+    await _effectsChannel.invokeMethod('toggleBass', {'enable': enabled});
   }
 
   @override
@@ -144,14 +376,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> playFolderSongs(String folderPath, List<SongModel> folderSongs, [int? startIndex]) async {
     setPlaybackMode(PlaybackMode.folder, folderPath: folderPath);
+    _folderQueue = List.from(folderSongs);
     
     int targetIndex = startIndex ?? 0;
     if (startIndex == null && _currentSong != null) {
-      targetIndex = folderSongs.indexWhere((s) => s.data == _currentSong!.data);
+      targetIndex = _folderQueue.indexWhere((s) => s.data == _currentSong!.data);
       if (targetIndex == -1) targetIndex = 0;
     }
     
-    await _playInternal(folderSongs, targetIndex);
+    await _playInternal(_folderQueue, targetIndex);
   }
 
   // Backwards compatibility for implicit playlist triggers
@@ -243,17 +476,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // --- Folder Management ---
 
-  List<String> get sortedFolderPaths {
-    return _allSongs
-        .map((song) => _getParentPath(song))
-        .toSet()
-        .toList()
-      ..sort((a, b) {
-        final nameA = a.split('/').last.toLowerCase();
-        final nameB = b.split('/').last.toLowerCase();
-        return nameA.compareTo(nameB);
-      });
-  }
+  List<String> get sortedFolderPaths => StorageScanner.filterFolderPaths(_allSongs);
 
   String _getParentPathForString(String filePath) {
     final parts = filePath.split('/');
@@ -422,53 +645,44 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _loadPlaybackState() async {
     _favoriteIds = await StatePersistence.loadFavorites();
-
     final state = await StatePersistence.loadPlaybackState();
+    final mode = state['mode'] as PlaybackMode;
+    final folderPath = state['folderPath'] as String?;
     final songPath = state['songPath'] as String?;
     final positionMs = state['positionMs'] as int;
 
-    if (songPath == null) return;
+    if (songPath != null) {
+      List<SongModel> targetQueue = [];
+      if (mode == PlaybackMode.folder && folderPath != null) {
+        targetQueue = _allSongs.where((s) => s.data.startsWith(folderPath)).toList();
+        _playbackMode = PlaybackMode.folder;
+        _activeFolderPath = folderPath;
+        _folderQueue = List.from(targetQueue);
+      } else {
+        targetQueue = _globalQueue;
+        _playbackMode = PlaybackMode.global;
+        _folderQueue = [];
+      }
 
-    final songDir = _getParentPathForString(songPath);
-    
-    // Default to isolated folder mode using strict string matching
-    _playbackMode = PlaybackMode.folder;
-    _activeFolderPath = songDir;
-    
-    _currentPlaylist = _allSongs.where((s) => _getParentPathForString(s.data) == songDir).toList();
-      
-    // Fallback if folder does not exist or empty
-    if (_currentPlaylist.isEmpty) {
-      _playbackMode = PlaybackMode.global;
-      _activeFolderPath = null;
-      _currentPlaylist = _allSongs;
-    }
+      if (targetQueue.isEmpty && _allSongs.isNotEmpty) {
+        targetQueue = _globalQueue;
+        _playbackMode = PlaybackMode.global;
+      }
 
-    if (_currentPlaylist.isEmpty) return;
-
-    // Find correct index using path
-    int targetIndex = _currentPlaylist.indexWhere((s) => s.data == songPath);
-    
-    // Fallback to global queue if song not found in the resolved folder
-    if (targetIndex == -1) {
-      _playbackMode = PlaybackMode.global;
-      _activeFolderPath = null;
-      _currentPlaylist = _allSongs;
-      targetIndex = _currentPlaylist.indexWhere((s) => s.data == songPath);
-      if (targetIndex == -1) targetIndex = 0; // Absolute fallback
-    }
-
-    _currentIndex = targetIndex;
-    _currentSong = _currentPlaylist[_currentIndex];
-    notifyListeners();
-
-    try {
-      final mediaItems = _currentPlaylist.map(_songToMediaItem).toList();
-      await _handler.loadPlaylist(mediaItems, _currentIndex, Duration(milliseconds: positionMs));
-      // Fulfilling explicit start requirement from prompt
-      await _player.play();
-    } catch (e) {
-      debugPrint("Error restoring state: $e");
+      final index = targetQueue.indexWhere((s) => s.data == songPath);
+      if (index != -1) {
+        _currentPlaylist = targetQueue;
+        _currentIndex = index;
+        _currentSong = _currentPlaylist[_currentIndex];
+        
+        final mediaItems = _currentPlaylist.map(_songToMediaItem).toList();
+        await _handler.loadPlaylist(
+          mediaItems, 
+          _currentIndex, 
+          Duration(milliseconds: positionMs)
+        );
+        notifyListeners();
+      }
     }
   }
 

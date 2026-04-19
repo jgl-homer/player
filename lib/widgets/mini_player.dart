@@ -13,6 +13,7 @@ import '../widgets/queue_bottom_sheet.dart';
 import '../widgets/song_info_modal.dart';
 import '../screens/artist_detail_screen.dart';
 import '../screens/album_detail_screen.dart';
+import '../widgets/equalizer_modal.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -227,9 +228,25 @@ class _PlayerModalContent extends StatelessWidget {
                   ),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: IconButton(
-                      icon: const Icon(Icons.more_vert, color: Colors.white, size: 26),
-                      onPressed: () => showOptionsMenu(context, audioProvider),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.tune_rounded, color: Colors.white, size: 26),
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: Colors.transparent,
+                              isScrollControlled: true,
+                              builder: (context) => const EqualizerModal(),
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.more_vert, color: Colors.white, size: 26),
+                          onPressed: () => showOptionsMenu(context, audioProvider),
+                        ),
+                      ],
                     ),
                   ),
                 ],
