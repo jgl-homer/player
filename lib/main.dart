@@ -9,11 +9,22 @@ import 'providers/audio_provider.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
 
+import 'package:flutter/services.dart';
+
 late AudioHandler _audioHandler;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Activar modo inmersivo y transparencia
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarIconBrightness: Brightness.light,
+  ));
+  
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
   _audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: AudioServiceConfig(
@@ -45,8 +56,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AudioProvider(_audioHandler)),
       ],
       child: MaterialApp(
-        locale: DevicePreview.locale(context),
-        builder: DevicePreview.appBuilder,
+        locale: kReleaseMode ? null : DevicePreview.locale(context),
+        builder: kReleaseMode ? null : DevicePreview.appBuilder,
         debugShowCheckedModeBanner: false,
         themeMode: ThemeMode.dark,
         theme: AppTheme.darkTheme,

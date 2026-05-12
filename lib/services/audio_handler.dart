@@ -4,8 +4,6 @@ import 'package:just_audio/just_audio.dart';
 import 'dart:async';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
-  final AndroidEqualizer equalizer = AndroidEqualizer();
-  final AndroidLoudnessEnhancer loudnessEnhancer = AndroidLoudnessEnhancer();
   late final AudioPlayer _player;
   ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
 
@@ -15,10 +13,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Timer? _debounceTimer;
 
   MyAudioHandler() {
-    final pipeline = AudioPipeline(
-      androidAudioEffects: [equalizer, loudnessEnhancer],
-    );
-    _player = AudioPlayer(audioPipeline: pipeline);
+    _player = AudioPlayer();
     _init();
   }
 

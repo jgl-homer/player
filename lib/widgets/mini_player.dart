@@ -13,7 +13,7 @@ import '../widgets/queue_bottom_sheet.dart';
 import '../widgets/song_info_modal.dart';
 import '../screens/artist_detail_screen.dart';
 import '../screens/album_detail_screen.dart';
-import '../widgets/equalizer_modal.dart';
+import '../widgets/concert_hall_modal.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -25,19 +25,21 @@ class MiniPlayer extends StatelessWidget {
 
     if (song == null) return const SizedBox.shrink();
 
-    return Material(
-      color: AppTheme.surfaceColor,
-      child: InkWell(
-        onTap: () {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: AppTheme.surfaceColor,
-            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
-            builder: (context) => const _PlayerModalContent(),
-          );
-        },
-        child: Column(
+    return SafeArea(
+      top: false,
+      child: Material(
+        color: AppTheme.surfaceColor,
+        child: InkWell(
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: AppTheme.surfaceColor,
+              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(30))),
+              builder: (context) => const _PlayerModalContent(),
+            );
+          },
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
@@ -141,8 +143,9 @@ class MiniPlayer extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class _PlayerModalContent extends StatelessWidget {
@@ -238,7 +241,7 @@ class _PlayerModalContent extends StatelessWidget {
                               context: context,
                               backgroundColor: Colors.transparent,
                               isScrollControlled: true,
-                              builder: (context) => const EqualizerModal(),
+                              builder: (context) => const ConcertHallModal(),
                             );
                           },
                         ),

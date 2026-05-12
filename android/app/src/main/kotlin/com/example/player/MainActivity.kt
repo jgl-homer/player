@@ -11,8 +11,6 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.ryanheise.audioservice.AudioServiceActivity
 import android.media.audiofx.EnvironmentalReverb
-import android.media.audiofx.Virtualizer
-import android.media.audiofx.BassBoost
 
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
@@ -21,11 +19,10 @@ class MainActivity : AudioServiceActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private val DELETE_REQUEST_CODE = 1001
     private var widgetMethodChannel: MethodChannel? = null
-    private val EFFECTS_CHANNEL = "com.example.player/audio_effects"
-    private var environmentalReverb: EnvironmentalReverb? = null
-    private var virtualizer: Virtualizer? = null
-    private var bassBoost: BassBoost? = null
     private var myFlutterEngine: FlutterEngine? = null
+
+    private var reverb: EnvironmentalReverb? = null
+    private var currentSessionId: Int = 0
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -33,81 +30,6 @@ class MainActivity : AudioServiceActivity() {
 
         // Canal para acciones del widget
         widgetMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
-
-        // Canal para efectos (Native DSP)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, EFFECTS_CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "initDSP" -> {
-                    val sessionId = call.argument<Int>("sessionId")
-                    if (sessionId != null) {
-                        try {
-                            if (environmentalReverb == null || environmentalReverb?.hasControl() == false || environmentalReverb?.id != sessionId) {
-                                environmentalReverb?.release()
-                                environmentalReverb = EnvironmentalReverb(0, sessionId)
-                            }
-                            if (virtualizer == null || virtualizer?.hasControl() == false || virtualizer?.id != sessionId) {
-                                virtualizer?.release()
-                                virtualizer = Virtualizer(0, sessionId)
-                            }
-                            if (bassBoost == null || bassBoost?.hasControl() == false || bassBoost?.id != sessionId) {
-                                bassBoost?.release()
-                                bassBoost = BassBoost(0, sessionId)
-                            }
-                            
-                            // Load config parameters but don't force enable yet
-                            environmentalReverb?.apply {
-                                decayTime = call.argument<Int>("decayTime") ?: 1800
-                                decayHFRatio = call.argument<Int>("decayHFRatio")?.toShort() ?: 600
-                                reflectionsLevel = call.argument<Int>("reflectionsLevel")?.toShort() ?: -1500
-                                reverbLevel = call.argument<Int>("reverbLevel")?.toShort() ?: -1200
-                                roomLevel = call.argument<Int>("roomLevel")?.toShort() ?: -400
-                                density = call.argument<Int>("density")?.toShort() ?: 1000
-                                diffusion = call.argument<Int>("diffusion")?.toShort() ?: 1000
-                            }
-                            virtualizer?.setStrength((call.argument<Int>("virtualizerStrength") ?: 700).toShort())
-                            bassBoost?.setStrength((call.argument<Int>("bassBoostStrength") ?: 400).toShort())
-
-                            result.success(true)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Error initializing DSP: \${e.message}", e)
-                            result.error("DSP_INIT_ERROR", e.message, null)
-                        }
-                    } else {
-                        result.error("INVALID_ARGUMENT", "sessionId required", null)
-                    }
-                }
-                "toggleReverb" -> {
-                    val enable = call.argument<Boolean>("enable") ?: false
-                    environmentalReverb?.enabled = enable
-                    if (enable && environmentalReverb != null) {
-                        applyAuxEffect(environmentalReverb!!.id, 1.0f)
-                    } else if (!enable && environmentalReverb != null) {
-                        applyAuxEffect(0, 0.0f)
-                    }
-                    result.success(true)
-                }
-                "toggleVirtualizer" -> {
-                    val enable = call.argument<Boolean>("enable") ?: false
-                    virtualizer?.enabled = enable
-                    result.success(true)
-                }
-                "toggleBass" -> {
-                    val enable = call.argument<Boolean>("enable") ?: false
-                    bassBoost?.enabled = enable
-                    result.success(true)
-                }
-                "releaseEffects" -> {
-                    environmentalReverb?.release()
-                    environmentalReverb = null
-                    virtualizer?.release()
-                    virtualizer = null
-                    bassBoost?.release()
-                    bassBoost = null
-                    result.success(true)
-                }
-                else -> result.notImplemented()
-            }
-        }
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
@@ -138,50 +60,59 @@ class MainActivity : AudioServiceActivity() {
                         result.error("INVALID_ARGUMENT", "Path is required", null)
                     }
                 }
-                else -> result.notImplemented()
-            }
-        }
-    }
-
-    private fun applyAuxEffect(effectId: Int, sendLevel: Float) {
-        try {
-            val pluginClass = Class.forName("com.ryanheise.just_audio.JustAudioPlugin")
-            @Suppress("UNCHECKED_CAST")
-            val plugin = myFlutterEngine?.plugins?.get(pluginClass as Class<out io.flutter.embedding.engine.plugins.FlutterPlugin>)
-            if (plugin != null) {
-                val playersField = pluginClass.getDeclaredField("players")
-                playersField.isAccessible = true
-                val players = playersField.get(plugin) as Map<*, *>
-                for (playerEntry in players.values) {
-                    if (playerEntry != null) {
-                        val exoPlayerField = playerEntry::class.java.getDeclaredField("player")
-                        exoPlayerField.isAccessible = true
-                        val exoPlayer = exoPlayerField.get(playerEntry)
-                        
-                        if (exoPlayer != null) {
-                            try {
-                                val auxEffectInfoClass = Class.forName("com.google.android.exoplayer2.audio.AuxEffectInfo")
-                                val auxEffectInfoConstructor = auxEffectInfoClass.getConstructor(Int::class.java, Float::class.java)
-                                val auxInfo = auxEffectInfoConstructor.newInstance(effectId, sendLevel)
-                                
-                                val setMethod = exoPlayer::class.java.getMethod("setAuxEffectInfo", auxEffectInfoClass)
-                                setMethod.invoke(exoPlayer, auxInfo)
-                                Log.d(TAG, "Successfully injected AuxEffectInfo effectId=$effectId to ExoPlayer2 (sendLevel=$sendLevel)")
-                            } catch(e: ClassNotFoundException) {
-                                val auxEffectInfoClass = Class.forName("androidx.media3.exoplayer.audio.AuxEffectInfo")
-                                val auxEffectInfoConstructor = auxEffectInfoClass.getConstructor(Int::class.java, Float::class.java)
-                                val auxInfo = auxEffectInfoConstructor.newInstance(effectId, sendLevel)
-                                
-                                val setMethod = exoPlayer::class.java.getMethod("setAuxEffectInfo", auxEffectInfoClass)
-                                setMethod.invoke(exoPlayer, auxInfo)
-                                Log.d(TAG, "Successfully injected AuxEffectInfo effectId=$effectId to Media3 ExoPlayer (sendLevel=$sendLevel)")
-                            }
-                        }
+                "init_reverb" -> {
+                    val sessionId = call.argument<Int>("sessionId") ?: 0
+                    if (sessionId != 0) {
+                        setupReverb(sessionId)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Session ID is required", null)
                     }
                 }
+                "enableReverb" -> {
+                    val sessionId = call.argument<Int>("sessionId") ?: 0
+                    if (sessionId != 0) {
+                        setupReverb(sessionId)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Session ID is required", null)
+                    }
+                }
+                "update_reverb" -> {
+                    val params = call.arguments as? Map<String, Any>
+                    if (params != null) {
+                        applyReverbParams(params)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Params are required", null)
+                    }
+                }
+                "setReverbParams" -> {
+                    val params = call.arguments as? Map<String, Any>
+                    if (params != null) {
+                        applyReverbParams(params)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_ARGUMENT", "Params are required", null)
+                    }
+                }
+                "toggle_reverb" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: true
+                    reverb?.enabled = enabled
+                    result.success(true)
+                }
+                "setBypass" -> {
+                    val bypass = call.argument<Boolean>("bypass") ?: false
+                    reverb?.enabled = !bypass
+                    result.success(true)
+                }
+                "releaseReverb" -> {
+                    reverb?.release()
+                    reverb = null
+                    result.success(true)
+                }
+                else -> result.notImplemented()
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to inject AuxEffectInfo via reflection: ${e.message}", e)
         }
     }
 
@@ -234,6 +165,37 @@ class MainActivity : AudioServiceActivity() {
                 pendingResult?.success(false)
             }
             pendingResult = null
+        }
+    }
+
+    private fun setupReverb(sessionId: Int) {
+        if (reverb != null && currentSessionId == sessionId) return
+        
+        try {
+            reverb?.release()
+            reverb = EnvironmentalReverb(0, sessionId)
+            currentSessionId = sessionId
+            reverb?.enabled = true
+            Log.d(TAG, "Reverb initialized for session: $sessionId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error setting up reverb: ${e.message}")
+        }
+    }
+
+    private fun applyReverbParams(params: Map<String, Any>) {
+        val r = reverb ?: return
+        try {
+            (params["decayTime"] as? Number)?.let { r.decayTime = it.toInt() }
+            (params["reflectionsDelay"] as? Number)?.let { r.reflectionsDelay = it.toInt() }
+            (params["reverbDelay"] as? Number)?.let { r.reverbDelay = it.toInt() }
+            (params["roomLevel"] as? Number)?.let { r.roomLevel = it.toInt().toShort() }
+            (params["density"] as? Number)?.let { r.density = it.toInt().toShort() }
+            (params["diffusion"] as? Number)?.let { r.diffusion = it.toInt().toShort() }
+            (params["decayHFRatio"] as? Number)?.let { r.decayHFRatio = it.toInt().toShort() }
+            (params["reverbLevel"] as? Number)?.let { r.reverbLevel = it.toInt().toShort() }
+            Log.d(TAG, "Reverb parameters applied: $params")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying reverb params: ${e.message}")
         }
     }
 }
