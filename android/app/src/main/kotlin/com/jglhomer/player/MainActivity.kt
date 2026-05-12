@@ -11,6 +11,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.ryanheise.audioservice.AudioServiceActivity
 import android.media.audiofx.EnvironmentalReverb
+import com.jglhomer.player.R
 
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"

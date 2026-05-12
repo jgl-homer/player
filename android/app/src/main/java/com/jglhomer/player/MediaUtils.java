@@ -1,4 +1,4 @@
-package com.example.player;
+package com.jglhomer.player;
 
 import android.media.MediaMetadataRetriever;
 import java.io.File;

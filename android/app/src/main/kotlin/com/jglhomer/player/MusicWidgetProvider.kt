@@ -10,6 +10,7 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.widget.RemoteViews
+import com.jglhomer.player.R
 
 class MusicWidgetProvider : AppWidgetProvider() {
 
