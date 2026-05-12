@@ -21,7 +21,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
   late final AudioPlayer _player;
-  static const _mediaChannel = MethodChannel('com.example.player/media_utils');
+  static const _mediaChannel = MethodChannel('com.jglhomer.player/media_utils');
+  static const _widgetChannel = MethodChannel('com.jglhomer.player/widget_actions');
 
   PlaybackMode _playbackMode = PlaybackMode.global;
   String? _activeFolderPath;
@@ -84,7 +85,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     // Escuchar acciones del widget
     HomeWidget.widgetClicked.listen((uri) {});
-    const MethodChannel('com.example.player/widget_actions')
+    const MethodChannel('com.jglhomer.player/widget_actions')
         .setMethodCallHandler((call) async {
       if (call.method == 'widget_action') {
         switch (call.arguments as String) {

@@ -34,7 +34,7 @@ Future<void> main() async {
       androidStopForegroundOnPause: true,
       androidNotificationIcon: 'mipmap/ic_launcher',
       androidShowNotificationBadge: true,
-      notificationColor: Color(0xFF7B1FA2),
+      notificationColor: const Color(0xFFC9A84C),
     ),
   );
 

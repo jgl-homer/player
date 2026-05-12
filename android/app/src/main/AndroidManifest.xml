@@ -75,9 +75,9 @@
             android:name=".WidgetActionReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="com.example.player.WIDGET_PREVIOUS" />
-                <action android:name="com.example.player.WIDGET_PLAY_PAUSE" />
-                <action android:name="com.example.player.WIDGET_NEXT" />
+                <action android:name="com.jglhomer.player.WIDGET_PREVIOUS" />
+                <action android:name="com.jglhomer.player.WIDGET_PLAY_PAUSE" />
+                <action android:name="com.jglhomer.player.WIDGET_NEXT" />
             </intent-filter>
         </receiver>
 

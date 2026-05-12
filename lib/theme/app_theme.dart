@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  static const Color primaryColor = Color(0xFFFFD500); // Yellow from Muzio
-  static const Color backgroundColor = Colors.black;
-  static const Color surfaceColor = Color(0xFF121212); // Slightly lighter black for miniplayer
-  static const Color surfaceVariant = Color(0xFF2C2C2C); // For chips and selected items
-  static const Color textMain = Colors.white;
-  static const Color textSecondary = Colors.grey;
+  static const Color primaryColor = Color(0xFFC9A84C); // Gold
+  static const Color backgroundColor = Color(0xFF080604); // Deep Dark
+  static const Color surfaceColor = Color(0xFF0E0B06); // Panel Dark
+  static const Color surfaceVariant = Color(0xFF1A1208); // Accent Dark
+  static const Color textMain = Color(0xFFF0E6CC); // Cream/Cream White
+  static const Color textSecondary = Color(0xFF7A6030); // Dim Gold/Bronze
 
   static final ThemeData darkTheme = ThemeData(
     useMaterial3: true,
