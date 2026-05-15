@@ -1,0 +1,15 @@
+[33m8f2f2c7[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/creacionfirmadigital[m[33m)[m Add 3D Concert DSP engine
+[33m7a849a7[m[33m ([m[1;32mReproductorEnCV2[m[33m)[m Save Java DSP implementation before C engine migration
+[33mc6fb877[m[33m ([m[1;31morigin/feature/creacionfirmadigital[m[33m)[m anadida de firma digital 2
+[33m2bbc51d[m anadida de firma digital
+[33m5a49dfc[m[33m ([m[1;33mtag: [m[1;33mbeta[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m, [m[1;32mmain[m[33m)[m Implementacion de concert hall (Beta)
+[33m3be85d2[m agrega efectos independientes y mejoras DSP (quitar club)
+[33md6069d3[m falta design
+[33m45bdb7b[m scroll funcionando!
+[33m0e82266[m ya se ven todos los textos!
+[33m1cd9940[m con reproduccio automatica
+[33m9528acd[m medio ya funciona
+[33md5535c6[m primera revision
+[33m9a532c0[m funciona parcial. mas diseño
+[33m94a1c35[m funciona el scroll!
+[33mdb036eb[m Primer commit
