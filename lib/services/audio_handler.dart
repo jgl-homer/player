@@ -35,7 +35,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     // 3. Fallback completion detection: Position >= Duration
     _player.positionStream.listen((position) {
       final duration = _player.duration;
-      if (duration != null && position >= duration && position.inMilliseconds > 0) {
+      if (duration != null &&
+          position >= duration &&
+          position.inMilliseconds > 0) {
         _triggerNextTrackSafe();
       }
     });
@@ -51,7 +53,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   void _triggerNextTrackSafe() {
     if (_isAdvancing) return;
     _isAdvancing = true;
-    
+
     // Prevent multiple triggers within 1.5 seconds
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 1500), () {
@@ -85,12 +87,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       },
       androidCompactActionIndices: const [0, 1, 3],
       processingState: const {
-        ProcessingState.idle: AudioProcessingState.idle,
-        ProcessingState.loading: AudioProcessingState.loading,
-        ProcessingState.buffering: AudioProcessingState.buffering,
-        ProcessingState.ready: AudioProcessingState.ready,
-        ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState] ?? AudioProcessingState.idle,
+            ProcessingState.idle: AudioProcessingState.idle,
+            ProcessingState.loading: AudioProcessingState.loading,
+            ProcessingState.buffering: AudioProcessingState.buffering,
+            ProcessingState.ready: AudioProcessingState.ready,
+            ProcessingState.completed: AudioProcessingState.completed,
+          }[_player.processingState] ??
+          AudioProcessingState.idle,
       playing: playing,
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
@@ -136,30 +139,29 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     this.queue.add(queue);
   }
 
-  Future<void> loadPlaylist(List<MediaItem> newQueue, int initialIndex, [Duration? initialPosition]) async {
+  Future<void> loadPlaylist(List<MediaItem> newQueue, int initialIndex,
+      [Duration? initialPosition]) async {
     // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
     await _player.stop();
-    
+
     _playlist = ConcatenatingAudioSource(
-      children: newQueue.map(_createAudioSource).toList()
-    );
-    
+        children: newQueue.map(_createAudioSource).toList());
+
     // Explicitly set the initial index down at the native source creation!
-    await _player.setAudioSource(
-      _playlist, 
-      initialIndex: initialIndex, 
-      initialPosition: initialPosition ?? Duration.zero
-    );
-    
+    await _player.setAudioSource(_playlist,
+        initialIndex: initialIndex,
+        initialPosition: initialPosition ?? Duration.zero);
+
     this.queue.add(newQueue);
-    
+
     if (initialPosition == null) {
       await _player.play();
     }
   }
 
-  AudioSource _createAudioSource(MediaItem item) =>
-      AudioSource.uri(Uri.parse(item.id), tag: item);
+  AudioSource _createAudioSource(MediaItem item) => AudioSource.uri(
+      item.id.startsWith('/') ? Uri.file(item.id) : Uri.parse(item.id),
+      tag: item);
 
   AudioPlayer get player => _player;
 }

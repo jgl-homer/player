@@ -16,7 +16,6 @@ import '../utils/title_utils.dart';
 
 enum AudioPreset { concertHall, chamber, cathedral, studio, plate }
 
-
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
@@ -29,7 +28,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   // Concert Hall FX State
   AudioPreset _currentPreset = AudioPreset.concertHall;
   bool _isEqEnabled = true;
-  bool _isReverbEnabled = true;
+  bool _isReverbEnabled = false;
+  bool _isEpicenterEnabled = false;
   double _reverbDecay = 8.0;
   double _reverbPreDelay = 0.1;
   double _reverbRoomSize = 0.85;
@@ -70,6 +70,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   AudioPreset get currentPreset => _currentPreset;
   bool get isEqEnabled => _isEqEnabled;
   bool get isReverbEnabled => _isReverbEnabled;
+  bool get isEpicenterEnabled => _isEpicenterEnabled;
   double get reverbDecay => _reverbDecay;
   double get reverbPreDelay => _reverbPreDelay;
   double get reverbRoomSize => _reverbRoomSize;
@@ -122,9 +123,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     await _loadPlaybackState();
-    
-    // Initialize effects with defaults
-    await _applyCurrentEffects();
 
     _player.currentIndexStream.listen((index) {
       if (index != null &&
@@ -139,8 +137,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     _player.androidAudioSessionIdStream.listen((sessionId) async {
       if (sessionId != null && sessionId != 0) {
-        await _mediaChannel.invokeMethod('init_reverb', {'sessionId': sessionId});
-        await _applyCurrentEffects();
+        await _mediaChannel.invokeMethod('setBypass', {'bypass': true});
       }
     });
 
@@ -155,16 +152,48 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     };
   }
 
-  // --- Concert Hall FX Methods ---
+  // --- FX Methods ---
+
+  Future<void> toggleEpicenter() async {
+    _isEpicenterEnabled = !_isEpicenterEnabled;
+    notifyListeners();
+
+    try {
+      await _mediaChannel.invokeMethod('toggle_epicenter', {
+        'enabled': _isEpicenterEnabled,
+      });
+    } catch (e) {
+      debugPrint('Epicenter error: $e');
+      _isEpicenterEnabled = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> setEpicenterParams({
+    double? sweepFreq,
+    double? width,
+    double? intensity,
+    double? balance,
+    double? volume,
+  }) async {
+    await _mediaChannel.invokeMethod('set_epicenter_params', {
+      if (sweepFreq != null) 'sweepFreq': sweepFreq,
+      if (width != null) 'width': width,
+      if (intensity != null) 'intensity': intensity,
+      if (balance != null) 'balance': balance,
+      if (volume != null) 'volume': volume,
+    });
+  }
 
   Future<void> _applyCurrentEffects() async {
-    await _mediaChannel.invokeMethod('toggle_reverb', {'enabled': _isReverbEnabled});
+    await _mediaChannel
+        .invokeMethod('toggle_reverb', {'enabled': _isReverbEnabled});
     await _updateReverbParameters();
   }
 
   Future<void> setAudioPreset(AudioPreset preset) async {
     _currentPreset = preset;
-    
+
     final presetName = {
       AudioPreset.concertHall: 'LARGE_HALL',
       AudioPreset.chamber: 'MEDIUM_HALL',
@@ -176,24 +205,49 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // Update local values based on user snippet
     switch (preset) {
       case AudioPreset.concertHall:
-        _reverbDecay = 8.0; _reverbPreDelay = 0.1; _reverbRoomSize = 0.85; _reverbDamping = 0.51;
-        _reverbWet = 100; _reverbDry = 24; _eqGains = [3, -1, 0, 1, 2, 1, 0, -2, -4];
+        _reverbDecay = 8.0;
+        _reverbPreDelay = 0.1;
+        _reverbRoomSize = 0.85;
+        _reverbDamping = 0.51;
+        _reverbWet = 100;
+        _reverbDry = 24;
+        _eqGains = [3, -1, 0, 1, 2, 1, 0, -2, -4];
         break;
       case AudioPreset.chamber:
-        _reverbDecay = 1.8; _reverbPreDelay = 0.02; _reverbRoomSize = 0.7; _reverbDamping = 0.6;
-        _reverbWet = 45; _reverbDry = 55; _eqGains = [-1, 0, 1, 2, 1, 0, -1, -2, -1];
+        _reverbDecay = 1.8;
+        _reverbPreDelay = 0.02;
+        _reverbRoomSize = 0.7;
+        _reverbDamping = 0.6;
+        _reverbWet = 45;
+        _reverbDry = 55;
+        _eqGains = [-1, 0, 1, 2, 1, 0, -1, -2, -1];
         break;
       case AudioPreset.cathedral:
-        _reverbDecay = 5.0; _reverbPreDelay = 0.04; _reverbRoomSize = 0.95; _reverbDamping = 0.4;
-        _reverbWet = 80; _reverbDry = 20; _eqGains = [4, 3, 1, 0, -1, -2, -3, -5, -7];
+        _reverbDecay = 5.0;
+        _reverbPreDelay = 0.04;
+        _reverbRoomSize = 0.95;
+        _reverbDamping = 0.4;
+        _reverbWet = 80;
+        _reverbDry = 20;
+        _eqGains = [4, 3, 1, 0, -1, -2, -3, -5, -7];
         break;
       case AudioPreset.studio:
-        _reverbDecay = 0.5; _reverbPreDelay = 0.01; _reverbRoomSize = 0.3; _reverbDamping = 0.8;
-        _reverbWet = 20; _reverbDry = 80; _eqGains = [-1, 1, 2, 3, 2, 1, 0, -1, -1];
+        _reverbDecay = 0.5;
+        _reverbPreDelay = 0.01;
+        _reverbRoomSize = 0.3;
+        _reverbDamping = 0.8;
+        _reverbWet = 20;
+        _reverbDry = 80;
+        _eqGains = [-1, 1, 2, 3, 2, 1, 0, -1, -1];
         break;
       case AudioPreset.plate:
-        _reverbDecay = 2.0; _reverbPreDelay = 0.02; _reverbRoomSize = 0.5; _reverbDamping = 0.7;
-        _reverbWet = 50; _reverbDry = 50; _eqGains = [-2, -1, 0, 2, 3, 2, 0, -1, -2];
+        _reverbDecay = 2.0;
+        _reverbPreDelay = 0.02;
+        _reverbRoomSize = 0.5;
+        _reverbDamping = 0.7;
+        _reverbWet = 50;
+        _reverbDry = 50;
+        _eqGains = [-2, -1, 0, 2, 3, 2, 0, -1, -2];
         break;
     }
 
@@ -218,12 +272,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> updateReverbParam(String key, double value) async {
     switch (key) {
-      case 'decay': _reverbDecay = value; break;
-      case 'preDelay': _reverbPreDelay = value; break;
-      case 'roomSize': _reverbRoomSize = value; break;
-      case 'damping': _reverbDamping = value; break;
-      case 'wet': _reverbWet = value; break;
-      case 'dry': _reverbDry = value; break;
+      case 'decay':
+        _reverbDecay = value;
+        break;
+      case 'preDelay':
+        _reverbPreDelay = value;
+        break;
+      case 'roomSize':
+        _reverbRoomSize = value;
+        break;
+      case 'damping':
+        _reverbDamping = value;
+        break;
+      case 'wet':
+        _reverbWet = value;
+        break;
+      case 'dry':
+        _reverbDry = value;
+        break;
     }
     notifyListeners();
     await _updateReverbParameters();
@@ -232,7 +298,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> toggleBypass() async {
     _isEqEnabled = !_isEqEnabled;
     _isReverbEnabled = !_isReverbEnabled;
-    await _mediaChannel.invokeMethod('setBypass', {'bypass': !_isReverbEnabled});
+    await _mediaChannel
+        .invokeMethod('setBypass', {'bypass': !_isReverbEnabled});
     print('✓ Reverb bypass: ${!_isReverbEnabled}');
     notifyListeners();
     await _applyCurrentEffects();
@@ -245,10 +312,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         final params = {
           'decayTime': (_reverbDecay * 1000).toInt().clamp(100, 20000),
           'roomLevel': (-1000 + (_reverbRoomSize * 1000)).toInt(),
-          'reverbLevel': ((_reverbWet - 50) * 40).toInt(), // Map wet % to dB approx
+          'reverbLevel':
+              ((_reverbWet - 50) * 40).toInt(), // Map wet % to dB approx
           'reflectionsDelay': (_reverbPreDelay * 1000).toInt(),
           'diffusion': (_reverbRoomSize * 1000).toInt(),
           'density': (_reverbRoomSize * 1000).toInt(),
+          'decayHFRatio':
+              (2000 - (_reverbDamping * 1500)).toInt().clamp(100, 2000),
+          'reverbDelay': (_reverbPreDelay * 1300).toInt().clamp(0, 100),
+          'virtualizerStrength':
+              (_reverbRoomSize * _reverbWet * 10).toInt().clamp(0, 1000),
+          'loudnessGainMb':
+              (_currentPreset == AudioPreset.concertHall ? 250 : 120),
+          'eqGains':
+              _isEqEnabled ? _eqGains : List<double>.filled(_eqGains.length, 0),
         };
 
         await _mediaChannel.invokeMethod('setReverbParams', params);
@@ -258,8 +335,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
   }
-
-
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {

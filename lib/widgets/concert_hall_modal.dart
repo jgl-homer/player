@@ -83,7 +83,7 @@ class ConcertHallModal extends StatelessWidget {
           Column(
             children: [
               const Text(
-                "♦ CONCERT HALL ♦",
+                "3D CONCERT HALL",
                 style: TextStyle(
                   color: Color(0xFFC9A84C), // --gold
                   fontSize: 22,
@@ -93,7 +93,7 @@ class ConcertHallModal extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                "NATIVE DSP PROCESSOR",
+                "NATIVE 3D DSP PROCESSOR",
                 style: TextStyle(
                   color: const Color(0xFF7A6030), // --gold-mid
                   fontSize: 9,
@@ -126,7 +126,8 @@ class ConcertHallModal extends StatelessWidget {
           Expanded(
             child: Text(
               provider.currentSong?.title.toUpperCase() ?? "SIN AUDIO",
-              style: const TextStyle(color: Color(0xFF7A6030), fontSize: 9, letterSpacing: 1.5),
+              style: const TextStyle(
+                  color: Color(0xFF7A6030), fontSize: 9, letterSpacing: 1.5),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -134,7 +135,9 @@ class ConcertHallModal extends StatelessWidget {
           Text(
             provider.isReverbEnabled ? "ON" : "OFF",
             style: TextStyle(
-              color: provider.isReverbEnabled ? const Color(0xFFC9A84C) : const Color(0xFF8B1A1A),
+              color: provider.isReverbEnabled
+                  ? const Color(0xFFC9A84C)
+                  : const Color(0xFF8B1A1A),
               fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
@@ -173,7 +176,7 @@ class ConcertHallModal extends StatelessWidget {
 
   Widget _buildPresetsGrid(AudioProvider provider) {
     final presets = {
-      AudioPreset.concertHall: "HALL",
+      AudioPreset.concertHall: "3D HALL",
       AudioPreset.chamber: "CHAMBER",
       AudioPreset.cathedral: "CATHEDRAL",
       AudioPreset.studio: "STUDIO",
@@ -192,9 +195,13 @@ class ConcertHallModal extends StatelessWidget {
               width: (constraints.maxWidth - 24) / 5,
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
-                color: isActive ? const Color(0xFFC9A84C).withOpacity(0.1) : Colors.transparent,
+                color: isActive
+                    ? const Color(0xFFC9A84C).withOpacity(0.1)
+                    : Colors.transparent,
                 border: Border.all(
-                  color: isActive ? const Color(0xFFC9A84C) : const Color(0xFF5A4820),
+                  color: isActive
+                      ? const Color(0xFFC9A84C)
+                      : const Color(0xFF5A4820),
                 ),
                 borderRadius: BorderRadius.circular(2),
               ),
@@ -202,7 +209,9 @@ class ConcertHallModal extends StatelessWidget {
                 child: Text(
                   entry.value,
                   style: TextStyle(
-                    color: isActive ? const Color(0xFFC9A84C) : const Color(0xFF7A6030),
+                    color: isActive
+                        ? const Color(0xFFC9A84C)
+                        : const Color(0xFF7A6030),
                     fontSize: 7.5,
                     fontWeight: FontWeight.bold,
                   ),
@@ -273,15 +282,24 @@ class ConcertHallModal extends StatelessWidget {
     );
   }
 
-  Widget _buildFaderGroup({required String label, required double value, required ValueChanged<double> onChanged}) {
+  Widget _buildFaderGroup(
+      {required String label,
+      required double value,
+      required ValueChanged<double> onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: const TextStyle(color: Color(0xFF7A6030), fontSize: 9, letterSpacing: 1.5)),
-            Text("${value.toInt()}%", style: const TextStyle(color: Color(0xFFC9A84C), fontSize: 10, fontWeight: FontWeight.bold)),
+            Text(label,
+                style: const TextStyle(
+                    color: Color(0xFF7A6030), fontSize: 9, letterSpacing: 1.5)),
+            Text("${value.toInt()}%",
+                style: const TextStyle(
+                    color: Color(0xFFC9A84C),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold)),
           ],
         ),
         SliderTheme(
@@ -303,7 +321,6 @@ class ConcertHallModal extends StatelessWidget {
       ],
     );
   }
-
 }
 
 class _PowerToggle extends StatelessWidget {
@@ -321,9 +338,12 @@ class _PowerToggle extends StatelessWidget {
         height: 28,
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: isEnabled ? const Color(0xFFC9A84C).withOpacity(0.2) : const Color(0xFF1A0808),
+          color: isEnabled
+              ? const Color(0xFFC9A84C).withOpacity(0.2)
+              : const Color(0xFF1A0808),
           border: Border.all(
-            color: isEnabled ? const Color(0xFFC9A84C) : const Color(0xFF5A2020),
+            color:
+                isEnabled ? const Color(0xFFC9A84C) : const Color(0xFF5A2020),
             width: 1.5,
           ),
           borderRadius: BorderRadius.circular(14),
@@ -335,7 +355,8 @@ class _PowerToggle extends StatelessWidget {
             width: 18,
             height: 18,
             decoration: BoxDecoration(
-              color: isEnabled ? const Color(0xFFC9A84C) : const Color(0xFF5A2020),
+              color:
+                  isEnabled ? const Color(0xFFC9A84C) : const Color(0xFF5A2020),
               shape: BoxShape.circle,
               boxShadow: [
                 if (isEnabled)
@@ -382,7 +403,9 @@ class _GoldKnobState extends State<GoldKnob> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(widget.label, style: const TextStyle(color: Color(0xFF7A6030), fontSize: 8, letterSpacing: 1.5)),
+        Text(widget.label,
+            style: const TextStyle(
+                color: Color(0xFF7A6030), fontSize: 8, letterSpacing: 1.5)),
         const SizedBox(height: 8),
         GestureDetector(
           onVerticalDragStart: (details) {
@@ -391,7 +414,8 @@ class _GoldKnobState extends State<GoldKnob> {
           },
           onVerticalDragUpdate: (details) {
             final delta = (_startY - details.globalPosition.dy) / 100;
-            final newValue = (_startValue + delta * (widget.max - widget.min)).clamp(widget.min, widget.max);
+            final newValue = (_startValue + delta * (widget.max - widget.min))
+                .clamp(widget.min, widget.max);
             widget.onChanged(newValue);
           },
           child: CustomPaint(
@@ -402,7 +426,8 @@ class _GoldKnobState extends State<GoldKnob> {
           ),
         ),
         const SizedBox(height: 8),
-        Text(widget.fmt(widget.value), style: const TextStyle(color: Color(0xFFC9A84C), fontSize: 9)),
+        Text(widget.fmt(widget.value),
+            style: const TextStyle(color: Color(0xFFC9A84C), fontSize: 9)),
       ],
     );
   }
@@ -434,7 +459,7 @@ class KnobPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
-    
+
     const startAngle = 135.0 * math.pi / 180.0;
     final sweepAngle = (value * 270.0) * math.pi / 180.0;
     canvas.drawArc(
@@ -467,7 +492,6 @@ class KnobPainter extends CustomPainter {
   bool shouldRepaint(KnobPainter oldDelegate) => oldDelegate.value != value;
 }
 
-
 class RectSliderThumbShape extends SliderComponentShape {
   const RectSliderThumbShape();
 
@@ -492,8 +516,9 @@ class RectSliderThumbShape extends SliderComponentShape {
     final Canvas canvas = context.canvas;
     final paint = Paint()..color = sliderTheme.thumbColor ?? Colors.blue;
     final rect = Rect.fromCenter(center: center, width: 14, height: 24);
-    canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(2)), paint);
-    
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(2)), paint);
+
     // Add shadow
     canvas.drawShadow(Path()..addRect(rect), Colors.black, 4, true);
   }

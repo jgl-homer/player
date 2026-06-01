@@ -49,11 +49,16 @@ android {
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (keystorePropertiesFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("androidx.media3:media3-common:1.4.1")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
 }
