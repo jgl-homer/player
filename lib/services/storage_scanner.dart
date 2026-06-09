@@ -1,6 +1,22 @@
 import 'dart:io';
 import 'package:on_audio_query/on_audio_query.dart';
 
+class StorageScanProgress {
+  final int processed;
+  final int total;
+  final int validSongs;
+  final String? currentTitle;
+
+  const StorageScanProgress({
+    required this.processed,
+    required this.total,
+    required this.validSongs,
+    this.currentTitle,
+  });
+
+  double get fraction => total == 0 ? 0 : processed / total;
+}
+
 class StorageScanner {
   // Folders the user likely doesn't want in a music player
   static const List<String> _blockedSubstrings = [
@@ -18,7 +34,9 @@ class StorageScanner {
       return true;
     }
     // Hidden folders start with '.'
-    if (path.split('/').any((part) => part.startsWith('.') && part.isNotEmpty)) {
+    if (path
+        .split('/')
+        .any((part) => part.startsWith('.') && part.isNotEmpty)) {
       return true;
     }
     return false;
@@ -57,12 +75,15 @@ class StorageScanner {
     }
   }
 
-  static Future<bool> isValidAudioFile(String filePath, int sizeBytes, String extension) async {
+  static Future<bool> isValidAudioFile(
+      String filePath, int sizeBytes, String extension) async {
     // Check minimum size: 10KB
     if (sizeBytes < 10240) return false;
 
     final ext = extension.toLowerCase();
-    if (!['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'wma'].contains(ext)) return false;
+    if (!['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'wma'].contains(ext)) {
+      return false;
+    }
 
     try {
       final file = File(filePath);
@@ -73,20 +94,44 @@ class StorageScanner {
   }
 
   /// Filters songs asynchronously ensuring no UI blocking
-  static Future<List<SongModel>> filterSongs(List<SongModel> rawSongs) async {
+  static Future<List<SongModel>> filterSongs(
+    List<SongModel> rawSongs, {
+    void Function(StorageScanProgress progress)? onProgress,
+  }) async {
     List<SongModel> validSongs = [];
     Set<String> validDirs = {};
     Set<String> invalidDirs = {};
+    final total = rawSongs.length;
 
-    for (var song in rawSongs) {
+    for (var i = 0; i < rawSongs.length; i++) {
+      final song = rawSongs[i];
       final path = song.data;
       final dir = path.substring(0, path.lastIndexOf('/'));
+      final processed = i + 1;
 
-      if (invalidDirs.contains(dir)) continue;
+      if (invalidDirs.contains(dir)) {
+        _reportProgress(
+          onProgress,
+          processed,
+          total,
+          validSongs.length,
+          song.title,
+        );
+        continue;
+      }
 
       if (!validDirs.contains(dir)) {
-        if (isSystemFolder(dir) || isBlockedFolder(dir) || await hasNoMedia(dir)) {
+        if (isSystemFolder(dir) ||
+            isBlockedFolder(dir) ||
+            await hasNoMedia(dir)) {
           invalidDirs.add(dir);
+          _reportProgress(
+            onProgress,
+            processed,
+            total,
+            validSongs.length,
+            song.title,
+          );
           continue;
         }
         validDirs.add(dir);
@@ -96,9 +141,37 @@ class StorageScanner {
       if (await isValidAudioFile(path, song.size, ext)) {
         validSongs.add(song);
       }
+
+      _reportProgress(
+        onProgress,
+        processed,
+        total,
+        validSongs.length,
+        song.title,
+      );
     }
-    
+
     return validSongs;
+  }
+
+  static void _reportProgress(
+    void Function(StorageScanProgress progress)? onProgress,
+    int processed,
+    int total,
+    int validSongs,
+    String? currentTitle,
+  ) {
+    if (onProgress == null) return;
+    if (processed == total || processed % 8 == 0) {
+      onProgress(
+        StorageScanProgress(
+          processed: processed,
+          total: total,
+          validSongs: validSongs,
+          currentTitle: currentTitle,
+        ),
+      );
+    }
   }
 
   static List<String> filterFolderPaths(List<SongModel> songs) {

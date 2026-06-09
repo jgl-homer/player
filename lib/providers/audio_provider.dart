@@ -4,9 +4,12 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/duration_state.dart';
 import '../services/audio_handler.dart';
@@ -21,6 +24,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final MyAudioHandler _handler;
   late final AudioPlayer _player;
   static const _mediaChannel = MethodChannel('com.example.player/media_utils');
+  static const String _cachedSongsKey = 'cached_library_songs_v1';
+  static const String _cachedAlbumsKey = 'cached_library_albums_v1';
 
   PlaybackMode _playbackMode = PlaybackMode.global;
   String? _activeFolderPath;
@@ -45,18 +50,35 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<AlbumModel> _allAlbums = [];
 
   bool _isLoading = true;
+  bool _isIndexing = false;
+  int _indexingProcessed = 0;
+  int _indexingTotal = 0;
+  int _indexedSongCount = 0;
+  String? _indexingCurrentTitle;
   int _currentIndex = 0;
   bool _shuffle = false;
   LoopMode _loopMode = LoopMode.off;
   SongModel? _currentSong;
   Set<int> _favoriteIds = {};
   DateTime? _lastTapTime;
+  Timer? _libraryRefreshDebounce;
+  bool _isRefreshingLibrary = false;
+  bool _hasFinishedStartup = false;
+  bool _wasPausedAfterStartup = false;
+  DateTime? _ignoreMediaChangesUntil;
 
   // Getters
   List<SongModel> get allSongs => _allSongs;
   List<AlbumModel> get allAlbums => _allAlbums;
   List<SongModel> get currentPlaylist => _currentPlaylist;
   bool get isLoading => _isLoading;
+  bool get isIndexing => _isIndexing;
+  int get indexingProcessed => _indexingProcessed;
+  int get indexingTotal => _indexingTotal;
+  int get indexedSongCount => _indexedSongCount;
+  String? get indexingCurrentTitle => _indexingCurrentTitle;
+  double get indexingProgress =>
+      _indexingTotal == 0 ? 0 : _indexingProcessed / _indexingTotal;
   int get currentIndex => _currentIndex;
   SongModel? get currentSong => _currentSong;
   bool get isShuffle => _shuffle;
@@ -83,6 +105,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _player = _handler.player;
     _init();
     WidgetsBinding.instance.addObserver(this);
+    _mediaChannel.setMethodCallHandler((call) async {
+      if (call.method == 'media_changed') {
+        _scheduleLibraryRefresh();
+      }
+    });
     // Escuchar acciones del widget
     HomeWidget.widgetClicked.listen((uri) {});
     const MethodChannel('com.example.player/widget_actions')
@@ -106,24 +133,22 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _init() async {
     await _requestInitialPermissions();
 
-    final rawSongs = await _audioQuery.querySongs(
-      sortType: SongSortType.DISPLAY_NAME,
-      orderType: OrderType.ASC_OR_SMALLER,
-      uriType: UriType.EXTERNAL,
-    );
+    final restoredFromCache = await _restoreLibraryCache();
+    if (restoredFromCache) {
+      _isLoading = false;
+      notifyListeners();
+      await _loadPlaybackState();
+    } else {
+      await _refreshLibraryFromDevice(showLoading: true);
+      await _loadPlaybackState();
+    }
 
-    // Async filtering of blocked or invisible folders and invalid files
-    _allSongs = await StorageScanner.filterSongs(rawSongs);
-    _globalQueue = List.from(_allSongs);
-    _allAlbums = await _audioQuery.queryAlbums();
+    _listenToPlayer();
+    _hasFinishedStartup = true;
+    _ignoreMediaChangesUntil = DateTime.now().add(const Duration(seconds: 3));
+  }
 
-    // Start global by default
-    _currentPlaylist = _globalQueue;
-    _isLoading = false;
-    notifyListeners();
-
-    await _loadPlaybackState();
-
+  void _listenToPlayer() {
     _player.currentIndexStream.listen((index) {
       if (index != null &&
           index != _currentIndex &&
@@ -150,6 +175,186 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         playNextFolder();
       }
     };
+  }
+
+  Future<void> _refreshLibraryFromDevice({required bool showLoading}) async {
+    if (_isRefreshingLibrary) return;
+    _isRefreshingLibrary = true;
+    if (showLoading) {
+      _isLoading = true;
+    }
+    _isIndexing = true;
+    _indexingProcessed = 0;
+    _indexingTotal = 0;
+    _indexedSongCount = 0;
+    _indexingCurrentTitle = null;
+    notifyListeners();
+
+    try {
+      final rawSongs = await _audioQuery.querySongs(
+        sortType: SongSortType.DISPLAY_NAME,
+        orderType: OrderType.ASC_OR_SMALLER,
+        uriType: UriType.EXTERNAL,
+      );
+
+      _indexingTotal = rawSongs.length;
+      notifyListeners();
+
+      final freshSongs = await StorageScanner.filterSongs(
+        rawSongs,
+        onProgress: _updateIndexingProgress,
+      );
+      final freshAlbums = await _audioQuery.queryAlbums();
+
+      await _applyFreshLibrary(freshSongs, freshAlbums);
+      await _saveLibraryCache();
+    } finally {
+      _isRefreshingLibrary = false;
+      _isIndexing = false;
+      _indexingCurrentTitle = null;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _applyFreshLibrary(
+    List<SongModel> freshSongs,
+    List<AlbumModel> freshAlbums,
+  ) async {
+    final wasPlaying = _player.playing;
+    final previousSongId = _currentSong?.id;
+    final freshIds = freshSongs.map((song) => song.id).toSet();
+    _allSongs = freshSongs;
+    _globalQueue = List.from(_allSongs);
+    _allAlbums = freshAlbums;
+    _favoriteIds.removeWhere((id) => !freshIds.contains(id));
+
+    if (_currentPlaylist.isEmpty || _playbackMode == PlaybackMode.global) {
+      _currentPlaylist = _globalQueue;
+    } else if (_playbackMode == PlaybackMode.folder &&
+        _activeFolderPath != null) {
+      _currentPlaylist = _allSongs
+          .where((song) => song.data.startsWith(_activeFolderPath!))
+          .toList();
+    } else {
+      _currentPlaylist.removeWhere((song) => !freshIds.contains(song.id));
+    }
+
+    if (_currentPlaylist.isEmpty) {
+      await _handler.stop();
+      _currentIndex = 0;
+      _currentSong = null;
+      return;
+    }
+
+    if (previousSongId == null || !freshIds.contains(previousSongId)) {
+      _currentIndex = _currentIndex.clamp(0, _currentPlaylist.length - 1);
+      _currentSong = _currentPlaylist[_currentIndex];
+      await _replacePlaybackQueue(
+        position: Duration.zero,
+        shouldPlay: wasPlaying,
+      );
+      await _updateHomeWidget();
+      return;
+    }
+
+    _currentIndex =
+        _currentPlaylist.indexWhere((song) => song.id == previousSongId);
+    if (_currentIndex == -1) {
+      _currentIndex = 0;
+      _currentSong = _currentPlaylist.first;
+    } else {
+      _currentSong = _currentPlaylist[_currentIndex];
+    }
+    await _replacePlaybackQueue(
+      position: _player.position,
+      shouldPlay: wasPlaying,
+    );
+  }
+
+  Future<void> _replacePlaybackQueue({
+    required Duration position,
+    required bool shouldPlay,
+  }) async {
+    if (_currentPlaylist.isEmpty) {
+      await _handler.stop();
+      return;
+    }
+
+    await _handler.replacePlaylist(
+      _currentPlaylist.map(_songToMediaItem).toList(),
+      _currentIndex,
+      position,
+      shouldPlay: shouldPlay,
+    );
+  }
+
+  void _scheduleLibraryRefresh() {
+    if (!_hasFinishedStartup) return;
+    final ignoreUntil = _ignoreMediaChangesUntil;
+    if (ignoreUntil != null && DateTime.now().isBefore(ignoreUntil)) {
+      return;
+    }
+    _libraryRefreshDebounce?.cancel();
+    _libraryRefreshDebounce = Timer(const Duration(milliseconds: 700), () {
+      unawaited(_refreshLibraryFromDevice(showLoading: false));
+    });
+  }
+
+  void _updateIndexingProgress(StorageScanProgress progress) {
+    _indexingProcessed = progress.processed;
+    _indexingTotal = progress.total;
+    _indexedSongCount = progress.validSongs;
+    _indexingCurrentTitle = progress.currentTitle;
+    notifyListeners();
+  }
+
+  Future<bool> _restoreLibraryCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final songsJson = prefs.getString(_cachedSongsKey);
+      final albumsJson = prefs.getString(_cachedAlbumsKey);
+      if (songsJson == null || songsJson.isEmpty) return false;
+
+      final songMaps = (jsonDecode(songsJson) as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (songMaps.isEmpty) return false;
+
+      _allSongs = songMaps.map((songMap) => SongModel(songMap)).toList();
+      _globalQueue = List.from(_allSongs);
+      _currentPlaylist = _globalQueue;
+
+      if (albumsJson != null && albumsJson.isNotEmpty) {
+        final albumMaps = (jsonDecode(albumsJson) as List)
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        _allAlbums = albumMaps.map((albumMap) => AlbumModel(albumMap)).toList();
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error restoring cached library: $e');
+      return false;
+    }
+  }
+
+  Future<void> _saveLibraryCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _cachedSongsKey,
+        jsonEncode(_allSongs.map((song) => song.getMap).toList()),
+      );
+      await prefs.setString(
+        _cachedAlbumsKey,
+        jsonEncode(_allAlbums.map((album) => album.getMap).toList()),
+      );
+    } catch (e) {
+      debugPrint('Error saving cached library: $e');
+    }
   }
 
   // --- FX Methods ---
@@ -341,6 +546,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       _savePlaybackState();
+      if (_hasFinishedStartup) {
+        _wasPausedAfterStartup = true;
+      }
+    } else if (state == AppLifecycleState.resumed &&
+        _hasFinishedStartup &&
+        _wasPausedAfterStartup) {
+      _wasPausedAfterStartup = false;
+      _scheduleLibraryRefresh();
     }
   }
 
@@ -534,6 +747,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void deleteFolder(String folderPath) {
     _allSongs.removeWhere((s) => s.data.startsWith(folderPath));
+    _saveLibraryCache();
     notifyListeners();
   }
 
@@ -543,32 +757,64 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (newIndex > oldIndex) newIndex -= 1;
     final song = _currentPlaylist.removeAt(oldIndex);
     _currentPlaylist.insert(newIndex, song);
-    await _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+    _currentIndex = _currentSong == null
+        ? 0
+        : _currentPlaylist.indexWhere((song) => song.id == _currentSong!.id);
+    if (_currentIndex == -1) _currentIndex = 0;
+    await _replacePlaybackQueue(
+      position: _player.position,
+      shouldPlay: _player.playing,
+    );
     notifyListeners();
   }
 
   Future<void> removeFromQueue(int index) async {
+    final removedCurrent = index == _currentIndex;
     _currentPlaylist.removeAt(index);
-    await _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+    if (_currentPlaylist.isEmpty) {
+      await _handler.stop();
+      _currentIndex = 0;
+      _currentSong = null;
+    } else {
+      if (removedCurrent) {
+        _currentIndex = index.clamp(0, _currentPlaylist.length - 1);
+        _currentSong = _currentPlaylist[_currentIndex];
+      } else if (index < _currentIndex) {
+        _currentIndex--;
+      }
+      await _replacePlaybackQueue(
+        position: removedCurrent ? Duration.zero : _player.position,
+        shouldPlay: _player.playing,
+      );
+    }
     notifyListeners();
   }
 
   Future<void> insertNextInQueue(SongModel song) async {
     final insertIndex = _currentIndex + 1;
     _currentPlaylist.insert(insertIndex, song);
-    await _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+    await _replacePlaybackQueue(
+      position: _player.position,
+      shouldPlay: _player.playing,
+    );
     notifyListeners();
   }
 
   Future<void> addToQueue(SongModel song) async {
     _currentPlaylist.add(song);
-    await _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+    await _replacePlaybackQueue(
+      position: _player.position,
+      shouldPlay: _player.playing,
+    );
     notifyListeners();
   }
 
   Future<void> addAllToQueue(List<SongModel> songs) async {
     _currentPlaylist.addAll(songs);
-    await _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+    await _replacePlaybackQueue(
+      position: _player.position,
+      shouldPlay: _player.playing,
+    );
     notifyListeners();
   }
 
@@ -593,18 +839,57 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       map['artist'] = newArtist;
       _currentSong = SongModel(map);
       _currentPlaylist[index] = _currentSong!;
-      _handler.updateQueue(_currentPlaylist.map(_songToMediaItem).toList());
+      _replacePlaybackQueue(
+        position: _player.position,
+        shouldPlay: _player.playing,
+      );
       notifyListeners();
     }
   }
 
   Future<bool> deleteSong(SongModel song) async {
     try {
+      _ignoreMediaChangesUntil = DateTime.now().add(const Duration(seconds: 5));
       final bool? success =
           await _mediaChannel.invokeMethod('delete_media', {'id': song.id});
       if (success == true) {
+        final wasPlaying = _player.playing;
+        final wasCurrentSong = _currentSong?.id == song.id;
+        final removedIndex = _currentPlaylist
+            .indexWhere((queuedSong) => queuedSong.id == song.id);
+
         _allSongs.removeWhere((s) => s.id == song.id);
+        _globalQueue.removeWhere((s) => s.id == song.id);
+        _folderQueue.removeWhere((s) => s.id == song.id);
         _currentPlaylist.removeWhere((s) => s.id == song.id);
+        _favoriteIds.remove(song.id);
+
+        if (_currentPlaylist.isEmpty) {
+          await _handler.stop();
+          _currentIndex = 0;
+          _currentSong = null;
+        } else if (wasCurrentSong) {
+          _currentIndex = removedIndex.clamp(0, _currentPlaylist.length - 1);
+          _currentSong = _currentPlaylist[_currentIndex];
+          await _replacePlaybackQueue(
+            position: Duration.zero,
+            shouldPlay: wasPlaying,
+          );
+          await _updateHomeWidget();
+        } else {
+          if (removedIndex != -1 && removedIndex < _currentIndex) {
+            _currentIndex--;
+          }
+          await _replacePlaybackQueue(
+            position: _player.position,
+            shouldPlay: wasPlaying,
+          );
+        }
+
+        await StatePersistence.saveFavorites(_favoriteIds);
+        await _saveLibraryCache();
+        _ignoreMediaChangesUntil =
+            DateTime.now().add(const Duration(seconds: 3));
         notifyListeners();
         return true;
       }
@@ -698,8 +983,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _requestInitialPermissions() async {
-    if (Platform.isAndroid)
+    if (Platform.isAndroid) {
       await [Permission.audio, Permission.storage].request();
+    }
   }
 
   Stream<DurationState> get durationStateStream =>
@@ -713,6 +999,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _libraryRefreshDebounce?.cancel();
     super.dispose();
   }
 }

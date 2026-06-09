@@ -141,20 +141,41 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   Future<void> loadPlaylist(List<MediaItem> newQueue, int initialIndex,
       [Duration? initialPosition]) async {
+    await replacePlaylist(
+      newQueue,
+      initialIndex,
+      initialPosition ?? Duration.zero,
+      shouldPlay: initialPosition == null,
+    );
+  }
+
+  Future<void> replacePlaylist(
+    List<MediaItem> newQueue,
+    int initialIndex,
+    Duration initialPosition, {
+    required bool shouldPlay,
+  }) async {
     // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
     await _player.stop();
+
+    if (newQueue.isEmpty) {
+      queue.add([]);
+      mediaItem.add(null);
+      return;
+    }
+
+    final safeIndex = initialIndex.clamp(0, newQueue.length - 1);
+    queue.add(newQueue);
+    mediaItem.add(newQueue[safeIndex]);
 
     _playlist = ConcatenatingAudioSource(
         children: newQueue.map(_createAudioSource).toList());
 
     // Explicitly set the initial index down at the native source creation!
     await _player.setAudioSource(_playlist,
-        initialIndex: initialIndex,
-        initialPosition: initialPosition ?? Duration.zero);
+        initialIndex: safeIndex, initialPosition: initialPosition);
 
-    this.queue.add(newQueue);
-
-    if (initialPosition == null) {
+    if (shouldPlay) {
       await _player.play();
     }
   }

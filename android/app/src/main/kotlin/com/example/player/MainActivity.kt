@@ -3,7 +3,11 @@ package com.example.player
 import android.app.Activity
 import android.content.ContentUris
 import android.content.Intent
+import android.database.ContentObserver
+import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
 import android.util.Log
 import io.flutter.embedding.engine.FlutterEngine
@@ -21,6 +25,8 @@ class MainActivity : AudioServiceActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private val DELETE_REQUEST_CODE = 1001
     private var widgetMethodChannel: MethodChannel? = null
+    private var mediaMethodChannel: MethodChannel? = null
+    private var mediaObserver: ContentObserver? = null
     private var myFlutterEngine: FlutterEngine? = null
 
     private var reverb: EnvironmentalReverb? = null
@@ -35,7 +41,8 @@ class MainActivity : AudioServiceActivity() {
 
         widgetMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
 
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+        mediaMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
+        mediaMethodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "delete_media" -> {
                     val idArg = call.argument<Any>("id")
@@ -132,6 +139,28 @@ class MainActivity : AudioServiceActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        registerMediaObserver()
+    }
+
+    private fun registerMediaObserver() {
+        if (mediaObserver != null) return
+
+        mediaObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                super.onChange(selfChange, uri)
+                Log.d(TAG, "MediaStore changed: $uri")
+                runOnUiThread {
+                    mediaMethodChannel?.invokeMethod("media_changed", null)
+                }
+            }
+        }
+
+        contentResolver.registerContentObserver(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            true,
+            mediaObserver!!
+        )
     }
 
 
@@ -185,6 +214,12 @@ class MainActivity : AudioServiceActivity() {
             }
             pendingResult = null
         }
+    }
+
+    override fun onDestroy() {
+        mediaObserver?.let { contentResolver.unregisterContentObserver(it) }
+        mediaObserver = null
+        super.onDestroy()
     }
 
     private fun setupReverb(sessionId: Int) {

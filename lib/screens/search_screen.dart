@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'package:provider/provider.dart';
 
 import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/song_list_tile.dart';
-import 'folder_detail_screen.dart';
-import 'artist_detail_screen.dart';
 import 'album_detail_screen.dart';
+import 'artist_detail_screen.dart';
+import 'folder_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -16,61 +16,55 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderStateMixin {
+class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
-  late TabController _tabController;
-  String _query = "";
-  String _selectedFilter = "Todas";
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 1, vsync: this);
-    _tabController.addListener(() {
-      if (!_tabController.indexIsChanging) {
-        setState(() {});
-      }
-    });
-  }
+  String _query = '';
+  String _selectedFilter = 'Todas';
 
   @override
   void dispose() {
     _searchController.dispose();
-    _tabController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
+    final query = _query.trim().toLowerCase();
 
-    // Filtering logic
-    final filteredSongs = audioProvider.allSongs.where((s) =>
-        s.title.toLowerCase().contains(_query.toLowerCase()) ||
-        (s.artist?.toLowerCase().contains(_query.toLowerCase()) ?? false)).toList();
+    final filteredSongs = audioProvider.allSongs.where((song) {
+      final titleMatch = song.title.toLowerCase().contains(query);
+      final artistMatch = song.artist?.toLowerCase().contains(query) ?? false;
+      final albumMatch = song.album?.toLowerCase().contains(query) ?? false;
+      return titleMatch || artistMatch || albumMatch;
+    }).toList();
 
-    final filteredAlbums = audioProvider.allAlbums.where((a) =>
-        a.album.toLowerCase().contains(_query.toLowerCase()) ||
-        (a.artist?.toLowerCase().contains(_query.toLowerCase()) ?? false)).toList();
+    final filteredAlbums = audioProvider.allAlbums.where((album) {
+      final titleMatch = album.album.toLowerCase().contains(query);
+      final artistMatch = album.artist?.toLowerCase().contains(query) ?? false;
+      return titleMatch || artistMatch;
+    }).toList();
 
     final filteredArtists = audioProvider.allSongs
-        .map((s) => s.artist)
+        .map((song) => song.artist)
         .whereType<String>()
+        .where((artist) => artist.trim().isNotEmpty && artist != '<unknown>')
         .toSet()
-        .where((artist) => artist.toLowerCase().contains(_query.toLowerCase()))
-        .toList();
+        .where((artist) => artist.toLowerCase().contains(query))
+        .toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 
-    final filteredFolders = audioProvider.sortedFolderPaths.where((f) =>
-        f.toLowerCase().contains(_query.toLowerCase())).toList();
+    final filteredFolders = audioProvider.sortedFolderPaths
+        .where((folder) => folder.toLowerCase().contains(query))
+        .toList();
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       body: SafeArea(
         child: Column(
           children: [
-            // Search Bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.fromLTRB(16, 10, 8, 8),
               child: Row(
                 children: [
                   Expanded(
@@ -79,144 +73,155 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                       autofocus: true,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        hintText: "primer",
+                        hintText: 'Buscar música',
                         hintStyle: const TextStyle(color: Colors.grey),
-                        prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                        suffixIcon: _query.isNotEmpty 
-                          ? IconButton(icon: const Icon(Icons.clear, color: Colors.grey, size: 20), onPressed: () {
-                              _searchController.clear();
-                              setState(() => _query = "");
-                            })
-                          : null,
-                        fillColor: const Color(0xFF1E1E1E),
+                        prefixIcon:
+                            const Icon(Icons.search, color: Colors.grey),
+                        suffixIcon: _query.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear,
+                                    color: Colors.grey, size: 20),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _query = '');
+                                },
+                              )
+                            : null,
+                        fillColor: AppTheme.surfaceColor,
                         filled: true,
                         contentPadding: const EdgeInsets.symmetric(vertical: 0),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(30),
+                          borderRadius: BorderRadius.circular(24),
                           borderSide: BorderSide.none,
                         ),
                       ),
-                      onChanged: (val) => setState(() => _query = val),
+                      onChanged: (value) => setState(() => _query = value),
                     ),
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text("cancelar", style: TextStyle(color: Colors.grey, fontSize: 16)),
+                    child: const Text(
+                      'Cancelar',
+                      style: TextStyle(color: Colors.grey, fontSize: 15),
+                    ),
                   ),
                 ],
               ),
             ),
-
-            // Tabs
-            TabBar(
-              controller: _tabController,
-              indicatorColor: AppTheme.primaryColor,
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.grey,
-              tabs: const [
-                Tab(text: "Audio"),
-              ],
-            ),
-
-            // Filter Chips (Only for Audio)
-            if (_tabController.index == 0)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                child: Row(
-                  children: [
-                    _filterChip("Todas"),
-                    _filterChip("Canciones"),
-                    _filterChip("Álbumes"),
-                    _filterChip("Artistas"),
-                    _filterChip("Carpetas"),
-                  ],
-                ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+              child: Row(
+                children: [
+                  _filterChip('Todas'),
+                  _filterChip('Canciones'),
+                  _filterChip('Álbumes'),
+                  _filterChip('Artistas'),
+                  _filterChip('Carpetas'),
+                ],
               ),
-
-            // Results List
+            ),
             Expanded(
-              child: _tabController.index != 0 
-                ? const Center(child: Text("Sin resultados en esta categoría", style: TextStyle(color: Colors.grey)))
-                : _query.isEmpty 
-                  ? const Center(child: Text("Busca tus canciones favoritas", style: TextStyle(color: Colors.grey)))
+              child: query.isEmpty
+                  ? const _EmptySearchView()
                   : CustomScrollView(
                       slivers: [
-                        // Canciones Section
-                        if (_selectedFilter == "Todas" || _selectedFilter == "Canciones") ...[
-                          _buildSliverSectionHeader("Canciones", filteredSongs.length),
+                        if (_selectedFilter == 'Todas' ||
+                            _selectedFilter == 'Canciones') ...[
+                          _sectionHeader('Canciones', filteredSongs.length),
                           SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) => SongListTile(
                                 song: filteredSongs[index],
-                                onTap: () => audioProvider.playPlaylist(filteredSongs, index),
+                                onTap: () => audioProvider.playPlaylist(
+                                  filteredSongs,
+                                  index,
+                                ),
                               ),
                               childCount: filteredSongs.length,
                             ),
                           ),
                         ],
-                        
-                        // Álbumes Section
-                        if (_selectedFilter == "Todas" || _selectedFilter == "Álbumes") ...[
-                          _buildSliverSectionHeader("Álbumes", filteredAlbums.length),
-                          SliverToBoxAdapter(
-                            child: SizedBox(
-                              height: 200,
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                itemCount: filteredAlbums.length,
-                                itemBuilder: (context, index) {
-                                  final album = filteredAlbums[index];
-                                  return GestureDetector(
-                                    onTap: () => _openAlbum(context, audioProvider, album),
-                                    child: _buildAlbumCard(album),
-                                  );
-                                },
-                              ),
+                        if (_selectedFilter == 'Todas' ||
+                            _selectedFilter == 'Álbumes') ...[
+                          _sectionHeader('Álbumes', filteredAlbums.length),
+                          SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final album = filteredAlbums[index];
+                                return _LibraryResultTile(
+                                  title: album.album,
+                                  subtitle:
+                                      '${album.artist ?? 'Artista Desconocido'} • ${album.numOfSongs} canciones',
+                                  artworkId: album.id,
+                                  artworkType: ArtworkType.ALBUM,
+                                  fallbackIcon: Icons.album,
+                                  onTap: () => _openAlbum(
+                                    context,
+                                    audioProvider,
+                                    album,
+                                  ),
+                                );
+                              },
+                              childCount: filteredAlbums.length,
                             ),
                           ),
                         ],
-
-                        // Artistas Section
-                        if (_selectedFilter == "Todas" || _selectedFilter == "Artistas") ...[
-                          _buildSliverSectionHeader("Artistas", filteredArtists.length),
+                        if (_selectedFilter == 'Todas' ||
+                            _selectedFilter == 'Artistas') ...[
+                          _sectionHeader('Artistas', filteredArtists.length),
                           SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final artistName = filteredArtists[index];
-                                return ListTile(
-                                  leading: const Icon(Icons.person, color: Colors.grey),
-                                  title: Text(artistName, style: const TextStyle(color: Colors.white)),
-                                  onTap: () => _openArtist(context, audioProvider, artistName),
+                                final artistSongs = audioProvider.allSongs
+                                    .where((song) => song.artist == artistName)
+                                    .toList();
+                                final firstAlbumId = artistSongs.isNotEmpty
+                                    ? artistSongs.first.albumId
+                                    : null;
+                                return _LibraryResultTile(
+                                  title: artistName,
+                                  subtitle: '${artistSongs.length} canciones',
+                                  artworkId: firstAlbumId,
+                                  artworkType: ArtworkType.ALBUM,
+                                  fallbackIcon: Icons.person,
+                                  onTap: () => _openArtist(
+                                    context,
+                                    audioProvider,
+                                    artistName,
+                                  ),
                                 );
                               },
                               childCount: filteredArtists.length,
                             ),
                           ),
                         ],
-
-                        // Carpetas Section
-                        if (_selectedFilter == "Todas" || _selectedFilter == "Carpetas") ...[
-                          _buildSliverSectionHeader("Carpetas", filteredFolders.length),
+                        if (_selectedFilter == 'Todas' ||
+                            _selectedFilter == 'Carpetas') ...[
+                          _sectionHeader('Carpetas', filteredFolders.length),
                           SliverList(
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final folderPath = filteredFolders[index];
                                 final folderName = folderPath.split('/').last;
-                                return ListTile(
-                                  leading: const Icon(Icons.folder, color: Colors.grey),
-                                  title: Text(folderName, style: const TextStyle(color: Colors.white)),
-                                  subtitle: Text(folderPath, style: const TextStyle(color: Colors.grey, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                  onTap: () => _openFolder(context, audioProvider, folderName, folderPath),
+                                return _LibraryResultTile(
+                                  title: folderName,
+                                  subtitle: folderPath,
+                                  fallbackIcon: Icons.folder,
+                                  onTap: () => _openFolder(
+                                    context,
+                                    audioProvider,
+                                    folderName,
+                                    folderPath,
+                                  ),
                                 );
                               },
                               childCount: filteredFolders.length,
                             ),
                           ),
                         ],
-                        
-                        const SliverToBoxAdapter(child: SizedBox(height: 100)), // Space for mini player
+                        const SliverToBoxAdapter(child: SizedBox(height: 100)),
                       ],
                     ),
             ),
@@ -226,143 +231,197 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildSliverSectionHeader(String title, int count) {
+  SliverToBoxAdapter _sectionHeader(String title, int count) {
     if (count == 0) return const SliverToBoxAdapter(child: SizedBox.shrink());
     return SliverToBoxAdapter(
-      child: ListTile(
-        title: Text("$title ($count)", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
+        child: Text(
+          '$title ($count)',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
     );
-  }
-
-  Widget _buildAlbumCard(AlbumModel album) {
-    return Container(
-      width: 140,
-      margin: const EdgeInsets.only(right: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: QueryArtworkWidget(
-              id: album.id,
-              type: ArtworkType.ALBUM,
-              nullArtworkWidget: Container(
-                color: Colors.grey[800],
-                width: 140, height: 140,
-                child: const Icon(Icons.music_note, color: Colors.grey),
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(album.album, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
-          Text(album.artist ?? "Unknown", style: const TextStyle(color: Colors.grey, fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
-        ],
-      ),
-    );
-  }
-
-  void _openArtist(BuildContext context, AudioProvider audioProvider, String artistName) {
-    final artistSongs = audioProvider.allSongs.where((s) => s.artist == artistName).toList();
-    if (artistSongs.isNotEmpty) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ArtistDetailScreen(
-            artistName: artistName,
-            songs: artistSongs,
-          ),
-        ),
-      );
-    }
-  }
-
-  void _openAlbum(BuildContext context, AudioProvider audioProvider, AlbumModel album) {
-    final albumSongs = audioProvider.allSongs.where((s) => s.albumId == album.id).toList();
-    if (albumSongs.isNotEmpty) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => AlbumDetailScreen(
-            albumName: album.album,
-            albumId: album.id,
-            songs: albumSongs,
-          ),
-        ),
-      );
-    }
-  }
-
-  void _openFolder(BuildContext context, AudioProvider audioProvider, String folderName, String folderPath) {
-    final folderSongs = audioProvider.allSongs.where((song) {
-      final parts = song.data.split('/');
-      if (parts.length > 1) {
-        final parent = parts.sublist(0, parts.length - 1).join('/');
-        return parent == folderPath;
-      }
-      return false;
-    }).toList();
-
-    if (folderSongs.isNotEmpty) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => FolderDetailScreen(
-            folderName: folderName,
-            songs: folderSongs,
-          ),
-        ),
-      );
-    }
   }
 
   Widget _filterChip(String label) {
-    bool isSelected = _selectedFilter == label;
+    final isSelected = _selectedFilter == label;
     return Padding(
-      padding: const EdgeInsets.only(right: 8.0),
+      padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
         label: Text(label),
         selected: isSelected,
-        onSelected: (val) => setState(() => _selectedFilter = label),
+        onSelected: (_) => setState(() => _selectedFilter = label),
         backgroundColor: Colors.transparent,
-        selectedColor: Colors.white,
-        labelStyle: TextStyle(color: isSelected ? Colors.black : Colors.white),
-        shape: StadiumBorder(side: BorderSide(color: isSelected ? Colors.white : Colors.grey[700]!)),
+        selectedColor: AppTheme.primaryColor,
+        labelStyle: TextStyle(
+          color: isSelected ? Colors.black : Colors.white,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+        ),
+        shape: StadiumBorder(
+          side: BorderSide(
+            color: isSelected ? AppTheme.primaryColor : AppTheme.surfaceVariant,
+          ),
+        ),
         showCheckmark: false,
       ),
     );
   }
+
+  void _openArtist(
+    BuildContext context,
+    AudioProvider audioProvider,
+    String artistName,
+  ) {
+    final artistSongs = audioProvider.allSongs
+        .where((song) => song.artist == artistName)
+        .toList();
+    if (artistSongs.isEmpty) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ArtistDetailScreen(
+          artistName: artistName,
+          songs: artistSongs,
+        ),
+      ),
+    );
+  }
+
+  void _openAlbum(
+    BuildContext context,
+    AudioProvider audioProvider,
+    AlbumModel album,
+  ) {
+    final albumSongs = audioProvider.allSongs
+        .where((song) => song.albumId == album.id)
+        .toList();
+    if (albumSongs.isEmpty) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AlbumDetailScreen(
+          albumName: album.album,
+          albumId: album.id,
+          songs: albumSongs,
+        ),
+      ),
+    );
+  }
+
+  void _openFolder(
+    BuildContext context,
+    AudioProvider audioProvider,
+    String folderName,
+    String folderPath,
+  ) {
+    final folderSongs = audioProvider.allSongs.where((song) {
+      final parts = song.data.split('/');
+      if (parts.length <= 1) return false;
+      final parent = parts.sublist(0, parts.length - 1).join('/');
+      return parent == folderPath;
+    }).toList();
+    if (folderSongs.isEmpty) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FolderDetailScreen(
+          folderName: folderName,
+          songs: folderSongs,
+        ),
+      ),
+    );
+  }
 }
 
-class _Section extends StatefulWidget {
+class _LibraryResultTile extends StatelessWidget {
   final String title;
-  final int count;
-  final Widget child;
+  final String subtitle;
+  final int? artworkId;
+  final ArtworkType artworkType;
+  final IconData fallbackIcon;
+  final VoidCallback onTap;
 
-  const _Section({required this.title, required this.count, required this.child});
-
-  @override
-  State<_Section> createState() => _SectionState();
-}
-
-class _SectionState extends State<_Section> {
-  bool _isExpanded = true;
+  const _LibraryResultTile({
+    required this.title,
+    required this.subtitle,
+    this.artworkId,
+    this.artworkType = ArtworkType.ALBUM,
+    required this.fallbackIcon,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (widget.count == 0) return const SizedBox.shrink();
-    return Column(
-      children: [
-        ListTile(
-          title: Text("${widget.title} (${widget.count})", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          trailing: Icon(_isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.grey),
-          onTap: () => setState(() => _isExpanded = !_isExpanded),
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: artworkId == null
+            ? _FallbackArtwork(icon: fallbackIcon)
+            : QueryArtworkWidget(
+                id: artworkId!,
+                type: artworkType,
+                artworkHeight: 52,
+                artworkWidth: 52,
+                nullArtworkWidget: _FallbackArtwork(icon: fallbackIcon),
+              ),
+      ),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
         ),
-        if (_isExpanded) Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
-          child: widget.child,
-        ),
-      ],
+      ),
+      subtitle: Text(
+        subtitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: Colors.grey, fontSize: 13),
+      ),
+      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      onTap: onTap,
+    );
+  }
+}
+
+class _FallbackArtwork extends StatelessWidget {
+  final IconData icon;
+
+  const _FallbackArtwork({required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 52,
+      width: 52,
+      color: AppTheme.surfaceColor,
+      child: Icon(icon, color: Colors.grey),
+    );
+  }
+}
+
+class _EmptySearchView extends StatelessWidget {
+  const _EmptySearchView();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Text(
+        'Busca por canción, artista o álbum',
+        style: TextStyle(color: Colors.grey),
+      ),
     );
   }
 }
