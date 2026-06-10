@@ -64,8 +64,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _libraryRefreshDebounce;
   bool _isRefreshingLibrary = false;
   bool _hasFinishedStartup = false;
-  bool _wasPausedAfterStartup = false;
+  DateTime? _pausedAt;
   DateTime? _ignoreMediaChangesUntil;
+  static const Duration _resumeRefreshThreshold = Duration(minutes: 10);
 
   // Getters
   List<SongModel> get allSongs => _allSongs;
@@ -547,13 +548,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         state == AppLifecycleState.detached) {
       _savePlaybackState();
       if (_hasFinishedStartup) {
-        _wasPausedAfterStartup = true;
+        _pausedAt = DateTime.now();
       }
-    } else if (state == AppLifecycleState.resumed &&
-        _hasFinishedStartup &&
-        _wasPausedAfterStartup) {
-      _wasPausedAfterStartup = false;
-      _scheduleLibraryRefresh();
+    } else if (state == AppLifecycleState.resumed && _hasFinishedStartup) {
+      final pausedAt = _pausedAt;
+      _pausedAt = null;
+      if (pausedAt != null &&
+          DateTime.now().difference(pausedAt) >= _resumeRefreshThreshold) {
+        _scheduleLibraryRefresh();
+      }
     }
   }
 
