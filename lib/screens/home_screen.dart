@@ -13,8 +13,6 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final audioProvider = Provider.of<AudioProvider>(context);
-
     return DefaultTabController(
       length: 3,
       child: Scaffold(
@@ -31,6 +29,32 @@ class HomeScreen extends StatelessWidget {
                 );
               },
             ),
+            Selector<AudioProvider, bool>(
+              selector: (_, audioProvider) => audioProvider.isIndexing,
+              builder: (context, isIndexing, _) {
+                return PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) async {
+                    if (value != 'refresh_library') return;
+                    await context.read<AudioProvider>().refreshLibrary();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Biblioteca actualizada'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem<String>(
+                      value: 'refresh_library',
+                      enabled: !isIndexing,
+                      child: const Text('Refrescar carpetas/elementos'),
+                    ),
+                  ],
+                );
+              },
+            ),
           ],
           bottom: const TabBar(
             tabs: [
@@ -42,20 +66,46 @@ class HomeScreen extends StatelessWidget {
         ),
         body: Column(
           children: [
-            if (audioProvider.isIndexing && !audioProvider.isLoading)
-              _InlineIndexingBar(audioProvider: audioProvider),
-            Expanded(
-              child: audioProvider.isLoading
-                  ? _InitialIndexingView(audioProvider: audioProvider)
-                  : TabBarView(
-                      children: [
-                        const FoldersTab(),
-                        const SongsTab(),
-                        const FavoritesTab(),
-                      ],
-                    ),
+            Consumer<AudioProvider>(
+              builder: (context, audioProvider, _) {
+                if (!audioProvider.isIndexing || audioProvider.isLoading) {
+                  return const SizedBox.shrink();
+                }
+                return _InlineIndexingBar(audioProvider: audioProvider);
+              },
             ),
-            if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
+            Expanded(
+              child: Selector<AudioProvider, bool>(
+                selector: (_, audioProvider) => audioProvider.isLoading,
+                builder: (context, isLoading, _) {
+                  if (isLoading) {
+                    return Consumer<AudioProvider>(
+                      builder: (context, audioProvider, _) {
+                        return _InitialIndexingView(
+                          audioProvider: audioProvider,
+                        );
+                      },
+                    );
+                  }
+                  return const TabBarView(
+                    children: [
+                      FoldersTab(),
+                      SongsTab(),
+                      FavoritesTab(),
+                    ],
+                  );
+                },
+              ),
+            ),
+            Selector<AudioProvider, bool>(
+              selector: (_, audioProvider) =>
+                  audioProvider.currentPlaylist.isNotEmpty,
+              builder: (context, hasPlaylist, _) {
+                return hasPlaylist
+                    ? const MiniPlayer()
+                    : const SizedBox.shrink();
+              },
+            ),
           ],
         ),
       ),

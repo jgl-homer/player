@@ -48,8 +48,12 @@ class ArtistDetailScreen extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
             ),
             actions: [
-              IconButton(icon: const Icon(Icons.search, color: Colors.white), onPressed: () {}),
-              IconButton(icon: const Icon(Icons.more_vert, color: Colors.white), onPressed: () {}),
+              IconButton(
+                  icon: const Icon(Icons.search, color: Colors.white),
+                  onPressed: () {}),
+              IconButton(
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  onPressed: () {}),
             ],
             flexibleSpace: FlexibleSpaceBar(
               background: _ArtistHeader(
@@ -80,10 +84,7 @@ class ArtistDetailScreen extends StatelessWidget {
                     child: _ActionButton(
                       icon: Icons.shuffle,
                       label: 'ALEATORIO',
-                      onTap: () {
-                        audioProvider.playPlaylist(songs, 0);
-                        if (!audioProvider.isShuffle) audioProvider.toggleShuffle();
-                      },
+                      onTap: () => audioProvider.playPlaylistShuffled(songs),
                     ),
                   ),
                 ],
@@ -96,7 +97,11 @@ class ArtistDetailScreen extends StatelessWidget {
             const SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Text('Álbumes', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                child: Text('Álbumes',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold)),
               ),
             ),
             SliverToBoxAdapter(
@@ -127,16 +132,19 @@ class ArtistDetailScreen extends StatelessWidget {
                                 artworkHeight: 110,
                                 artworkWidth: 110,
                                 nullArtworkWidget: Container(
-                                  height: 110, width: 110,
+                                  height: 110,
+                                  width: 110,
                                   color: Colors.grey[850],
-                                  child: const Icon(Icons.music_note, color: Colors.grey, size: 40),
+                                  child: const Icon(Icons.music_note,
+                                      color: Colors.grey, size: 40),
                                 ),
                               ),
                             ),
                             const SizedBox(height: 4),
                             Text(
                               albumName,
-                              style: const TextStyle(color: Colors.white70, fontSize: 11),
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 11),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -154,7 +162,11 @@ class ArtistDetailScreen extends StatelessWidget {
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('Canciones', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              child: Text('Canciones',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
             ),
           ),
 
@@ -175,14 +187,23 @@ class ArtistDetailScreen extends StatelessWidget {
                       artworkHeight: 48,
                       artworkWidth: 48,
                       nullArtworkWidget: Container(
-                        height: 48, width: 48, color: Colors.grey[800],
-                        child: const Icon(Icons.music_note, color: Colors.grey, size: 24),
+                        height: 48,
+                        width: 48,
+                        color: Colors.grey[800],
+                        child: const Icon(Icons.music_note,
+                            color: Colors.grey, size: 24),
                       ),
                     ),
                   ),
                   title: Text(
-                    (s.title.trim().isEmpty || s.title == '<unknown>') ? s.displayName : s.title,
-                    style: TextStyle(color: isPlaying ? const Color(0xFFE91E63) : Colors.white, fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal),
+                    (s.title.trim().isEmpty || s.title == '<unknown>')
+                        ? s.displayName
+                        : s.title,
+                    style: TextStyle(
+                        color:
+                            isPlaying ? const Color(0xFFE91E63) : Colors.white,
+                        fontWeight:
+                            isPlaying ? FontWeight.bold : FontWeight.normal),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -227,7 +248,11 @@ class _ArtistHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: const Color(0xFF1A1A1A),
-      padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 56, left: 16, right: 16, bottom: 16),
+      padding: EdgeInsets.only(
+          top: MediaQuery.of(context).padding.top + 56,
+          left: 16,
+          right: 16,
+          bottom: 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -249,7 +274,10 @@ class _ArtistHeader extends StatelessWidget {
               children: [
                 Text(
                   artistName,
-                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold),
                   maxLines: 2,
                 ),
                 const SizedBox(height: 4),
@@ -277,7 +305,9 @@ class _AlbumCollage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (albumIds.isEmpty) {
-      return Container(color: Colors.grey[800], child: const Icon(Icons.music_note, color: Colors.grey, size: 50));
+      return Container(
+          color: Colors.grey[800],
+          child: const Icon(Icons.music_note, color: Colors.grey, size: 50));
     }
     if (albumIds.length == 1) {
       return QueryArtworkWidget(
@@ -286,11 +316,14 @@ class _AlbumCollage extends StatelessWidget {
         size: 400,
         artworkHeight: 120,
         artworkWidth: 120,
-        nullArtworkWidget: Container(color: Colors.grey[800], child: const Icon(Icons.music_note, color: Colors.grey)),
+        nullArtworkWidget: Container(
+            color: Colors.grey[800],
+            child: const Icon(Icons.music_note, color: Colors.grey)),
       );
     }
     // Grid 2x2
-    final cells = List.generate(4, (i) => albumIds.length > i ? albumIds[i] : null);
+    final cells =
+        List.generate(4, (i) => albumIds.length > i ? albumIds[i] : null);
     return GridView.count(
       crossAxisCount: 2,
       physics: const NeverScrollableScrollPhysics(),
@@ -304,7 +337,10 @@ class _AlbumCollage extends StatelessWidget {
           size: 200,
           artworkHeight: 60,
           artworkWidth: 60,
-          nullArtworkWidget: Container(color: Colors.grey[800], child: const Icon(Icons.music_note, color: Colors.grey, size: 20)),
+          nullArtworkWidget: Container(
+              color: Colors.grey[800],
+              child:
+                  const Icon(Icons.music_note, color: Colors.grey, size: 20)),
         );
       }).toList(),
     );
@@ -316,7 +352,8 @@ class _ActionButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _ActionButton({required this.icon, required this.label, required this.onTap});
+  const _ActionButton(
+      {required this.icon, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -333,7 +370,12 @@ class _ActionButton extends StatelessWidget {
           children: [
             Icon(icon, color: Colors.white, size: 20),
             const SizedBox(width: 6),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+            Text(label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5)),
           ],
         ),
       ),

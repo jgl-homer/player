@@ -4,8 +4,32 @@ import 'package:provider/provider.dart';
 import '../utils/title_utils.dart';
 import '../providers/audio_provider.dart';
 
-class QueueBottomSheet extends StatelessWidget {
+class QueueBottomSheet extends StatefulWidget {
   const QueueBottomSheet({super.key});
+
+  @override
+  State<QueueBottomSheet> createState() => _QueueBottomSheetState();
+}
+
+class _QueueBottomSheetState extends State<QueueBottomSheet> {
+  static const double _queueItemExtent = 72;
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    final currentIndex = context.read<AudioProvider>().currentIndex;
+    final initialIndex = currentIndex > 2 ? currentIndex - 2 : 0;
+    _scrollController = ScrollController(
+      initialScrollOffset: initialIndex * _queueItemExtent,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +65,10 @@ class QueueBottomSheet extends StatelessWidget {
                 SizedBox(width: 12),
                 Text(
                   'Cola de reproducción',
-                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -49,6 +76,8 @@ class QueueBottomSheet extends StatelessWidget {
           const SizedBox(height: 10),
           Expanded(
             child: ReorderableListView.builder(
+              scrollController: _scrollController,
+              itemExtent: _queueItemExtent,
               padding: const EdgeInsets.only(bottom: 20),
               itemCount: queue.length,
               onReorder: (oldIndex, newIndex) {
@@ -57,10 +86,11 @@ class QueueBottomSheet extends StatelessWidget {
               itemBuilder: (context, index) {
                 final song = queue[index];
                 final isPlaying = index == currentIndex;
-                
+
                 return ListTile(
                   key: ValueKey(song.id),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                   leading: ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: QueryArtworkWidget(
@@ -73,7 +103,8 @@ class QueueBottomSheet extends StatelessWidget {
                         height: 50,
                         width: 50,
                         color: Colors.grey[900],
-                        child: const Icon(Icons.music_note, color: Colors.white24),
+                        child:
+                            const Icon(Icons.music_note, color: Colors.white24),
                       ),
                     ),
                   ),
@@ -81,23 +112,30 @@ class QueueBottomSheet extends StatelessWidget {
                     TitleUtils.getDisplayTitle(song),
                     style: TextStyle(
                       color: isPlaying ? const Color(0xFFE91E63) : Colors.white,
-                      fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                      fontWeight:
+                          isPlaying ? FontWeight.bold : FontWeight.normal,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text(
                     song.artist ?? "Desconocido",
-                    style: TextStyle(color: isPlaying ? Colors.pink.withOpacity(0.7) : Colors.white54, fontSize: 13),
+                    style: TextStyle(
+                        color: isPlaying
+                            ? Colors.pink.withOpacity(0.7)
+                            : Colors.white54,
+                        fontSize: 13),
                     maxLines: 1,
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (isPlaying)
-                        const Icon(Icons.equalizer, color: Color(0xFFE91E63), size: 20),
+                        const Icon(Icons.equalizer,
+                            color: Color(0xFFE91E63), size: 20),
                       IconButton(
-                        icon: const Icon(Icons.remove_circle_outline, color: Colors.white30),
+                        icon: const Icon(Icons.remove_circle_outline,
+                            color: Colors.white30),
                         onPressed: () => audioProvider.removeFromQueue(index),
                       ),
                       const Icon(Icons.drag_handle, color: Colors.white24),

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -64,9 +65,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _libraryRefreshDebounce;
   bool _isRefreshingLibrary = false;
   bool _hasFinishedStartup = false;
-  DateTime? _pausedAt;
   DateTime? _ignoreMediaChangesUntil;
-  static const Duration _resumeRefreshThreshold = Duration(minutes: 10);
 
   // Getters
   List<SongModel> get allSongs => _allSongs;
@@ -216,6 +215,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> refreshLibrary() async {
+    _libraryRefreshDebounce?.cancel();
+    await _refreshLibraryFromDevice(showLoading: false);
   }
 
   Future<void> _applyFreshLibrary(
@@ -547,16 +551,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       _savePlaybackState();
-      if (_hasFinishedStartup) {
-        _pausedAt = DateTime.now();
-      }
-    } else if (state == AppLifecycleState.resumed && _hasFinishedStartup) {
-      final pausedAt = _pausedAt;
-      _pausedAt = null;
-      if (pausedAt != null &&
-          DateTime.now().difference(pausedAt) >= _resumeRefreshThreshold) {
-        _scheduleLibraryRefresh();
-      }
     }
   }
 
@@ -605,12 +599,38 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // Backwards compatibility for implicit playlist triggers
   Future<void> playPlaylist(List<SongModel> songs, int startIndex) async {
-    // If it matches global size, assume global
-    if (songs.length == _allSongs.length) {
+    if (_matchesCurrentGlobalOrder(songs)) {
       await playGlobalQueue(startIndex);
+    } else if (_containsWholeLibrary(songs)) {
+      setPlaybackMode(PlaybackMode.global);
+      _globalQueue = List.from(songs);
+      await _playInternal(_globalQueue, startIndex);
     } else {
       await _playInternal(songs, startIndex);
     }
+  }
+
+  bool _matchesCurrentGlobalOrder(List<SongModel> songs) {
+    if (songs.length != _allSongs.length) return false;
+    for (var i = 0; i < songs.length; i++) {
+      if (songs[i].id != _allSongs[i].id) return false;
+    }
+    return true;
+  }
+
+  bool _containsWholeLibrary(List<SongModel> songs) {
+    if (songs.length != _allSongs.length) return false;
+    final libraryIds = _allSongs.map((song) => song.id).toSet();
+    return songs.every((song) => libraryIds.contains(song.id));
+  }
+
+  Future<void> playPlaylistShuffled(List<SongModel> songs) async {
+    if (songs.isEmpty) return;
+    _shuffle = true;
+    await _player.setShuffleModeEnabled(false);
+    final startIndex = songs.length == 1 ? 0 : Random().nextInt(songs.length);
+    await _playInternal(songs, startIndex);
+    notifyListeners();
   }
 
   Future<void> _playInternal(List<SongModel> songs, int startIndex) async {
@@ -621,24 +641,59 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       startIndex = 0;
     }
 
-    _currentPlaylist = List.from(songs);
-    _currentIndex = startIndex;
+    final nextPlaylist = _shuffle && songs.length > 1
+        ? _buildSmartShuffleQueue(songs, startIndex)
+        : List<SongModel>.from(songs);
+    final nextIndex = _shuffle && songs.length > 1 ? 0 : startIndex;
+    final canReuseCurrentQueue =
+        _hasSameSongOrder(_currentPlaylist, nextPlaylist);
+
+    _currentPlaylist = nextPlaylist;
+    _currentIndex = nextIndex;
     _currentSong = _currentPlaylist[_currentIndex];
     notifyListeners();
 
+    if (canReuseCurrentQueue) {
+      await _jumpWithinCurrentPlaylist();
+      return;
+    }
+
+    await _loadCurrentPlaylistFromScratch();
+  }
+
+  bool _hasSameSongOrder(List<SongModel> first, List<SongModel> second) {
+    if (first.length != second.length) return false;
+    for (var i = 0; i < first.length; i++) {
+      if (first[i].id != second[i].id) return false;
+    }
+    return true;
+  }
+
+  Future<void> _loadCurrentPlaylistFromScratch() async {
     final mediaItems = _currentPlaylist.map(_songToMediaItem).toList();
 
     try {
       await _handler.loadPlaylist(mediaItems, _currentIndex);
-      _savePlaybackState();
-      _updateHomeWidget();
+      await _savePlaybackState();
+      await _updateHomeWidget();
     } catch (e) {
       debugPrint("Error loading playlist: $e");
-      // Graceful error handling: jump to next if file fails
       if (_currentPlaylist.length > 1) {
         await Future.delayed(const Duration(seconds: 1));
         await next();
       }
+    }
+  }
+
+  Future<void> _jumpWithinCurrentPlaylist() async {
+    try {
+      await _handler.skipToQueueItem(_currentIndex);
+      await _handler.play();
+      await _savePlaybackState();
+      await _updateHomeWidget();
+    } catch (e) {
+      debugPrint("Error jumping in playlist: $e");
+      await _loadCurrentPlaylistFromScratch();
     }
   }
 
@@ -679,10 +734,98 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _lastTapTime = now;
   }
 
-  void toggleShuffle() {
+  Future<void> toggleShuffle() async {
     _shuffle = !_shuffle;
-    _player.setShuffleModeEnabled(_shuffle);
+    await _player.setShuffleModeEnabled(false);
+    await _rebuildQueueForShuffleState();
     notifyListeners();
+  }
+
+  Future<void> _rebuildQueueForShuffleState() async {
+    if (_currentSong == null || _currentPlaylist.length <= 1) return;
+
+    final wasPlaying = _player.playing;
+    final position = _player.position;
+
+    if (_shuffle) {
+      _currentPlaylist = _buildSmartShuffleQueue(
+        _currentPlaylist,
+        _currentIndex,
+      );
+      _currentIndex = 0;
+    } else {
+      _currentPlaylist = _orderedQueueForCurrentMode();
+      final currentSongId = _currentSong!.id;
+      _currentIndex =
+          _currentPlaylist.indexWhere((song) => song.id == currentSongId);
+      if (_currentIndex == -1) {
+        _currentPlaylist = [_currentSong!, ..._currentPlaylist];
+        _currentIndex = 0;
+      }
+    }
+
+    _currentSong = _currentPlaylist[_currentIndex];
+    await _replacePlaybackQueue(position: position, shouldPlay: wasPlaying);
+  }
+
+  List<SongModel> _buildSmartShuffleQueue(
+    List<SongModel> songs,
+    int startIndex,
+  ) {
+    final safeIndex = startIndex.clamp(0, songs.length - 1);
+    final current = songs[safeIndex];
+    final remaining =
+        songs.where((song) => song.id != current.id).toList(growable: true);
+
+    final random = Random();
+    for (var i = remaining.length - 1; i > 0; i--) {
+      final swapIndex = random.nextInt(i + 1);
+      final temp = remaining[i];
+      remaining[i] = remaining[swapIndex];
+      remaining[swapIndex] = temp;
+    }
+
+    _spreadAdjacentArtists(remaining, current.artist);
+    return [current, ...remaining];
+  }
+
+  void _spreadAdjacentArtists(List<SongModel> songs, String? previousArtist) {
+    var lastArtist = previousArtist;
+    for (var i = 0; i < songs.length - 1; i++) {
+      if (!_isSameKnownArtist(lastArtist, songs[i].artist)) {
+        lastArtist = songs[i].artist;
+        continue;
+      }
+
+      final swapIndex = songs.indexWhere(
+        (song) => !_isSameKnownArtist(lastArtist, song.artist),
+        i + 1,
+      );
+      if (swapIndex == -1) {
+        lastArtist = songs[i].artist;
+        continue;
+      }
+
+      final temp = songs[i];
+      songs[i] = songs[swapIndex];
+      songs[swapIndex] = temp;
+      lastArtist = songs[i].artist;
+    }
+  }
+
+  bool _isSameKnownArtist(String? first, String? second) {
+    if (first == null || second == null) return false;
+    if (first == '<unknown>' || second == '<unknown>') return false;
+    return first.trim().toLowerCase() == second.trim().toLowerCase();
+  }
+
+  List<SongModel> _orderedQueueForCurrentMode() {
+    if (_playbackMode == PlaybackMode.folder && _activeFolderPath != null) {
+      return _allSongs
+          .where((song) => song.data.startsWith(_activeFolderPath!))
+          .toList();
+    }
+    return List.from(_globalQueue.isNotEmpty ? _globalQueue : _allSongs);
   }
 
   void toggleLoop() {

@@ -346,7 +346,7 @@ class _PlayerModalContent extends StatelessWidget {
                           : Colors.white60,
                       size: 24,
                     ),
-                    onPressed: audioProvider.toggleShuffle,
+                    onPressed: () => audioProvider.toggleShuffle(),
                   ),
                   IconButton(
                     icon: Stack(

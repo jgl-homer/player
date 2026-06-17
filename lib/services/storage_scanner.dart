@@ -18,6 +18,8 @@ class StorageScanProgress {
 }
 
 class StorageScanner {
+  static const int _progressBatchSize = 48;
+
   // Folders the user likely doesn't want in a music player
   static const List<String> _blockedSubstrings = [
     'Ringtones',
@@ -142,6 +144,10 @@ class StorageScanner {
         validSongs.add(song);
       }
 
+      if (processed % _progressBatchSize == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
       _reportProgress(
         onProgress,
         processed,
@@ -162,7 +168,7 @@ class StorageScanner {
     String? currentTitle,
   ) {
     if (onProgress == null) return;
-    if (processed == total || processed % 8 == 0) {
+    if (processed == total || processed % _progressBatchSize == 0) {
       onProgress(
         StorageScanProgress(
           processed: processed,
