@@ -275,60 +275,40 @@ class _PlayerModalContent extends StatelessWidget {
               const Spacer(flex: 2),
               Expanded(
                 flex: 10,
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.5),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: GestureDetector(
+                    onDoubleTap: () {
+                      final currentPos = audioProvider.player.position;
+                      audioProvider.player
+                          .seek(currentPos + const Duration(seconds: 10));
+                    },
+                    child: QueryArtworkWidget(
+                      id: song.id,
+                      type: ArtworkType.AUDIO,
+                      size: 1000,
+                      artworkHeight: double.infinity,
+                      artworkWidth: double.infinity,
+                      artworkFit: BoxFit.contain,
+                      nullArtworkWidget: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.grey[800]!,
+                              Colors.grey[900]!,
+                              Colors.black,
+                            ],
                           ),
-                        ],
-                      ),
-                      child: Stack(
-                        children: [
-                          GestureDetector(
-                            onDoubleTap: () {
-                              final currentPos = audioProvider.player.position;
-                              audioProvider.player.seek(
-                                  currentPos + const Duration(seconds: 10));
-                            },
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(20),
-                              child: QueryArtworkWidget(
-                                id: song.id,
-                                type: ArtworkType.AUDIO,
-                                size: 800,
-                                artworkHeight: double.infinity,
-                                artworkWidth: double.infinity,
-                                nullArtworkWidget: Container(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        Colors.grey[800]!,
-                                        Colors.grey[900]!,
-                                        Colors.black,
-                                      ],
-                                    ),
-                                  ),
-                                  child: Center(
-                                    child: Icon(
-                                      Icons.music_note_rounded,
-                                      color: Colors.white.withOpacity(0.15),
-                                      size: 140,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
+                        ),
+                        child: Center(
+                          child: Icon(
+                            Icons.music_note_rounded,
+                            color: Colors.white.withOpacity(0.15),
+                            size: 160,
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),

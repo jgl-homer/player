@@ -55,34 +55,39 @@ class AlbumDetailScreen extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const SizedBox(height: 60),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: QueryArtworkWidget(
-                          id: albumId,
-                          type: ArtworkType.ALBUM,
-                          size: 500,
-                          artworkHeight: 180,
-                          artworkWidth: 180,
-                          nullArtworkWidget: Container(
-                            height: 180,
-                            width: 180,
-                            color: Colors.grey[900],
-                            child: const Icon(Icons.album, color: Colors.white24, size: 80),
-                          ),
+                      QueryArtworkWidget(
+                        id: albumId,
+                        type: ArtworkType.ALBUM,
+                        size: 500,
+                        artworkHeight: 180,
+                        artworkWidth: 180,
+                        artworkFit: BoxFit.contain,
+                        nullArtworkWidget: Container(
+                          height: 180,
+                          width: 180,
+                          color: Colors.grey[900],
+                          child: const Icon(Icons.album,
+                              color: Colors.white24, size: 80),
                         ),
                       ),
                       const SizedBox(height: 20),
                       Text(
                         albumName,
-                        style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold),
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        songs.isNotEmpty ? (songs.first.artist ?? "Artista Desconocido") : "Artista Desconocido",
-                        style: const TextStyle(color: Colors.white70, fontSize: 16),
+                        songs.isNotEmpty
+                            ? (songs.first.artist ?? "Artista Desconocido")
+                            : "Artista Desconocido",
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 16),
                       ),
                     ],
                   ),
@@ -90,7 +95,6 @@ class AlbumDetailScreen extends StatelessWidget {
               ),
             ),
           ),
-          
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -98,18 +102,22 @@ class AlbumDetailScreen extends StatelessWidget {
                 children: [
                   Text(
                     '${songs.length} CANCIONES',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0),
+                    style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.0),
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.play_circle_fill, color: Color(0xFF4CAF50), size: 48),
+                    icon: const Icon(Icons.play_circle_fill,
+                        color: Color(0xFF4CAF50), size: 48),
                     onPressed: () => audioProvider.playPlaylist(songs, 0),
                   ),
                 ],
               ),
             ),
           ),
-
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
@@ -121,16 +129,19 @@ class AlbumDetailScreen extends StatelessWidget {
                   leading: SizedBox(
                     width: 30,
                     child: Center(
-                      child: isPlaying 
-                        ? const Icon(Icons.volume_up, color: Color(0xFF4CAF50), size: 18)
-                        : Text("${index + 1}", style: const TextStyle(color: Colors.white54)),
+                      child: isPlaying
+                          ? const Icon(Icons.volume_up,
+                              color: Color(0xFF4CAF50), size: 18)
+                          : Text("${index + 1}",
+                              style: const TextStyle(color: Colors.white54)),
                     ),
                   ),
                   title: Text(
                     TitleUtils.getDisplayTitle(song),
                     style: TextStyle(
                       color: isPlaying ? const Color(0xFF4CAF50) : Colors.white,
-                      fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                      fontWeight:
+                          isPlaying ? FontWeight.bold : FontWeight.normal,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

@@ -4,11 +4,21 @@ import 'package:just_audio/just_audio.dart';
 import 'dart:async';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
+  static const MediaControl _stopControl = MediaControl(
+    androidIcon: 'drawable/ic_stat_stop_x',
+    label: 'Detener',
+    action: MediaAction.stop,
+  );
+
   late final AudioPlayer _player;
   ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(children: []);
 
   VoidCallback? onToggleFavorite;
   VoidCallback? onTrackCompleted;
+  FutureOr<void> Function()? onPlayPauseRequested;
+  FutureOr<void> Function()? onStopRequested;
+  FutureOr<void> Function()? onPreviousRequested;
+  FutureOr<void> Function()? onNextRequested;
   bool _isAdvancing = false;
   Timer? _debounceTimer;
 
@@ -74,18 +84,15 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final playing = _player.playing;
     playbackState.add(playbackState.value.copyWith(
       controls: [
-        MediaControl.skipToPrevious,
         if (playing) MediaControl.pause else MediaControl.play,
-        MediaControl.stop,
+        _stopControl,
+        MediaControl.skipToPrevious,
         MediaControl.skipToNext,
       ],
       systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
         MediaAction.stop,
       },
-      androidCompactActionIndices: const [0, 1, 3],
+      androidCompactActionIndices: const [0, 1, 2],
       processingState: const {
             ProcessingState.idle: AudioProcessingState.idle,
             ProcessingState.loading: AudioProcessingState.loading,
@@ -103,15 +110,33 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    final action = onPlayPauseRequested;
+    if (action != null) {
+      await action();
+      return;
+    }
+    await playDirect();
+  }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    final action = onPlayPauseRequested;
+    if (action != null) {
+      await action();
+      return;
+    }
+    await pauseDirect();
+  }
 
   @override
   Future<void> stop() async {
-    await _player.stop();
-    return super.stop();
+    final action = onStopRequested;
+    if (action != null) {
+      await action();
+      return;
+    }
+    await stopDirect();
   }
 
   @override
@@ -125,10 +150,24 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> skipToNext() => _player.seekToNext();
+  Future<void> skipToNext() async {
+    final action = onNextRequested;
+    if (action != null) {
+      await action();
+      return;
+    }
+    await skipToNextDirect();
+  }
 
   @override
-  Future<void> skipToPrevious() => _player.seekToPrevious();
+  Future<void> skipToPrevious() async {
+    final action = onPreviousRequested;
+    if (action != null) {
+      await action();
+      return;
+    }
+    await skipToPreviousDirect();
+  }
 
   @override
   Future<void> skipToQueueItem(int index) =>
@@ -183,6 +222,19 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   AudioSource _createAudioSource(MediaItem item) => AudioSource.uri(
       item.id.startsWith('/') ? Uri.file(item.id) : Uri.parse(item.id),
       tag: item);
+
+  Future<void> playDirect() => _player.play();
+
+  Future<void> pauseDirect() => _player.pause();
+
+  Future<void> stopDirect() async {
+    await _player.stop();
+    await super.stop();
+  }
+
+  Future<void> skipToNextDirect() => _player.seekToNext();
+
+  Future<void> skipToPreviousDirect() => _player.seekToPrevious();
 
   AudioPlayer get player => _player;
 }

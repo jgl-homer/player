@@ -10,6 +10,7 @@ import 'dart:io';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:home_widget/home_widget.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/duration_state.dart';
@@ -27,6 +28,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const _mediaChannel = MethodChannel('com.example.player/media_utils');
   static const String _cachedSongsKey = 'cached_library_songs_v1';
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
+  static const String _fallbackArtworkAsset =
+      'assets/icon/music_note_fallback.png';
 
   PlaybackMode _playbackMode = PlaybackMode.global;
   String? _activeFolderPath;
@@ -66,6 +69,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _isRefreshingLibrary = false;
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
+  final Map<int, Uri> _systemArtworkUriCache = {};
+  Uri? _fallbackArtworkFileUri;
 
   // Getters
   List<SongModel> get allSongs => _allSongs;
@@ -170,6 +175,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (_currentSong != null) toggleFavorite(_currentSong!);
     };
 
+    _handler.onPlayPauseRequested = togglePlayPause;
+    _handler.onStopRequested = stop;
+    _handler.onPreviousRequested = previousSmart;
+    _handler.onNextRequested = next;
+
     _handler.onTrackCompleted = () {
       if (_playbackMode == PlaybackMode.folder) {
         playNextFolder();
@@ -246,7 +256,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     if (_currentPlaylist.isEmpty) {
-      await _handler.stop();
+      await stop();
       _currentIndex = 0;
       _currentSong = null;
       return;
@@ -282,12 +292,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     required bool shouldPlay,
   }) async {
     if (_currentPlaylist.isEmpty) {
-      await _handler.stop();
+      await stop();
       return;
     }
 
     await _handler.replacePlaylist(
-      _currentPlaylist.map(_songToMediaItem).toList(),
+      await _songsToMediaItems(_currentPlaylist),
       _currentIndex,
       position,
       shouldPlay: shouldPlay,
@@ -670,7 +680,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _loadCurrentPlaylistFromScratch() async {
-    final mediaItems = _currentPlaylist.map(_songToMediaItem).toList();
+    final mediaItems = await _songsToMediaItems(_currentPlaylist);
 
     try {
       await _handler.loadPlaylist(mediaItems, _currentIndex);
@@ -688,7 +698,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _jumpWithinCurrentPlaylist() async {
     try {
       await _handler.skipToQueueItem(_currentIndex);
-      await _handler.play();
+      await _handler.playDirect();
       await _savePlaybackState();
       await _updateHomeWidget();
     } catch (e) {
@@ -697,21 +707,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  void togglePlayPause() {
-    _player.playing ? _player.pause() : _player.play();
+  Future<void> togglePlayPause() async {
+    _player.playing
+        ? await _handler.pauseDirect()
+        : await _handler.playDirect();
     _updateHomeWidget();
   }
 
-  void stop() {
-    _player.stop();
-    _player.seek(Duration.zero);
+  Future<void> stop() async {
+    await _handler.stopDirect();
+    await _player.seek(Duration.zero);
+    await _updateHomeWidget();
     notifyListeners();
   }
 
   Future<void> next() async {
     try {
       if (_player.hasNext) {
-        await _handler.skipToNext();
+        await _handler.skipToNextDirect();
         _updateHomeWidget();
       } else if (_playbackMode == PlaybackMode.folder) {
         await playNextFolder();
@@ -721,15 +734,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  void previous() => _handler.skipToPrevious();
+  Future<void> previous() => _handler.skipToPreviousDirect();
 
-  void previousSmart() {
+  Future<void> previousSmart() async {
     final now = DateTime.now();
     if (_lastTapTime != null &&
         now.difference(_lastTapTime!) < const Duration(milliseconds: 700)) {
-      _handler.skipToPrevious();
+      if (_player.hasPrevious) {
+        await _handler.skipToPreviousDirect();
+      } else if (_playbackMode == PlaybackMode.folder) {
+        await playPreviousFolder(playLastTrack: true);
+      }
     } else {
-      _player.seek(Duration.zero);
+      await _player.seek(Duration.zero);
     }
     _lastTapTime = now;
   }
@@ -851,11 +868,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   String _getParentPath(SongModel song) => _getParentPathForString(song.data);
 
   Future<void> playNextFolder() => _changeFolder(1);
-  Future<void> playPreviousFolder() => _changeFolder(-1);
+  Future<void> playPreviousFolder({bool playLastTrack = false}) =>
+      _changeFolder(-1, playLastTrack: playLastTrack);
 
-  Future<void> _changeFolder(int offset) async {
+  Future<void> _changeFolder(int offset, {bool playLastTrack = false}) async {
     if (_allSongs.isEmpty || _currentSong == null) return;
     final allFolders = sortedFolderPaths;
+    if (allFolders.isEmpty) return;
+
     String currentPath = _getParentPath(_currentSong!);
 
     final currentIndex = allFolders.indexWhere(
@@ -867,20 +887,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    final nextIndex = currentIndex + offset;
+    final nextIndex = (currentIndex + offset) % allFolders.length;
+    final wrappedNextIndex =
+        nextIndex < 0 ? nextIndex + allFolders.length : nextIndex;
 
-    if (nextIndex >= allFolders.length || nextIndex < 0) {
-      return; // Stop playback at the absolute end of the library instead of looping to folder A
-    }
-
-    final nextFolderPath = allFolders[nextIndex];
+    final nextFolderPath = allFolders[wrappedNextIndex];
     final folderSongs =
         _allSongs.where((s) => _getParentPath(s) == nextFolderPath).toList();
 
     if (folderSongs.isEmpty) {
       _activeFolderPath = nextFolderPath;
       if (offset > 0) playNextFolder();
-      if (offset < 0) playPreviousFolder();
+      if (offset < 0) playPreviousFolder(playLastTrack: playLastTrack);
       return;
     }
 
@@ -888,7 +906,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     print("All folders: $allFolders");
     print("Current index: $currentIndex");
 
-    await playFolderSongs(nextFolderPath, folderSongs, 0);
+    await playFolderSongs(
+      nextFolderPath,
+      folderSongs,
+      playLastTrack ? folderSongs.length - 1 : 0,
+    );
   }
 
   void deleteFolder(String folderPath) {
@@ -918,7 +940,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final removedCurrent = index == _currentIndex;
     _currentPlaylist.removeAt(index);
     if (_currentPlaylist.isEmpty) {
-      await _handler.stop();
+      await stop();
       _currentIndex = 0;
       _currentSong = null;
     } else {
@@ -1011,7 +1033,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _favoriteIds.remove(song.id);
 
         if (_currentPlaylist.isEmpty) {
-          await _handler.stop();
+          await stop();
           _currentIndex = 0;
           _currentSong = null;
         } else if (wasCurrentSong) {
@@ -1045,7 +1067,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     return false;
   }
 
-  MediaItem _songToMediaItem(SongModel s) {
+  Future<MediaItem> _songToMediaItem(SongModel s) async {
     String title = TitleUtils.getDisplayTitle(s);
 
     return MediaItem(
@@ -1055,9 +1077,58 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       artist: (s.artist == null || s.artist == "<unknown>")
           ? "Artista Desconocido"
           : s.artist,
-      artUri: Uri.parse('content://media/external/audio/albumart/${s.albumId}'),
+      artUri: await _systemArtworkUriForSong(s),
       duration: Duration(milliseconds: s.duration ?? 0),
     );
+  }
+
+  Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs) {
+    return Future.wait(songs.map(_songToMediaItem));
+  }
+
+  Future<Uri> _systemArtworkUriForSong(SongModel song) async {
+    final cached = _systemArtworkUriCache[song.id];
+    if (cached != null) return cached;
+
+    try {
+      final artwork = await _audioQuery.queryArtwork(
+        song.id,
+        ArtworkType.AUDIO,
+        size: 512,
+        quality: 100,
+      );
+
+      if (artwork != null && artwork.isNotEmpty) {
+        final artUri = Uri.parse(
+            'content://media/external/audio/media/${song.id}/albumart');
+        _systemArtworkUriCache[song.id] = artUri;
+        return artUri;
+      }
+    } catch (e) {
+      debugPrint('Error checking artwork for MediaSession: $e');
+    }
+
+    final fallbackUri = await _fallbackArtworkUri();
+    _systemArtworkUriCache[song.id] = fallbackUri;
+    return fallbackUri;
+  }
+
+  Future<Uri> _fallbackArtworkUri() async {
+    final cached = _fallbackArtworkFileUri;
+    if (cached != null && File(cached.toFilePath()).existsSync()) {
+      return cached;
+    }
+
+    final directory = await getTemporaryDirectory();
+    final file = File('${directory.path}/music_note_fallback_material_v2.png');
+    final data = await rootBundle.load(_fallbackArtworkAsset);
+    await file.writeAsBytes(
+      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      flush: true,
+    );
+
+    _fallbackArtworkFileUri = file.uri;
+    return file.uri;
   }
 
   // --- Widget ---
@@ -1120,7 +1191,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _currentIndex = index;
         _currentSong = _currentPlaylist[_currentIndex];
 
-        final mediaItems = _currentPlaylist.map(_songToMediaItem).toList();
+        final mediaItems = await _songsToMediaItems(_currentPlaylist);
         await _handler.loadPlaylist(
             mediaItems, _currentIndex, Duration(milliseconds: positionMs));
         notifyListeners();
