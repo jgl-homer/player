@@ -15,21 +15,23 @@ late AudioHandler _audioHandler;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Activar modo inmersivo y transparencia
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     systemNavigationBarColor: Colors.transparent,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
-  
+
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   _audioHandler = await AudioService.init(
     builder: () => MyAudioHandler(),
     config: AudioServiceConfig(
-      androidNotificationChannelId: 'com.jesus.player.audio',
-      androidNotificationChannelName: 'Reproducción de música',
+      androidNotificationChannelId: 'com.jesus.player.media_playback.v2',
+      androidNotificationChannelName: 'Reproduccion de musica',
+      androidNotificationChannelDescription:
+          'Controles multimedia del reproductor',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
       androidNotificationIcon: 'mipmap/ic_launcher',

@@ -1201,7 +1201,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _requestInitialPermissions() async {
     if (Platform.isAndroid) {
-      await [Permission.audio, Permission.storage].request();
+      await [
+        Permission.audio,
+        Permission.storage,
+        Permission.notification,
+      ].request();
     }
   }
 

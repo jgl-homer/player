@@ -84,15 +84,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     final playing = _player.playing;
     playbackState.add(playbackState.value.copyWith(
       controls: [
+        MediaControl.skipToPrevious,
         if (playing) MediaControl.pause else MediaControl.play,
         _stopControl,
-        MediaControl.skipToPrevious,
         MediaControl.skipToNext,
       ],
-      systemActions: const {
-        MediaAction.stop,
-      },
-      androidCompactActionIndices: const [0, 1, 2],
+      systemActions: const {},
+      androidCompactActionIndices: const [0, 1, 3],
       processingState: const {
             ProcessingState.idle: AudioProcessingState.idle,
             ProcessingState.loading: AudioProcessingState.loading,
@@ -216,6 +214,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     if (shouldPlay) {
       await _player.play();
+    } else {
+      _broadcastState(_player.playbackEvent);
     }
   }
 
