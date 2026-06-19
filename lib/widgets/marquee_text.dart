@@ -165,9 +165,10 @@ class _MarqueeTextState extends State<MarqueeText>
             width: maxWidth,
             child: Text(
               widget.text,
-              style: widget.style?.copyWith(overflow: TextOverflow.ellipsis),
+              style: widget.style,
               textAlign: widget.textAlign,
               maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           );
         }

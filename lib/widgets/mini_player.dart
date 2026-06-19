@@ -262,6 +262,12 @@ class _PlayerModalContent extends StatelessWidget {
                           onPressed: audioProvider.toggleEpicenter,
                         ),
                         IconButton(
+                          icon: const Icon(Icons.directions_car_filled_rounded,
+                              color: Colors.white, size: 26),
+                          tooltip: "Modo Auto",
+                          onPressed: () => audioProvider.setAutoMode(true),
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.more_vert,
                               color: Colors.white, size: 26),
                           onPressed: () =>

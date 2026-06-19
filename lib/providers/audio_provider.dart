@@ -54,6 +54,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<AlbumModel> _allAlbums = [];
 
   bool _isLoading = true;
+  bool _isAutoModeEnabled;
   bool _isIndexing = false;
   int _indexingProcessed = 0;
   int _indexingTotal = 0;
@@ -77,6 +78,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<AlbumModel> get allAlbums => _allAlbums;
   List<SongModel> get currentPlaylist => _currentPlaylist;
   bool get isLoading => _isLoading;
+  bool get isAutoModeEnabled => _isAutoModeEnabled;
   bool get isIndexing => _isIndexing;
   int get indexingProcessed => _indexingProcessed;
   int get indexingTotal => _indexingTotal;
@@ -106,7 +108,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double get reverbDry => _reverbDry;
   List<double> get eqGains => _eqGains;
 
-  AudioProvider(AudioHandler handler) : _handler = handler as MyAudioHandler {
+  AudioProvider(
+    AudioHandler handler, {
+    bool initialAutoMode = false,
+  })  : _handler = handler as MyAudioHandler,
+        _isAutoModeEnabled = initialAutoMode {
     _player = _handler.player;
     _init();
     WidgetsBinding.instance.addObserver(this);
@@ -133,6 +139,25 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
     });
+  }
+
+  Future<void> setAutoMode(bool enabled) async {
+    if (_isAutoModeEnabled == enabled) return;
+
+    _isAutoModeEnabled = enabled;
+    notifyListeners();
+
+    await Future.wait([
+      StatePersistence.saveAutoMode(enabled),
+      SystemChrome.setPreferredOrientations(
+        enabled
+            ? const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
+            : const [],
+      ),
+    ]);
   }
 
   Future<void> _init() async {

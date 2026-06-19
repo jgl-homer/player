@@ -8,6 +8,17 @@ class StatePersistence {
   static const String _songPathKey = 'current_song_path';
   static const String _positionKey = 'position_ms';
   static const String _favoritesKey = 'favorites';
+  static const String _autoModeKey = 'auto_mode_enabled';
+
+  static Future<bool> loadAutoMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_autoModeKey) ?? false;
+  }
+
+  static Future<void> saveAutoMode(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoModeKey, enabled);
+  }
 
   static Future<void> savePlaybackState({
     required PlaybackMode mode,
@@ -17,13 +28,13 @@ class StatePersistence {
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_modeKey, mode.toString());
-    
+
     if (folderPath != null) {
       await prefs.setString(_folderPathKey, folderPath);
     } else {
       await prefs.remove(_folderPathKey);
     }
-    
+
     await prefs.setString(_songPathKey, songPath);
     await prefs.setInt(_positionKey, positionMs);
   }
@@ -34,7 +45,7 @@ class StatePersistence {
     final mode = (modeStr == PlaybackMode.folder.toString())
         ? PlaybackMode.folder
         : PlaybackMode.global;
-        
+
     return {
       'mode': mode,
       'folderPath': prefs.getString(_folderPathKey),
@@ -52,8 +63,6 @@ class StatePersistence {
   static Future<void> saveFavorites(Set<int> favorites) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
-      _favoritesKey, 
-      favorites.map((id) => id.toString()).toList()
-    );
+        _favoritesKey, favorites.map((id) => id.toString()).toList());
   }
 }
