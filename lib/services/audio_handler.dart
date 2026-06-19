@@ -81,6 +81,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         MediaControl.skipToPrevious,
         playing ? MediaControl.pause : MediaControl.play,
         MediaControl.skipToNext,
+        MediaControl.stop,
       ],
       systemActions: const {},
       androidCompactActionIndices: const [0, 1, 2],
