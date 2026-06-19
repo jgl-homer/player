@@ -32,9 +32,9 @@ Future<void> main() async {
       androidNotificationChannelName: 'Reproduccion de musica',
       androidNotificationChannelDescription:
           'Controles multimedia del reproductor',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidNotificationOngoing: false,
+      androidStopForegroundOnPause: false,
+      androidNotificationIcon: 'drawable/ic_stat_music_note',
       androidShowNotificationBadge: true,
       notificationColor: Color(0xFF7B1FA2),
     ),
