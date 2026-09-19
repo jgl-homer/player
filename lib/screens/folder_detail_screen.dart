@@ -9,6 +9,7 @@ import '../../widgets/folder_info_modal.dart';
 import '../../widgets/mini_player.dart';
 import '../../widgets/song_list_tile.dart';
 import '../../widgets/smart_artwork.dart';
+import '../../services/state_persistence.dart';
 import 'search_screen.dart';
 
 class FolderDetailScreen extends StatelessWidget {
@@ -92,8 +93,11 @@ class FolderDetailScreen extends StatelessWidget {
               color: AppTheme.surfaceColor,
               onSelected: (value) {
                 if (value == 'reproducir') {
-                  audioProvider.playPlaylist(currentFolderSongs, 0);
+                  audioProvider.playFolderSongs(
+                      resolvedFolderPath, currentFolderSongs, 0);
                 } else if (value == 'reproducir_shuffle') {
+                  audioProvider.setPlaybackMode(PlaybackMode.folder,
+                      folderPath: resolvedFolderPath);
                   audioProvider.playPlaylistShuffled(currentFolderSongs);
                 } else if (value == 'info') {
                   showFolderInfo(context, folderName, resolvedFolderPath,

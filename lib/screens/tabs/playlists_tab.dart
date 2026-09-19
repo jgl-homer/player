@@ -8,6 +8,50 @@ import '../../widgets/count_banner.dart';
 class PlaylistsTab extends StatelessWidget {
   const PlaylistsTab({super.key});
 
+  Future<void> _importPlaylist(
+      BuildContext context, AudioProvider audioProvider) async {
+    final directory = Directory('/storage/emulated/0/Music');
+    final files = directory.existsSync()
+        ? directory
+            .listSync()
+            .whereType<File>()
+            .where((file) =>
+                file.path.toLowerCase().endsWith('.m3u') ||
+                file.path.toLowerCase().endsWith('.m3u8'))
+            .toList()
+        : <File>[];
+    if (!context.mounted) return;
+    if (files.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay archivos M3U/M3U8 en Music')),
+      );
+      return;
+    }
+    final selected = await showDialog<File>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Importar playlist'),
+        children: files
+            .map((file) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(dialogContext, file),
+                  child: Text(file.path.split(Platform.pathSeparator).last),
+                ))
+            .toList(),
+      ),
+    );
+    if (selected == null || !context.mounted) return;
+    final name = selected.path
+        .split(Platform.pathSeparator)
+        .last
+        .replaceFirst(RegExp(r'\.(m3u8?|M3U8?)$'), '');
+    final imported = await audioProvider.importM3u8(selected, name);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Importadas $imported canciones en "$name"')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final audioProvider = context.watch<AudioProvider>();
@@ -18,6 +62,12 @@ class PlaylistsTab extends StatelessWidget {
           children: [
             Expanded(
               child: CountBanner(count: playlists.length, label: 'Playlists'),
+            ),
+            IconButton(
+              tooltip: 'Importar playlist M3U/M3U8 desde Music',
+              icon: const Icon(Icons.file_open_outlined,
+                  color: Colors.tealAccent),
+              onPressed: () => _importPlaylist(context, audioProvider),
             ),
             IconButton(
               tooltip: 'Guardar cola actual',

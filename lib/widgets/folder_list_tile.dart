@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
+import '../../services/state_persistence.dart';
 import '../../theme/app_theme.dart';
 import 'folder_info_modal.dart';
 
@@ -22,7 +23,8 @@ class FolderListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final int songCount = songs.length;
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       leading: Container(
         height: 50,
         width: 50,
@@ -51,13 +53,18 @@ class FolderListTile extends StatelessWidget {
         icon: const Icon(Icons.more_vert, color: AppTheme.textSecondary),
         color: AppTheme.surfaceColor,
         onSelected: (value) {
-          final audioProvider = Provider.of<AudioProvider>(context, listen: false);
+          final audioProvider =
+              Provider.of<AudioProvider>(context, listen: false);
+          final folderPath = songs.isNotEmpty
+              ? songs.first.data.replaceAll(songs.first.displayName, "")
+              : folderName;
           if (value == 'reproducir') {
-            audioProvider.playPlaylist(songs, 0);
+            audioProvider.playFolderSongs(folderPath, songs, 0);
           } else if (value == 'aleatorio') {
+            audioProvider.setPlaybackMode(PlaybackMode.folder,
+                folderPath: folderPath);
             audioProvider.playPlaylistShuffled(songs);
           } else if (value == 'info') {
-            final folderPath = songs.isNotEmpty ? songs.first.data.replaceAll(songs.first.displayName, "") : folderName;
             showFolderInfo(context, folderName, folderPath, songs);
           } else if (value == 'añadir') {
             audioProvider.addAllToQueue(songs);
@@ -93,12 +100,14 @@ class FolderListTile extends StatelessWidget {
     );
   }
 
-  void _showDeleteConfirmation(BuildContext context, AudioProvider audioProvider) {
+  void _showDeleteConfirmation(
+      BuildContext context, AudioProvider audioProvider) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppTheme.surfaceColor,
-        title: const Text('Eliminar carpeta', style: TextStyle(color: Colors.white)),
+        title: const Text('Eliminar carpeta',
+            style: TextStyle(color: Colors.white)),
         content: Text(
           '¿Estás seguro de que quieres borrar físicamente la carpeta "$folderName" y todos sus archivos? Esta acción no se puede deshacer.',
           style: const TextStyle(color: AppTheme.textSecondary),
@@ -106,13 +115,15 @@ class FolderListTile extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('CANCELAR', style: TextStyle(color: AppTheme.primaryColor)),
+            child: const Text('CANCELAR',
+                style: TextStyle(color: AppTheme.primaryColor)),
           ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context); // Close dialog first
               if (songs.isNotEmpty) {
-                final folderPath = songs.first.data.replaceAll(songs.first.displayName, "");
+                final folderPath =
+                    songs.first.data.replaceAll(songs.first.displayName, "");
                 try {
                   final dir = Directory(folderPath);
                   if (dir.existsSync()) {

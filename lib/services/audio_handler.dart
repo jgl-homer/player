@@ -39,6 +39,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     // 3. Fallback completion detection: Position >= Duration
     _player.positionStream.listen((position) {
+      if (_player.loopMode != LoopMode.off) return;
+      if (!_player.playing) return;
       final duration = _player.duration;
       if (duration != null &&
           position >= duration &&
@@ -49,7 +51,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
     // 4. Listen to standard completed state as well
     _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
+      if (state.processingState == ProcessingState.completed &&
+          _player.loopMode == LoopMode.off) {
         _triggerNextTrackSafe();
       }
     });
@@ -100,8 +103,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         ],
         systemActions: const {},
         androidCompactActionIndices: const [0, 1, 2],
-        processingState:
-            const {
+        processingState: const {
               ProcessingState.idle: AudioProcessingState.idle,
               ProcessingState.loading: AudioProcessingState.loading,
               ProcessingState.buffering: AudioProcessingState.buffering,
@@ -235,6 +237,29 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
+  Future<void> reorderQueueToMatch(List<MediaItem> desiredQueue) async {
+    if (desiredQueue.length != queue.value.length) return;
+    await _serializePlaylistMutation(() async {
+      final currentQueue = List<MediaItem>.from(queue.value);
+      for (var targetIndex = 0;
+          targetIndex < desiredQueue.length;
+          targetIndex++) {
+        final desiredId = desiredQueue[targetIndex].id;
+        final currentIndex =
+            currentQueue.indexWhere((item) => item.id == desiredId);
+        if (currentIndex == -1 || currentIndex == targetIndex) continue;
+        await _player.moveAudioSource(currentIndex, targetIndex);
+        final moved = currentQueue.removeAt(currentIndex);
+        currentQueue.insert(targetIndex, moved);
+      }
+      queue.add(currentQueue);
+      final currentIndex = _player.currentIndex;
+      if (currentIndex != null && currentIndex < currentQueue.length) {
+        mediaItem.add(currentQueue[currentIndex]);
+      }
+    });
+  }
+
   Future<void> loadPlaylist(
     List<MediaItem> newQueue,
     int initialIndex, [
@@ -310,9 +335,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   AudioSource _createAudioSource(MediaItem item) => AudioSource.uri(
-    item.id.startsWith('/') ? Uri.file(item.id) : Uri.parse(item.id),
-    tag: item,
-  );
+        item.id.startsWith('/') ? Uri.file(item.id) : Uri.parse(item.id),
+        tag: item,
+      );
 
   Future<void> playDirect() => _player.play();
 
