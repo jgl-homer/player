@@ -203,7 +203,7 @@ class _SongInfoModalState extends State<SongInfoModal> {
                   final displayAlbum =
                       id3?.album ?? TitleUtils.getDisplayAlbum(song);
                   final displayArtist =
-                      id3?.artist ?? TitleUtils.getDisplayArtist(song.artist);
+                      TitleUtils.getDisplayArtist(id3?.artist ?? song.artist);
                   final displayAlbumArtist =
                       rData['albumArtist'] ?? "Desconocido";
                   final displayComposer = rData['composer'] ?? "Desconocido";

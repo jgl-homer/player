@@ -3,6 +3,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../utils/title_utils.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
+import '../theme/app_theme.dart';
 import '../widgets/options_menu.dart';
 import '../widgets/smart_artwork.dart';
 
@@ -174,7 +175,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     TitleUtils.getDisplayTitle(song),
                     style: TextStyle(
                       color: isPlaying
-                          ? const Color(0xFFE91E63)
+                          ? AppTheme.primaryColor
                           : Colors.white,
                       fontWeight:
                           isPlaying ? FontWeight.bold : FontWeight.normal,

@@ -315,10 +315,7 @@ class _CarModeLibraryScreenState extends State<CarModeLibraryScreen> {
   }
 
   String _knownArtist(String? artist) {
-    if (artist == null || artist.trim().isEmpty || artist == '<unknown>') {
-      return 'Artista desconocido';
-    }
-    return artist.trim();
+    return TitleUtils.getDisplayArtist(artist);
   }
 
   String _formatDuration(int? milliseconds) {

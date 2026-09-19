@@ -95,7 +95,7 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
               ),
               const SizedBox(height: 14),
               Text(
-                widget.song.title,
+                TitleUtils.getDisplayTitle(widget.song),
                 style: const TextStyle(
                     color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                 maxLines: 1,
@@ -103,7 +103,7 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
               ),
               const SizedBox(height: 4),
               Text(
-                widget.song.artist ?? "Unknown Artist",
+                TitleUtils.getDisplayArtist(widget.song.artist),
                 style: TextStyle(color: Colors.grey[500], fontSize: 12),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

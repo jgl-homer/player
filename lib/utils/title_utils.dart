@@ -6,6 +6,11 @@ class TitleUtils {
     'unknown',
     'null',
     'undefined',
+    'unknown artist',
+    'unknown album',
+    'artista desconocido',
+    'desconocido',
+    '<desconocido>',
   };
 
   static bool _isUnknownValue(String? value) {
@@ -22,7 +27,7 @@ class TitleUtils {
     }
 
     // Fallback to file name
-    String name = song.data.split('/').last;
+    String name = song.data.replaceAll('\\', '/').split('/').last;
 
     // Remove extension
     name = name.replaceAll(
@@ -54,7 +59,9 @@ class TitleUtils {
   static bool isUnknownAlbum(String? album) {
     if (_isUnknownValue(album)) return true;
     final normalized = album!.trim().toLowerCase();
-    return normalized == 'unknown album';
+    return normalized == 'unknown album' ||
+        normalized == 'desconocido' ||
+        normalized == 'unknown';
   }
 
   static String getFolderPath(String filePath) {

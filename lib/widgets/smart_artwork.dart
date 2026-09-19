@@ -41,14 +41,19 @@ class _SmartArtworkState extends State<SmartArtwork> {
   @override
   void didUpdateWidget(SmartArtwork oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.songPath != widget.songPath ||
+    final songChanged = oldWidget.songPath != widget.songPath ||
         oldWidget.albumId != widget.albumId ||
-        oldWidget.type != widget.type ||
-        _artworkTierFor(oldWidget.size) != _artworkTierFor(widget.size)) {
-      setState(() {
-        _artworkBytes = null;
-        _tried = false;
-      });
+        oldWidget.type != widget.type;
+    final tierChanged =
+        _artworkTierFor(oldWidget.size) != _artworkTierFor(widget.size);
+
+    if (songChanged || tierChanged) {
+      if (songChanged) {
+        setState(() {
+          _artworkBytes = null;
+          _tried = false;
+        });
+      }
       _loadArtwork();
     }
   }

@@ -1775,10 +1775,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final file = File('${directory.path}/$safeName.m3u8');
     final lines = <String>['#EXTM3U'];
     for (final song in songs) {
-      final title = song.title.trim().isEmpty ? song.displayName : song.title;
-      final artist = song.artist == null || song.artist == '<unknown>'
-          ? 'Artista Desconocido'
-          : song.artist!;
+      final title = TitleUtils.getDisplayTitle(song);
+      final artist = TitleUtils.getDisplayArtist(song.artist);
       lines
         ..add(
             '#EXTINF:-1,${title.replaceAll('\n', ' ')} - ${artist.replaceAll('\n', ' ')}')
@@ -1832,10 +1830,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   String _playlistSongKey(SongModel song) {
-    final title = song.title.trim().isEmpty ? song.displayName : song.title;
-    final artist = song.artist == null || song.artist == '<unknown>'
-        ? 'Artista Desconocido'
-        : song.artist!;
+    final title = TitleUtils.getDisplayTitle(song);
+    final artist = TitleUtils.getDisplayArtist(song.artist);
     return '${title.trim()} - ${artist.trim()}'.toLowerCase();
   }
 
@@ -2000,11 +1996,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     return MediaItem(
       id: s.data,
-      album: s.album ?? 'Desconocido',
+      album: TitleUtils.getDisplayAlbum(s),
       title: title,
-      artist: (s.artist == null || s.artist == "<unknown>")
-          ? "Artista Desconocido"
-          : s.artist,
+      artist: TitleUtils.getDisplayArtist(s.artist),
       artUri: artUri,
       duration: Duration(milliseconds: s.duration ?? 0),
     );
@@ -2018,11 +2012,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             .map(
               (song) => MediaItem(
                 id: song.data,
-                album: song.album ?? 'Desconocido',
+                album: TitleUtils.getDisplayAlbum(song),
                 title: TitleUtils.getDisplayTitle(song),
-                artist: (song.artist == null || song.artist == "<unknown>")
-                    ? "Artista Desconocido"
-                    : song.artist,
+                artist: TitleUtils.getDisplayArtist(song.artist),
                 artUri: artUri,
                 duration: Duration(milliseconds: song.duration ?? 0),
               ),
@@ -2115,10 +2107,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _updateHomeWidget() async {
     if (_currentSong == null) return;
     final title = TitleUtils.getDisplayTitle(_currentSong!);
-    final artist =
-        (_currentSong!.artist == null || _currentSong!.artist == '<unknown>')
-            ? 'Artista Desconocido'
-            : _currentSong!.artist!;
+    final artist = TitleUtils.getDisplayArtist(_currentSong!.artist);
     await HomeWidget.saveWidgetData<String>('title', title);
     await HomeWidget.saveWidgetData<String>('artist', artist);
     await HomeWidget.saveWidgetData<bool>('isPlaying', _player.playing);

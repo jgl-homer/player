@@ -375,7 +375,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     super.initState();
     final song = widget.song ?? widget.provider.currentSong!;
     final artistText =
-        (song.artist == "<unknown>" || song.artist == null) ? "" : song.artist!;
+        TitleUtils.isUnknownArtist(song.artist) ? "" : song.artist!.trim();
     _title = TextEditingController(text: widget.isAlbumEdit ? "" : TitleUtils.getDisplayTitle(song));
     _album = TextEditingController(text: song.album ?? "");
     _artist = TextEditingController(text: artistText);
@@ -490,7 +490,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
         await widget.provider.updateSongMetadata(
           currentSong,
           newTitle: newTitle ?? currentSong.title,
-          newArtist: _artist.text.trim().isEmpty ? (currentSong.artist ?? 'Artista Desconocido') : _artist.text.trim(),
+          newArtist: _artist.text.trim().isEmpty ? TitleUtils.getDisplayArtist(currentSong.artist) : _artist.text.trim(),
           newAlbum: _album.text.trim().isEmpty ? currentSong.album : _album.text.trim(),
           newGenre: _genre.text.trim().isEmpty ? currentSong.genre : _genre.text.trim(),
           newCoverBytes: coverBytesForCache,

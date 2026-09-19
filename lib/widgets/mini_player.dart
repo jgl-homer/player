@@ -15,7 +15,6 @@ import '../widgets/queue_bottom_sheet.dart';
 import '../widgets/song_info_modal.dart';
 import '../screens/artist_detail_screen.dart';
 import '../screens/album_detail_screen.dart';
-import '../services/state_persistence.dart';
 import '../services/lyrics_service.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -38,10 +37,11 @@ class MiniPlayer extends StatelessWidget {
               context: context,
               isScrollControlled: true,
               useSafeArea: true,
-              backgroundColor: AppTheme.surfaceColor,
+              backgroundColor: const Color(0xFF121212),
+              clipBehavior: Clip.antiAlias,
               shape: const RoundedRectangleBorder(
                   borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(30))),
+                      BorderRadius.vertical(top: Radius.circular(24))),
               builder: (context) => const _PlayerModalContent(),
             );
           },
@@ -79,7 +79,7 @@ class MiniPlayer extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            song.artist ?? "Desconocido",
+                            TitleUtils.getDisplayArtist(song.artist),
                             style: const TextStyle(
                               color: AppTheme.textSecondary,
                               fontSize: 13,
@@ -163,45 +163,24 @@ class _PlayerModalContent extends StatefulWidget {
 }
 
 class _PlayerModalContentState extends State<_PlayerModalContent> {
-  bool _modoAuto = false;
-  bool _epicentro = false;
+  Future<LyricsResult?>? _lyricsFuture;
+  int? _lastLyricsSongId;
+  LyricsSource? _lastLyricsSource;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadPreferences();
-  }
-
-  Future<void> _loadPreferences() async {
-    final modoAuto = await StatePersistence.loadAutoMode();
-    final epicentro = await StatePersistence.loadEpicenterEnabled();
-    if (!mounted) return;
-    setState(() {
-      _modoAuto = modoAuto;
-      _epicentro = epicentro;
-    });
-
-    final audioProvider = context.read<AudioProvider>();
-    await audioProvider.setAutoMode(modoAuto);
-    if (audioProvider.isEpicenterEnabled != epicentro) {
-      await audioProvider.toggleEpicenter();
+  void _ensureLyricsLoaded(SongModel song, LyricsSource source) {
+    if (_lastLyricsSongId != song.id || _lastLyricsSource != source) {
+      _lastLyricsSongId = song.id;
+      _lastLyricsSource = source;
+      _lyricsFuture = LyricsService.load(song, source);
     }
   }
 
   Future<void> _toggleModoAuto(AudioProvider audioProvider) async {
-    final nextValue = !_modoAuto;
-    setState(() => _modoAuto = nextValue);
-    await StatePersistence.saveAutoMode(nextValue);
-    await audioProvider.setAutoMode(nextValue);
+    await audioProvider.setAutoMode(!audioProvider.isAutoModeEnabled);
   }
 
   Future<void> _toggleEpicentro(AudioProvider audioProvider) async {
-    final nextValue = !_epicentro;
-    setState(() => _epicentro = nextValue);
-    await StatePersistence.saveEpicenterEnabled(nextValue);
-    if (audioProvider.isEpicenterEnabled != nextValue) {
-      await audioProvider.toggleEpicenter();
-    }
+    await audioProvider.toggleEpicenter();
   }
 
   Future<void> _saveSongToPlaylist(
@@ -394,11 +373,11 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                     Icon(
                       Icons.directions_car_filled_rounded,
                       size: 20,
-                      color: _modoAuto ? Colors.greenAccent : Colors.white,
+                      color: audioProvider.isAutoModeEnabled ? Colors.greenAccent : Colors.white,
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      _modoAuto ? 'Modo Auto: ON' : 'Modo Auto: OFF',
+                      audioProvider.isAutoModeEnabled ? 'Modo Auto: ON' : 'Modo Auto: OFF',
                       style: const TextStyle(color: Colors.white),
                     ),
                   ],
@@ -411,11 +390,11 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                     Icon(
                       Icons.graphic_eq_rounded,
                       size: 20,
-                      color: _epicentro ? Colors.greenAccent : Colors.white,
+                      color: audioProvider.isEpicenterEnabled ? Colors.greenAccent : Colors.white,
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      _epicentro ? 'Epicentro: ON' : 'Epicentro: OFF',
+                      audioProvider.isEpicenterEnabled ? 'Epicentro: ON' : 'Epicentro: OFF',
                       style: const TextStyle(color: Colors.white),
                     ),
                   ],
@@ -432,7 +411,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                   ],
                 ),
               ),
-              if (_epicentro)
+              if (audioProvider.isEpicenterEnabled)
                 PopupMenuItem(
                   enabled: false,
                   padding:
@@ -630,25 +609,9 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                   ),
                 ),
               ),
-              if (audioProvider.lyricsVisible)
-                FutureBuilder<LyricsResult?>(
-                  future: LyricsService.load(song, audioProvider.lyricsSource),
-                  builder: (context, snapshot) {
-                    final result = snapshot.data;
-                    if (snapshot.connectionState == ConnectionState.waiting ||
-                        result?.hasTimestamps != true) {
-                      return const SizedBox.shrink();
-                    }
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _timestampedLyrics(
-                        result!.lines,
-                        audioProvider.player.positionStream,
-                      ),
-                    );
-                  },
-                ),
               const Spacer(flex: 2),
+              if (audioProvider.lyricsVisible)
+                _buildLyricsSection(song, audioProvider),
               Row(
                 children: [
                   Expanded(
@@ -867,6 +830,26 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     );
   }
 
+  Widget _buildLyricsSection(SongModel song, AudioProvider audioProvider) {
+    _ensureLyricsLoaded(song, audioProvider.lyricsSource);
+    return FutureBuilder<LyricsResult?>(
+      future: _lyricsFuture,
+      builder: (context, snapshot) {
+        final result = snapshot.data;
+        if (result?.hasTimestamps != true || result!.lines.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6.0),
+          child: _timestampedLyrics(
+            result.lines,
+            audioProvider.player.positionStream,
+          ),
+        );
+      },
+    );
+  }
+
   Widget _timestampedLyrics(
       List<LyricsLine> lines, Stream<Duration> positionStream) {
     return _SyncedLyricsView(
@@ -932,21 +915,28 @@ class _SyncedLyricsViewState extends State<_SyncedLyricsView> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 72,
-      child: StreamBuilder<Duration>(
-        stream: widget.positionStream,
-        builder: (context, snapshot) {
-          if (snapshot.hasData) _updateActiveLine(snapshot.data!);
-          final activeLine =
-              _activeIndex >= 0 ? widget.lines[_activeIndex] : null;
-          return AnimatedSwitcher(
-            duration: const Duration(milliseconds: 180),
-            child: SizedBox(
-              key: ValueKey(activeLine?.timestamp),
-              width: double.infinity,
+    return StreamBuilder<Duration>(
+      stream: widget.positionStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasData) _updateActiveLine(snapshot.data!);
+        final activeLine =
+            _activeIndex >= 0 && _activeIndex < widget.lines.length
+                ? widget.lines[_activeIndex]
+                : null;
+        final hasText = activeLine != null && activeLine.text.trim().isNotEmpty;
+
+        return AnimatedOpacity(
+          opacity: hasText ? 1.0 : 0.0,
+          duration: const Duration(milliseconds: 200),
+          child: Container(
+            height: 44,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
               child: Text(
                 activeLine?.text ?? '',
+                key: ValueKey(activeLine?.timestamp),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
@@ -954,12 +944,13 @@ class _SyncedLyricsViewState extends State<_SyncedLyricsView> {
                   color: Colors.white,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
                 ),
               ),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 }

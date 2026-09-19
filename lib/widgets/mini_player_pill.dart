@@ -3,6 +3,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import 'smart_artwork.dart';
 import '../providers/audio_provider.dart';
+import '../utils/title_utils.dart';
 
 class MiniPlayerPill extends StatefulWidget {
   final SongModel song;
@@ -95,7 +96,7 @@ class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProvid
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      widget.song.title,
+                      TitleUtils.getDisplayTitle(widget.song),
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,

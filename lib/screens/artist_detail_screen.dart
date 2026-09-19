@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
+import '../theme/app_theme.dart';
 import '../utils/title_utils.dart';
 import '../widgets/smart_artwork.dart';
 import 'album_detail_screen.dart';
@@ -236,7 +237,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                     TitleUtils.getDisplayTitle(s),
                     style: TextStyle(
                         color: isPlaying
-                            ? const Color(0xFFE91E63)
+                            ? AppTheme.primaryColor
                             : Colors.white,
                         fontWeight: isPlaying
                             ? FontWeight.bold

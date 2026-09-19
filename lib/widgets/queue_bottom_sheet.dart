@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../utils/title_utils.dart';
+import '../theme/app_theme.dart';
 import 'smart_artwork.dart';
 import '../providers/audio_provider.dart';
 
@@ -102,7 +103,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                   title: Text(
                     TitleUtils.getDisplayTitle(song),
                     style: TextStyle(
-                      color: isPlaying ? const Color(0xFFE91E63) : Colors.white,
+                      color: isPlaying ? AppTheme.primaryColor : Colors.white,
                       fontWeight:
                           isPlaying ? FontWeight.bold : FontWeight.normal,
                     ),
@@ -113,7 +114,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                     TitleUtils.getDisplayArtist(song.artist),
                     style: TextStyle(
                         color: isPlaying
-                            ? Colors.pink.withOpacity(0.7)
+                            ? AppTheme.primaryColor.withOpacity(0.7)
                             : Colors.white54,
                         fontSize: 13),
                     maxLines: 1,
@@ -123,7 +124,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                     children: [
                       if (isPlaying)
                         const Icon(Icons.equalizer,
-                            color: Color(0xFFE91E63), size: 20),
+                            color: AppTheme.primaryColor, size: 20),
                       // Botón de eliminación — solo quita de la cola activa,
                       // nunca borra el archivo físico del almacenamiento.
                       IconButton(

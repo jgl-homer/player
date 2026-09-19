@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
+import '../utils/title_utils.dart';
 import 'smart_artwork.dart';
 
 class WideCard extends StatefulWidget {
@@ -87,7 +88,7 @@ class _WideCardState extends State<WideCard>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        widget.song.title,
+                        TitleUtils.getDisplayTitle(widget.song),
                         style: const TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -97,7 +98,7 @@ class _WideCardState extends State<WideCard>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        widget.song.artist ?? "Unknown Artist",
+                        TitleUtils.getDisplayArtist(widget.song.artist),
                         style: TextStyle(color: Colors.grey[500], fontSize: 13),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
