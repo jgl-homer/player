@@ -1,36 +1,36 @@
 # 🎵 Player
 
-### Advanced Android Music Player • DSP • Epicenter • High-Quality Audio
+### Reproductor de música para Android • DSP • Epicenter • Audio de alta calidad
 
-> **Player** is a Flutter-based music player focused on local audio playback, custom DSP and an **Epicenter / Bass Restoration** engine.
+> **Player** es un reproductor de música desarrollado con Flutter, enfocado en reproducción local, procesamiento DSP personalizado y un sistema **Epicenter / restaurador de bajos**.
 
-The project is designed around a simple idea:
+La idea principal del proyecto es:
 
-> **Keep the audio as clean and high-quality as possible while giving the user powerful control over the low end.**
+> **Mantener el audio con la mayor calidad posible mientras se ofrece un procesamiento de graves potente y configurable.**
 
-The repository currently contains a custom local `just_audio` implementation under `plugins/just_audio_epicenter`, allowing the playback engine to be extended specifically for this project.
-
----
-
-## 🚧 Project status
-
-**Status:** Active development
-
-This is a work-in-progress audio player. Some items described in the roadmap are planned rather than fully implemented.
-
-The current repository is a Flutter project with a custom `just_audio` dependency, `audio_service`, `audio_session`, media-library access, metadata handling, local persistence and the custom Epicenter plugin.
+El repositorio contiene una implementación personalizada de `just_audio` dentro de `plugins/just_audio_epicenter`, lo que permite modificar el motor de reproducción específicamente para este proyecto.
 
 ---
 
-## ✨ Vision
+## 🚧 Estado del proyecto
 
-Player is being built as a serious local music player rather than a basic Flutter audio demo.
+**Estado:** En desarrollo activo
 
-The long-term audio chain is:
+El proyecto todavía está en desarrollo. Algunas funciones mencionadas en la hoja de ruta son objetivos futuros y **no deben considerarse implementadas todavía**.
+
+Actualmente el proyecto cuenta con una aplicación Flutter, un plugin local basado en `just_audio`, integración con `audio_service`, `audio_session`, acceso a la biblioteca musical del dispositivo, lectura de metadatos, almacenamiento local y el desarrollo del Epicenter.
+
+---
+
+# 🎯 Objetivo del proyecto
+
+Player busca ser un reproductor de música local avanzado, no solamente un reproductor básico.
+
+La arquitectura de audio que se busca conseguir es:
 
 ```text
 ┌─────────────────────────┐
-│       AUDIO FILE        │
+│      ARCHIVO DE AUDIO   │
 │                         │
 │ MP3 / FLAC / WAV / WMA  │
 │ AAC / OGG / PCM / ...   │
@@ -38,37 +38,38 @@ The long-term audio chain is:
              │
              ▼
 ┌─────────────────────────┐
-│        DECODER          │
+│        DECODIFICADOR    │
 │                         │
-│ Native / FFmpeg         │
+│ Nativo / FFmpeg         │
 └────────────┬────────────┘
              │
              ▼
 ┌─────────────────────────┐
-│          PCM            │
+│           PCM           │
 │                         │
-│ Preserve source format  │
-│ whenever possible       │
+│ Mantener la resolución  │
+│ original cuando sea     │
+│ posible                 │
 └────────────┬────────────┘
              │
              ▼
 ┌─────────────────────────┐
-│        DSP ENGINE       │
+│       MOTOR DSP         │
 │                         │
 │ Epicenter               │
-│ Bass Restoration        │
-│ EQ                      │
-│ Gain                    │
-│ Limiter                 │
+│ Restaurador de bajos    │
+│ Ecualizador             │
+│ Ganancia                │
+│ Limitador               │
 └────────────┬────────────┘
              │
              ▼
 ┌─────────────────────────┐
-│      AUDIO OUTPUT       │
+│      SALIDA DE AUDIO    │
 │                         │
 │ AudioTrack / AAudio     │
 │ Android Audio HAL       │
-│ USB DAC                 │
+│ DAC USB                 │
 └────────────┬────────────┘
              │
              ▼
@@ -79,92 +80,94 @@ The long-term audio chain is:
 
 # 🔊 Epicenter
 
-The **Epicenter** is a core feature of Player.
+El **Epicenter** es una de las características principales de Player.
 
-It is intended to provide powerful low-frequency processing and bass restoration while remaining part of the main audio-processing chain.
+Su objetivo es procesar las frecuencias graves y recuperar/reforzar la percepción de bajos que pueden sentirse débiles después de determinados procesos de reproducción.
 
-### Processing concept
+### Flujo de procesamiento
 
 ```text
-Original Audio
+Audio original
       │
       ▼
-    Decoder
+  Decodificador
       │
       ▼
       PCM
       │
       ▼
- ┌───────────────┐
- │   EPICENTER   │
- │               │
- │ Bass Restore  │
- │ Bass Process  │
- └───────┬───────┘
-         │
-         ▼
-    Audio Output
+┌───────────────┐
+│   EPICENTER   │
+│               │
+│ Restauración  │
+│ de bajos      │
+│ Procesamiento │
+│ de graves     │
+└───────┬───────┘
+        │
+        ▼
+   Salida de audio
 ```
 
-The Epicenter is **not intended to be removed from the project**. It is one of the defining features of the player.
+El Epicenter forma parte del concepto central del reproductor y está integrado en el flujo de audio.
 
 ---
 
-# 🎛️ DSP architecture
+# 🎛️ Motor DSP
 
-The DSP architecture is designed around processing decoded PCM rather than repeatedly converting compressed audio.
+El proyecto está diseñado para procesar el audio después de la decodificación.
 
-The target architecture is:
+La arquitectura objetivo es:
 
 ```text
-SOURCE
+ARCHIVO
   │
   ▼
-DECODER
+DECODIFICADOR
   │
   ▼
 PCM
   │
   ▼
-FLOAT DSP
+DSP EN FLOAT
   │
   ├── Epicenter
-  ├── Bass Restoration
-  ├── Equalizer
-  ├── Gain
-  └── Limiter
+  ├── Restaurador de bajos
+  ├── Ecualizador
+  ├── Ganancia
+  └── Limitador
   │
   ▼
-OUTPUT
+SALIDA
 ```
 
-Processing internally in floating point is useful for avoiding unnecessary quantization during DSP operations and for providing headroom for effects such as bass restoration and EQ.
+El procesamiento interno en punto flotante permite realizar operaciones DSP con mayor margen y reducir conversiones innecesarias durante la cadena de procesamiento.
 
 ---
 
-# 🎧 High-quality audio
+# 🎧 Audio de alta calidad
 
-Player is intended to handle high-quality local files such as:
+Player está pensado para trabajar con archivos de alta calidad como:
 
 - FLAC
 - WAV
 - PCM
 - MP3
 - AAC
-- WMA through an additional decoder/backend when implemented
-- Other formats supported by the playback backend
+- WMA mediante un decodificador adicional cuando se implemente
+- Otros formatos compatibles con el motor de reproducción
 
-A key design goal is:
+Una de las reglas principales del proyecto es:
 
-> **Do not force every file into one fixed sample rate or bit depth when it is not necessary.**
+> **No convertir todos los archivos automáticamente a una frecuencia o profundidad fija si no es necesario.**
 
-For example:
+Por ejemplo:
 
 ```text
 FLAC 24-bit / 96 kHz
         │
         ▼
-      Decoder
+    Decodificador
         │
         ▼
 PCM 24-bit / 96 kHz
@@ -173,16 +176,16 @@ PCM 24-bit / 96 kHz
        DSP
         │
         ▼
-Output at 96 kHz
+Salida a 96 kHz
 ```
 
-Likewise:
+Y:
 
 ```text
 WAV 16-bit / 44.1 kHz
         │
         ▼
-      Decoder
+    Decodificador
         │
         ▼
 PCM 16-bit / 44.1 kHz
@@ -191,85 +194,81 @@ PCM 16-bit / 44.1 kHz
        DSP
         │
         ▼
-Output at 44.1 kHz
+Salida a 44.1 kHz
 ```
 
-The exact physical output still depends on the Android device, audio HAL, DAC and selected output route.
+La frecuencia y profundidad que finalmente llegan al DAC dependen del dispositivo Android, del controlador de audio, del hardware y de la ruta de salida utilizada.
 
 ---
 
-# ⚠️ Hi-Res does not automatically mean bit-perfect
+# ⚠️ Hi-Res no significa automáticamente Bit-Perfect
 
-There is an important distinction between:
+Hay que distinguir entre la calidad del archivo y la calidad física de la salida.
 
-### Source quality
+### Archivo
 
 ```text
 FLAC 24-bit / 96 kHz
 ```
 
-and:
-
-### Physical output
+### Ruta de Android
 
 ```text
-App
- ↓
-Android audio stack
- ↓
+Aplicación
+    ↓
+Sistema de audio de Android
+    ↓
 Audio HAL
- ↓
+    ↓
 DAC
 ```
 
-A player can preserve 24/96 internally while the Android device later resamples the signal.
+Aunque el reproductor conserve 24/96 internamente, Android o el hardware pueden realizar un resampling antes de llegar al DAC.
 
-Therefore, the project aims to:
+Por eso el objetivo del proyecto es:
 
-- Preserve source parameters whenever possible.
-- Avoid unnecessary resampling.
-- Use the highest-quality output path available.
-- Detect hardware/output capabilities where possible.
-- Avoid claiming bit-perfect playback on hardware that does not provide it.
+- Conservar los parámetros originales cuando sea posible.
+- Evitar resampling innecesario.
+- Utilizar la ruta de salida de mayor calidad disponible.
+- Detectar las capacidades del dispositivo cuando sea posible.
+- No afirmar que una salida es Bit-Perfect cuando el hardware no lo permite.
 
 ---
 
-# 🧩 Format support strategy
+# 🧩 Compatibilidad de formatos
 
-The project can use different decoding paths depending on the format.
+La estrategia del proyecto es utilizar el decodificador más apropiado para cada formato.
 
 ```text
-                 AUDIO FILE
-                     │
-          ┌──────────┴──────────┐
-          │                     │
-   Native/backend          FFmpeg
-     decoding             when needed
-          │                     │
-          └──────────┬──────────┘
-                     ▼
-                    PCM
-                     │
-                     ▼
-                    DSP
-                     │
-                     ▼
-                  OUTPUT
+                 ARCHIVO
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+   Decodificador         FFmpeg
+       nativo          cuando sea necesario
+          │                   │
+          └─────────┬─────────┘
+                    ▼
+                   PCM
+                    │
+                    ▼
+                   DSP
+                    │
+                    ▼
+                  SALIDA
 ```
 
-The purpose is not to run every file through FFmpeg just because FFmpeg exists.
+La intención **no es pasar absolutamente todo por FFmpeg**.
 
-Instead:
+Formatos que Android/el backend puedan manejar correctamente pueden continuar usando su ruta nativa.
 
-> **Use the simplest appropriate decoder while preserving the audio path.**
-
-FFmpeg is particularly useful for expanding compatibility to formats that Android/the current backend cannot handle directly, such as WMA.
+FFmpeg se puede utilizar para ampliar la compatibilidad con formatos que no estén soportados adecuadamente, por ejemplo WMA.
 
 ---
 
-# 📱 Platform
+# 📱 Plataformas
 
-The project is built with:
+El proyecto utiliza:
 
 - **Flutter**
 - **Dart**
@@ -278,13 +277,13 @@ The project is built with:
 - macOS
 - Linux
 - Windows
-- Web project targets
+- Web
 
-Android is the primary target for the advanced audio functionality.
+Android es la plataforma principal para las funciones avanzadas de audio.
 
 ---
 
-# 🏗️ Project structure
+# 🏗️ Estructura del proyecto
 
 ```text
 player/
@@ -305,7 +304,7 @@ player/
 │   └── icon/
 │
 ├── lib/
-│   └── Application source
+│   └── Código principal de la aplicación
 │
 ├── plugins/
 │   └── just_audio_epicenter/
@@ -323,200 +322,198 @@ player/
 └── README.md
 ```
 
-The custom audio plugin is intentionally kept inside the repository:
+El plugin personalizado se mantiene directamente dentro del repositorio:
 
 ```text
 plugins/just_audio_epicenter/
 ```
 
-This allows the project to modify the playback layer without depending exclusively on an untouched external package.
+Esto permite modificar el motor de reproducción sin depender exclusivamente de una versión externa sin cambios.
 
 ---
 
-# 🧰 Main technologies
+# 🧰 Tecnologías principales
 
-| Technology | Purpose |
+| Tecnología | Uso |
 |---|---|
-| Flutter | Application framework |
-| Dart | Main programming language |
-| just_audio (local plugin) | Audio playback foundation |
-| just_audio_epicenter | Custom playback/audio integration |
-| audio_service | Background audio and media controls |
-| audio_session | Audio-session management |
-| RxDart | Reactive streams |
-| Provider | Application state management |
-| on_audio_query | Device music-library access |
-| audiotags | Audio metadata |
-| SQLite / sqflite | Local persistence |
-| SharedPreferences | Preferences |
-| Permission Handler | Runtime permissions |
-| Home Widget | Home-screen integration |
-| Device Preview | UI testing |
-| Marquee | Scrolling text |
-| Image Picker | Image selection |
+| Flutter | Framework principal |
+| Dart | Lenguaje principal |
+| just_audio | Base del reproductor |
+| just_audio_epicenter | Implementación personalizada |
+| audio_service | Reproducción en segundo plano |
+| audio_session | Administración de sesiones de audio |
+| RxDart | Streams y programación reactiva |
+| Provider | Administración de estado |
+| on_audio_query | Acceso a la biblioteca musical |
+| audiotags | Lectura de metadatos |
+| SQLite / sqflite | Almacenamiento local |
+| SharedPreferences | Preferencias |
+| Permission Handler | Permisos |
+| Home Widget | Widgets |
+| Device Preview | Pruebas de interfaz |
+| Marquee | Texto desplazable |
+| Image Picker | Selección de imágenes |
 
 ---
 
-# 🎵 Music library
+# 🎵 Biblioteca musical
 
-Player is designed to work with local music stored on the device.
+Player está diseñado para trabajar con música almacenada localmente en el dispositivo.
 
-The application can work with information such as:
+Puede manejar información como:
 
-- Track title
-- Artist
-- Album
-- Genre
-- Duration
-- File path
+- Título
+- Artista
+- Álbum
+- Género
+- Duración
+- Ruta del archivo
 - Artwork
-- Available metadata
+- Metadatos disponibles
 
-The project uses:
+Para esto se utilizan principalmente:
 
 ```text
 on_audio_query
 audiotags
 ```
 
-to interact with the local music library and audio metadata.
-
 ---
 
 # 🖼️ Artwork
 
-Album artwork is part of the player experience.
+Las carátulas forman parte de la experiencia del reproductor.
 
-The intended structure is:
+La estructura conceptual es:
 
 ```text
 ┌──────────────────────────┐
 │                          │
-│       ALBUM ART          │
+│       CARÁTULA           │
 │                          │
 └──────────────────────────┘
           │
-          ├── Artist
-          ├── Album
-          └── Track
+          ├── Artista
+          ├── Álbum
+          └── Canción
 ```
 
-Artwork can come from embedded audio metadata or user-selected images depending on the application flow.
+Las imágenes pueden provenir de los metadatos del archivo o de otras fuentes disponibles dentro de la aplicación.
 
 ---
 
-# 🔄 Background playback
+# 🔄 Reproducción en segundo plano
 
-The project includes `audio_service` for background playback and system media integration.
+El proyecto utiliza `audio_service` para integrar la reproducción con Android y los controles multimedia del sistema.
 
-The architecture is intended to support:
+La arquitectura está preparada para:
 
-- Background playback
-- Screen-off playback
-- Notification controls
-- System media controls
-- External media controls
-- Playback state synchronization
+- Reproducción con pantalla apagada.
+- Reproducción en segundo plano.
+- Controles desde la notificación.
+- Controles multimedia del sistema.
+- Controles externos.
+- Sincronización del estado de reproducción.
 
 ---
 
-# 🎚️ Audio processing philosophy
+# 🎚️ Filosofía de procesamiento
 
-The main rule for the audio engine is:
+La regla principal del motor de audio es:
 
-> **Do not degrade the signal unless there is a technical reason to do so.**
+> **No degradar la señal sin una razón técnica.**
 
-### Preferred
+### Ruta deseada
 
 ```text
-SOURCE
+FUENTE
   ↓
-DECODE
+DECODIFICACIÓN
   ↓
-ORIGINAL / APPROPRIATE PCM
+PCM APROPIADO
   ↓
-FLOAT DSP
+DSP EN FLOAT
   ↓
-OUTPUT
+SALIDA
 ```
 
-### Avoid
+### Ruta que se quiere evitar
 
 ```text
-SOURCE
+FUENTE
   ↓
-FORCE 16-bit / 44.1 kHz
+FORZAR 16-bit / 44.1 kHz
   ↓
 DSP
   ↓
-OUTPUT
+SALIDA
 ```
 
-The second approach can unnecessarily discard information from high-resolution sources.
+La segunda ruta puede descartar información innecesariamente en archivos de alta resolución.
 
 ---
 
-# 🚀 Roadmap
+# 🚀 Hoja de ruta
 
-## 🔊 Audio engine
+## 🔊 Motor de audio
 
-- [ ] Complete FFmpeg integration.
-- [ ] WMA playback through FFmpeg.
-- [ ] Additional format support.
-- [ ] Sample-rate detection.
-- [ ] Bit-depth detection.
-- [ ] Better PCM format management.
-- [ ] Float32 internal DSP path.
-- [ ] Output sample-rate management.
-- [ ] Avoid unnecessary resampling.
-- [ ] Clipping protection.
-- [ ] DSP headroom management.
-- [ ] Device output capability detection.
+- [ ] Integración completa de FFmpeg.
+- [ ] Reproducción WMA mediante FFmpeg.
+- [ ] Soporte para formatos adicionales.
+- [ ] Detección automática de sample rate.
+- [ ] Detección de bit depth.
+- [ ] Administración avanzada del formato PCM.
+- [ ] DSP interno en Float32.
+- [ ] Administración del sample rate de salida.
+- [ ] Evitar resampling innecesario.
+- [ ] Protección contra clipping.
+- [ ] Administración de headroom.
+- [ ] Detección de capacidades del dispositivo.
 
 ## 🎛️ Epicenter
 
-- [x] Epicenter integrated into the project.
-- [ ] Refine bass restoration algorithm.
-- [ ] Adjustable intensity.
-- [ ] Better transient handling.
-- [ ] Anti-clipping protection.
+- [x] Epicenter integrado al proyecto.
+- [ ] Mejorar el algoritmo de restauración de bajos.
+- [ ] Control de intensidad.
+- [ ] Mejor manejo de transitorios.
+- [ ] Protección contra clipping.
 - [ ] Presets.
-- [ ] DSP optimization.
-- [ ] Real-time parameter updates.
+- [ ] Optimización DSP.
+- [ ] Cambios de parámetros en tiempo real.
 
-## 🎵 Player
+## 🎵 Reproductor
 
-- [ ] Advanced playlists.
-- [ ] Favorites.
-- [ ] Recently played.
-- [ ] Playback history.
-- [ ] Queue management.
+- [ ] Playlists avanzadas.
+- [ ] Favoritos.
+- [ ] Reproducciones recientes.
+- [ ] Historial.
+- [ ] Administración de cola.
 - [ ] Gapless playback.
 - [ ] Crossfade.
 - [ ] ReplayGain.
-- [ ] Sleep timer.
-- [ ] Advanced equalizer.
-- [ ] More library filters.
+- [ ] Temporizador.
+- [ ] Ecualizador avanzado.
+- [ ] Más filtros para la biblioteca.
 
-## 🎧 Hi-Res / output
+## 🎧 Hi-Res / salida
 
-- [ ] Optimized Android AudioTrack path.
-- [ ] AAudio path where appropriate.
-- [ ] Output capability detection.
-- [ ] Hi-Res output selection.
-- [ ] USB DAC support.
-- [ ] Exclusive USB output.
-- [ ] Sample-rate selection.
-- [ ] Buffer-size controls.
-- [ ] Detailed output-device information.
+- [ ] Ruta AudioTrack optimizada.
+- [ ] Uso de AAudio cuando corresponda.
+- [ ] Detección de capacidades de salida.
+- [ ] Selección de salida Hi-Res.
+- [ ] Soporte para DAC USB.
+- [ ] Salida USB exclusiva.
+- [ ] Selección de sample rate.
+- [ ] Controles de buffer.
+- [ ] Información detallada del dispositivo de salida.
 
 ---
 
-# 🧪 Audio testing
+# 🧪 Pruebas de audio
 
-When testing the audio engine, use files with known properties.
+Para probar correctamente el motor se recomienda utilizar archivos con características conocidas.
 
-Recommended test set:
+Ejemplo:
 
 ```text
 test/
@@ -531,59 +528,59 @@ test/
 └── WMA_test.wma
 ```
 
-For each file, verify:
+Para cada archivo conviene verificar:
 
-1. Decoder works.
-2. Track metadata is correct.
-3. Sample rate is detected correctly.
-4. Channel count is correct.
-5. Bit depth is preserved where supported.
-6. DSP does not introduce clipping.
-7. Epicenter behaves consistently.
-8. Output sample rate is correct for the selected route.
-9. No unexpected resampling occurs.
-10. No clicks/pops appear during track changes.
+1. Que el decoder funcione.
+2. Que los metadatos sean correctos.
+3. Que se detecte correctamente el sample rate.
+4. Que se detecte correctamente el número de canales.
+5. Que se conserve el bit depth cuando la ruta lo permita.
+6. Que el DSP no produzca clipping.
+7. Que Epicenter funcione correctamente.
+8. Que la frecuencia de salida corresponda a la ruta seleccionada.
+9. Que no exista resampling inesperado.
+10. Que no aparezcan clics o pops al cambiar de canción.
 
 ---
 
-# 🔬 DSP test flow
+# 🔬 Prueba del DSP
 
-A useful validation flow is:
+Flujo recomendado:
 
 ```text
-1. DSP OFF
-      │
-      ▼
-Verify clean playback
-      │
-      ▼
-2. Epicenter ON
-      │
-      ▼
-Verify bass processing
-      │
-      ▼
-3. Increase Epicenter
-      │
-      ▼
-Check headroom / clipping
-      │
-      ▼
-4. Change sample rate
-      │
-      ▼
-Verify stable output
+1. DSP APAGADO
+       │
+       ▼
+Comprobar reproducción limpia
+       │
+       ▼
+2. EPICENTER ENCENDIDO
+       │
+       ▼
+Comprobar procesamiento de graves
+       │
+       ▼
+3. Aumentar Epicenter
+       │
+       ▼
+Comprobar headroom / clipping
+       │
+       ▼
+4. Cambiar sample rate
+       │
+       ▼
+Comprobar estabilidad
 ```
 
-Particular attention should be paid to low-frequency processing because aggressive bass restoration can create large signal peaks.
+Se debe prestar especial atención a las frecuencias graves, ya que la restauración de bajos puede aumentar considerablemente los picos de la señal.
 
 ---
 
-# 🛡️ Clipping and headroom
+# 🛡️ Clipping y headroom
 
-Bass restoration can increase peak amplitude substantially.
+Un procesamiento fuerte de graves puede aumentar bastante el nivel máximo de la señal.
 
-A future DSP implementation should therefore provide a signal path similar to:
+Por eso la arquitectura DSP futura debería manejar una cadena similar a:
 
 ```text
 PCM
@@ -598,55 +595,56 @@ Epicenter
 EQ
  │
  ▼
-Limiter / Protection
+Limitador / Protección
  │
  ▼
-Output
+Salida
 ```
 
-The purpose is to prevent digital clipping while keeping the Epicenter effect strong.
+Esto permite que el Epicenter sea potente sin provocar clipping digital innecesario.
 
 ---
 
-# 🧠 Why a custom `just_audio` plugin?
+# 🧠 ¿Por qué un `just_audio` personalizado?
 
-The project uses:
+El proyecto utiliza:
 
 ```yaml
 just_audio:
   path: plugins/just_audio_epicenter
 ```
 
-instead of simply depending on a published package.
+en lugar de depender únicamente de un paquete externo.
 
-This makes it possible to experiment with:
+Esto permite trabajar directamente en funciones relacionadas con:
 
-- Custom DSP.
-- Epicenter processing.
-- Playback-engine changes.
-- Platform-specific audio output.
-- Future decoder integration.
-- Low-level audio behavior.
+- DSP.
+- Epicenter.
+- Motor de reproducción.
+- Salida de audio.
+- Integración específica de Android.
+- Futuros decodificadores.
+- Comportamiento de bajo nivel.
 
-The plugin lives directly inside the repository so changes can be versioned together with the application.
+El plugin forma parte del mismo repositorio para mantener el código del reproductor y el motor de audio sincronizados.
 
 ---
 
-# 🛠️ Development setup
+# 🛠️ Instalación para desarrollo
 
-## Requirements
+## Requisitos
 
-Install:
+Necesitas:
 
 - Flutter SDK
 - Dart SDK
 - Android Studio
 - Android SDK
-- Android build tools
-- JDK compatible with the installed Flutter/Gradle setup
-- Physical Android device or emulator
+- Build Tools de Android
+- JDK compatible con la versión de Flutter/Gradle utilizada
+- Dispositivo Android físico o emulador
 
-Check the environment:
+Comprueba el entorno:
 
 ```bash
 flutter doctor
@@ -654,14 +652,14 @@ flutter doctor
 
 ---
 
-# 📥 Clone
+# 📥 Clonar el proyecto
 
 ```bash
 git clone https://github.com/jgl-homer/player.git
 cd player
 ```
 
-Install dependencies:
+Instalar dependencias:
 
 ```bash
 flutter pub get
@@ -669,9 +667,9 @@ flutter pub get
 
 ---
 
-# ▶️ Run
+# ▶️ Ejecutar
 
-Connect an Android device with USB debugging enabled and run:
+Con un dispositivo Android conectado:
 
 ```bash
 flutter run
@@ -679,45 +677,43 @@ flutter run
 
 ---
 
-# 📦 Build APK
+# 📦 Compilar APK
 
-Debug:
+### Debug
 
 ```bash
 flutter build apk --debug
 ```
 
-Release:
+### Release
 
 ```bash
 flutter build apk --release
 ```
 
-The generated release APK can then be installed on a compatible Android device.
-
 ---
 
-# 🧹 Common Flutter maintenance commands
+# 🧹 Comandos útiles
 
-Clean build files:
+Limpiar archivos de compilación:
 
 ```bash
 flutter clean
 ```
 
-Restore packages:
+Instalar dependencias:
 
 ```bash
 flutter pub get
 ```
 
-Analyze:
+Analizar el proyecto:
 
 ```bash
 flutter analyze
 ```
 
-Run tests:
+Ejecutar pruebas:
 
 ```bash
 flutter test
@@ -725,75 +721,73 @@ flutter test
 
 ---
 
-# 🐛 Reporting bugs
+# 🐛 Reportar errores
 
-When opening an issue, include:
+Al abrir un Issue, proporciona la mayor cantidad de información posible.
 
-### Device
+### Dispositivo
 
 ```text
-Brand:
-Model:
-Android version:
+Marca:
+Modelo:
+Versión de Android:
 ```
 
 ### Audio
 
 ```text
-Format:
+Formato:
 Sample rate:
 Bit depth:
-Channels:
+Canales:
 ```
 
-### Output
+### Salida
 
 ```text
-Speaker / Bluetooth / USB DAC / 3.5mm / Other:
+Altavoz / Bluetooth / USB DAC / 3.5 mm / Otra:
 ```
 
-### Problem
+### Problema
 
-Describe:
+Indica:
 
-- What you expected.
-- What happened.
-- Whether Epicenter was enabled.
-- Whether the problem happens with other files.
-- Whether changing the output device changes the behavior.
-
-A good bug report makes audio-engine problems much easier to reproduce.
+- Qué esperabas que ocurriera.
+- Qué ocurrió realmente.
+- Si Epicenter estaba activado.
+- Si ocurre con otros archivos.
+- Si cambia el comportamiento al utilizar otra salida de audio.
 
 ---
 
-# 🤝 Contributing
+# 🤝 Contribuciones
 
-Contributions are welcome.
+Las contribuciones, ideas y reportes de errores son bienvenidos.
 
-Before making major changes to the audio engine:
+Antes de realizar cambios importantes en el motor de audio:
 
-1. Explain the intended change.
-2. Test with multiple formats.
-3. Test with Epicenter disabled.
-4. Test with Epicenter enabled.
-5. Check for clipping.
-6. Check sample-rate behavior.
-7. Check background playback.
-8. Test on physical hardware when possible.
+1. Explica el cambio.
+2. Prueba varios formatos.
+3. Prueba con Epicenter apagado.
+4. Prueba con Epicenter encendido.
+5. Comprueba clipping.
+6. Comprueba sample rate.
+7. Comprueba reproducción en segundo plano.
+8. Prueba en hardware físico cuando sea posible.
 
-For DSP changes, include before/after behavior and the test audio characteristics whenever possible.
-
----
-
-# 📄 License
-
-A project license has not been declared yet.
-
-Until a license is added to the repository, treat the source code as **all rights reserved** and do not assume that it may be redistributed or reused.
+Para cambios en el DSP, es recomendable incluir el comportamiento antes/después y las características del archivo utilizado para las pruebas.
 
 ---
 
-# 👨‍💻 Author
+# 📄 Licencia
+
+Actualmente el proyecto no tiene una licencia declarada.
+
+Hasta que se agregue una licencia al repositorio, el código debe considerarse **todos los derechos reservados** y no debe asumirse que puede redistribuirse o reutilizarse libremente.
+
+---
+
+# 👨‍💻 Autor
 
 **jgl-homer**
 
@@ -803,49 +797,50 @@ https://github.com/jgl-homer/player
 
 ---
 
-# 🎯 Project goals
+# 🎯 Metas principales
 
-Player is being developed around four main goals:
+Player se está desarrollando alrededor de cuatro objetivos:
 
 ```text
 ┌─────────────────────────────────────┐
 │              PLAYER                 │
 ├─────────────────────────────────────┤
 │                                     │
-│  🎧 AUDIO QUALITY                   │
-│     Preserve the source whenever    │
-│     the platform allows it.         │
+│  🎧 CALIDAD DE AUDIO                │
+│     Conservar la fuente cuando      │
+│     la plataforma lo permita.       │
 │                                     │
 │  🔊 EPICENTER                       │
-│     Powerful bass restoration and   │
-│     low-frequency processing.       │
+│     Restauración y procesamiento    │
+│     potente de graves.              │
 │                                     │
 │  🧠 DSP                             │
-│     Flexible real-time processing.  │
+│     Procesamiento de audio          │
+│     en tiempo real.                 │
 │                                     │
-│  ⚡ PERFORMANCE                     │
-│     Low latency and stable playback │
-│     on real Android hardware.       │
+│  ⚡ RENDIMIENTO                     │
+│     Baja latencia y reproducción    │
+│     estable en Android.             │
 │                                     │
 └─────────────────────────────────────┘
 ```
 
 ---
 
-# 🎶 Audio pipeline — target architecture
+# 🎶 Cadena de audio objetivo
 
 ```text
                          PLAYER
                            │
                            ▼
                   ┌─────────────────┐
-                  │   AUDIO FILE    │
+                  │  ARCHIVO AUDIO   │
                   └────────┬────────┘
                            │
              ┌─────────────┴─────────────┐
              │                           │
              ▼                           ▼
-      Native Decoder                 FFmpeg
+      Decoder nativo                 FFmpeg
              │                           │
              └─────────────┬─────────────┘
                            │
@@ -856,24 +851,25 @@ Player is being developed around four main goals:
                           │
                           ▼
                  ┌────────────────┐
-                 │   FLOAT DSP    │
+                 │   DSP EN FLOAT │
                  │                │
                  │ Epicenter      │
-                 │ Bass Restore   │
+                 │ Restaurador    │
+                 │ de bajos       │
                  │ EQ             │
-                 │ Gain           │
-                 │ Limiter        │
+                 │ Ganancia       │
+                 │ Limitador      │
                  └───────┬────────┘
                          │
                          ▼
                   ┌──────────────┐
-                  │ OUTPUT ROUTE │
+                  │ SALIDA AUDIO  │
                   └──────┬───────┘
                          │
              ┌───────────┼───────────┐
              │           │           │
              ▼           ▼           ▼
-          Speaker     Headset     USB DAC
+          Altavoz     Audífonos    DAC USB
              │           │           │
              └───────────┴───────────┘
                          │
@@ -883,32 +879,32 @@ Player is being developed around four main goals:
 
 ---
 
-# ⭐ Final objective
+# ⭐ Objetivo final
 
-Player aims to become a powerful Android music player centered around:
+Player busca convertirse en un reproductor Android enfocado en:
 
-**local music + high-quality playback + custom DSP + Epicenter.**
+**música local + alta calidad + DSP personalizado + Epicenter.**
 
-The goal is not simply to support more file extensions.
+La meta no es simplemente soportar más extensiones.
 
-The goal is to build an audio pipeline where:
+La meta es construir una cadena de audio donde:
 
 ```text
-          QUALITY
+          CALIDAD
              +
-           CONTROL
+          CONTROL
              +
             DSP
              +
-          EPICENTER
+         EPICENTER
              ↓
-       COMPLETE PLAYER
+      REPRODUCTOR COMPLETO
 ```
 
 ---
 
-### Built with Flutter ❤️
+### Hecho con Flutter ❤️
 
-**Designed for audio.  
-Built for experimentation.  
-Focused on bass.**
+**Diseñado para audio.  
+Construido para experimentar.  
+Enfocado en los bajos.**
