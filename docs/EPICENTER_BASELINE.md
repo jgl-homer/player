@@ -89,3 +89,10 @@ La señal resultante conserva frecuencia de muestreo, número de canales y tama�
 - No se modifica el comportamiento de la interfaz de usuario ni los valores de control.
 - Esta baseline no constituye una propuesta de refactorización ni una autorización para editar la implementación.
 
+## 13. Logo / identidad visual
+
+- **Logo de referencia oficial actual:** `assets/icon/14819eb3-6002-4610-a75e-b6de2bb1f148.png`.
+- La imagen está ubicada dentro de la estructura de assets del proyecto y es la referencia vigente de la identidad visual.
+- No se debe rediseñar el logo, cambiar su diseño, generar una versión diferente ni reemplazarlo por otro diseño sin autorización explícita.
+- Si posteriormente se adapta para los iconos de Android o iOS, debe conservar exactamente la identidad del logo. Solo se permite adaptar su composición, escala, padding o formato a los requisitos del sistema de iconos.
+- La composición del icono debe permitir que el logo ocupe correctamente el área visible sin perder partes del diseño.
