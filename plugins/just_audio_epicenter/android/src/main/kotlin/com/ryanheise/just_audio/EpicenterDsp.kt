@@ -46,7 +46,8 @@ class EpicenterDsp(private val sampleRate: Int) {
 
         ensureState(channelCount, params)
         val mono = monoState ?: return
-        val subBuffer = FloatArray(frames)
+        val originalSignal = input
+        val generatedRawSignal = FloatArray(frames)
         val intensityNorm = clamp(params.intensity, 0f, 100f) / 100f * EPICENTER_INTENSITY_HEADROOM
         val balanceNorm = clamp(params.balance, 0f, 100f) / 100f
         val widthNorm = clamp(params.width, 0f, 100f) / 100f
@@ -59,8 +60,8 @@ class EpicenterDsp(private val sampleRate: Int) {
 
         for (i in 0 until frames) {
             val base = i * channelCount
-            val left = input[base]
-            val right = if (channelCount > 1) input[base + 1] else left
+            val left = originalSignal[base]
+            val right = if (channelCount > 1) originalSignal[base + 1] else left
             val monoSample = floor((left + right) * 0.5f)
             val diff = floor((left - right) * 0.5f)
             val monoBand = mono.band60.process(monoSample) +
@@ -87,28 +88,31 @@ class EpicenterDsp(private val sampleRate: Int) {
             val remixGate = max(gateValue, if (mono.holdSamples > 0) 0.45f else 0f)
             val leveledSynth = mono.synthLevelEnv.process(synth) * sign(synth)
             val protectedSynth = tanh((synth * 0.65f + leveledSynth * 0.35f) * 2.1f) * 0.72f
-            subBuffer[i] = floor(protectedSynth * synthAmount * remixGate)
+            generatedRawSignal[i] = floor(protectedSynth * synthAmount * remixGate)
         }
 
         for (ch in 0 until channelCount) {
             val state = channels[ch]
             for (i in 0 until frames) {
                 val index = i * channelCount + ch
-                val sample = floor(input[index])
-                val voicePath = state.voiceHighpass.process(sample)
+                val originalSample = floor(originalSignal[index])
+                val voicePath = state.voiceHighpass.process(originalSample)
                 val voicePresence = state.voiceEnv.process(voicePath)
                 val voiceProtection = max(0.5f, 1f - voicePresence * (0.85f + intensityNorm * 0.3f))
-                val bassProgram = state.bassLowpass.process(sample)
-                val body = state.lowMidBody.process(sample)
-                val dip = state.lowMidDip.process(sample)
+                val bassProgram = state.bassLowpass.process(originalSample)
+                val body = state.lowMidBody.process(originalSample)
+                val dip = state.lowMidDip.process(originalSample)
                 val shapedBassProgram = bassProgram * bassProgramAmount +
                     body * lowMidBodyAmount * (0.45f + voiceProtection * 0.55f) -
                     dip * lowMidDipAmount
-                val generatedSub = state.subLowpass.process(subBuffer[i]) * (0.4f + voiceProtection * 0.6f)
-                var mixed = voicePath + shapedBassProgram + generatedSub
+                val generatedSignal = state.subLowpass.process(generatedRawSignal[i])
+                val originalProcessingSignal = voicePath + shapedBassProgram
+                var mixed = originalProcessingSignal + generatedSignal
                 mixed *= volumeGain * (0.94f + voiceProtection * 0.06f)
                 mixed = tanh(mixed * 0.94f) / tanh(0.94f)
-                output[index] = floor(state.outputDcHighpass.process(mixed))
+                val currentDspOutput = floor(state.outputDcHighpass.process(mixed))
+                val finalSignal = currentDspOutput
+                output[index] = finalSignal
             }
         }
     }
