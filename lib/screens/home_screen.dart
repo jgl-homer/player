@@ -90,8 +90,10 @@ class HomeScreen extends StatelessWidget {
                   .clamp(0, activeDefs.length - 1),
           child: Scaffold(
             appBar: AppBar(
-              title: const Text("Player",
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Image.asset(
+                'assets/icon/jglcustoms.png',
+                height: 40,
+              ), 
               actions: [
                 IconButton(
                   icon: const Icon(Icons.search),

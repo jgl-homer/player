@@ -63,6 +63,12 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
             return
         }
 
+        if (!enabled || intensity <= 0.01f) {
+            outputBuffer.put(inputBuffer)
+            outputBuffer.flip()
+            return
+        }
+
         val inSlice = inputBuffer.slice().order(ByteOrder.LITTLE_ENDIAN)
         val bytesPerSample = when (encoding) {
             C.ENCODING_PCM_16BIT -> 2
@@ -96,13 +102,6 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
             input[i] = sample
         }
         inputBuffer.position(inputBuffer.position() + byteCount)
-
-        if (!enabled || intensity <= 0.01f) {
-            outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-            writeSamples(outputBuffer, input)
-            outputBuffer.flip()
-            return
-        }
 
         val output = FloatArray(samples)
         val params = EpicenterParams(

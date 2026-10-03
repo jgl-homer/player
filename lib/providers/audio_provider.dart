@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:audio_service/audio_service.dart';
+import 'package:audiotags/audiotags.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1989,37 +1990,50 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<MediaItem> _songToMediaItem(SongModel s, {bool fast = false}) async {
-    String title = TitleUtils.getDisplayTitle(s);
-
     final Uri artUri =
         fast ? await _fallbackArtworkUri() : await _systemArtworkUriForSong(s);
+    return _mediaItemFromSong(s, artUri);
+  }
+
+  Future<MediaItem> _mediaItemFromSong(SongModel song, Uri artUri) async {
+    final isWma = song.data.toLowerCase().endsWith('.wma');
+    Tag? tag;
+    if (isWma) {
+      try {
+        tag = await AudioTags.read(song.data);
+      } catch (e) {
+      }
+    }
+
+    final title = tag?.title?.trim().isNotEmpty == true
+        ? tag!.title!.trim()
+        : TitleUtils.getDisplayTitle(song);
+    final artist = tag?.artist?.trim().isNotEmpty == true
+        ? tag!.artist!.trim()
+        : TitleUtils.getDisplayArtist(song.artist);
+    final album = tag?.album?.trim().isNotEmpty == true
+        ? tag!.album!.trim()
+        : TitleUtils.getDisplayAlbum(song);
+    final durationMs = song.duration != null && song.duration! > 0
+        ? song.duration
+        : tag?.duration;
 
     return MediaItem(
-      id: s.data,
-      album: TitleUtils.getDisplayAlbum(s),
+      id: song.data,
+      album: album,
       title: title,
-      artist: TitleUtils.getDisplayArtist(s.artist),
+      artist: artist,
       artUri: artUri,
-      duration: Duration(milliseconds: s.duration ?? 0),
+      duration: Duration(milliseconds: durationMs ?? 0),
     );
   }
 
   Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs,
-      {bool fast = false}) {
+      {bool fast = false}) async {
     if (fast) {
-      return _fallbackArtworkUri().then(
-        (artUri) => songs
-            .map(
-              (song) => MediaItem(
-                id: song.data,
-                album: TitleUtils.getDisplayAlbum(song),
-                title: TitleUtils.getDisplayTitle(song),
-                artist: TitleUtils.getDisplayArtist(song.artist),
-                artUri: artUri,
-                duration: Duration(milliseconds: song.duration ?? 0),
-              ),
-            )
-            .toList(growable: false),
+      final artUri = await _fallbackArtworkUri();
+      return Future.wait(
+        songs.map((song) => _mediaItemFromSong(song, artUri)),
       );
     }
     return Future.wait(songs.map((s) => _songToMediaItem(s, fast: fast)));
