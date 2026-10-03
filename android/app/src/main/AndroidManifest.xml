@@ -22,6 +22,11 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- REQUERIDO PARA EFECTOS DE AUDIO Y ECUALIZADOR -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <!-- Bluetooth autoplay: detectar conexión de dispositivos BT -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"
+        android:minSdkVersion="31"/>
 
     <application
         android:label="player"
@@ -65,6 +70,17 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+ 
+        <!-- Autoplay al conectar dispositivo Bluetooth incluso si la app fue cerrada -->
+        <receiver
+            android:name=".BluetoothAutoPlayReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED" />
+                <action android:name="android.media.action.HDMI_AUDIO_PLUG" />
             </intent-filter>
         </receiver>
 

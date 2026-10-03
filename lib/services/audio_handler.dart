@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'dart:async';
+import 'state_persistence.dart';
 
 class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   late final AudioPlayer _player;
@@ -127,7 +128,53 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       await action();
       return;
     }
+    if (queue.value.isEmpty) {
+      await _restoreAndPlayFromDisk();
+      return;
+    }
     await playDirect();
+  }
+
+  Future<void> _restoreAndPlayFromDisk() async {
+    try {
+      final state = await StatePersistence.loadPlaybackState();
+      final songPath = state['songPath'] as String?;
+      final positionMs = state['positionMs'] as int? ?? 0;
+      final playlistPaths = List<String>.from(state['playlistPaths'] ?? []);
+
+      if (songPath == null && playlistPaths.isEmpty) return;
+
+      final paths = playlistPaths.isNotEmpty
+          ? playlistPaths
+          : (songPath != null ? [songPath] : <String>[]);
+
+      if (paths.isEmpty) return;
+
+      final items = paths.map((path) {
+        final title = path.replaceAll('\\', '/').split('/').last;
+        return MediaItem(
+          id: path,
+          title: title,
+          artist: 'Desconocido',
+          album: 'Player',
+        );
+      }).toList();
+
+      int initialIndex = 0;
+      if (songPath != null) {
+        final idx = paths.indexOf(songPath);
+        if (idx != -1) initialIndex = idx;
+      }
+
+      await replacePlaylist(
+        items,
+        initialIndex,
+        Duration(milliseconds: positionMs),
+        shouldPlay: true,
+      );
+    } catch (e) {
+      debugPrint('[AudioHandler] Error restoring playback from disk: $e');
+    }
   }
 
   @override
@@ -229,7 +276,11 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (oldIndex < 0 || oldIndex >= queue.value.length) return;
     if (newIndex < 0 || newIndex >= queue.value.length) return;
     await _serializePlaylistMutation(() async {
-      await _player.moveAudioSource(oldIndex, newIndex);
+      try {
+        await _playlist.move(oldIndex, newIndex);
+      } catch (e) {
+        debugPrint('[AudioHandler] moveQueueItem error: $e');
+      }
       final updatedQueue = List<MediaItem>.from(queue.value);
       final moved = updatedQueue.removeAt(oldIndex);
       updatedQueue.insert(newIndex, moved);

@@ -1,8 +1,12 @@
 package com.jglhomer.player
 
 import android.app.Activity
+import android.bluetooth.BluetoothDevice
+import android.content.BroadcastReceiver
 import android.content.ContentUris
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.database.ContentObserver
 import android.net.Uri
 import android.os.Build
@@ -21,6 +25,9 @@ import android.media.audiofx.EnvironmentalReverb
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
+import android.media.AudioManager
+import android.media.AudioDeviceInfo
+import android.media.AudioDeviceCallback
 
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
@@ -36,6 +43,8 @@ class MainActivity : AudioServiceActivity() {
     private var safMethodChannel: MethodChannel? = null
     private var mediaObserver: ContentObserver? = null
     private var myFlutterEngine: FlutterEngine? = null
+    private var bluetoothReceiver: BroadcastReceiver? = null
+    private var audioDeviceCallback: AudioDeviceCallback? = null
 
     private var reverb: EnvironmentalReverb? = null
     private var virtualizer: Virtualizer? = null
@@ -185,6 +194,8 @@ class MainActivity : AudioServiceActivity() {
         }
 
         registerMediaObserver()
+        registerBluetoothReceiver()
+        registerAudioDeviceObserver()
 
         // ── Bug #3: SAF Channel para escritura en SD Card ─────────────────────
         safMethodChannel = MethodChannel(
@@ -358,7 +369,67 @@ class MainActivity : AudioServiceActivity() {
     override fun onDestroy() {
         mediaObserver?.let { contentResolver.unregisterContentObserver(it) }
         mediaObserver = null
+        bluetoothReceiver?.let {
+            try { unregisterReceiver(it) } catch (_: Exception) {}
+        }
+        bluetoothReceiver = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            audioDeviceCallback?.let {
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                try { audioManager?.unregisterAudioDeviceCallback(it) } catch (_: Exception) {}
+            }
+            audioDeviceCallback = null
+        }
         super.onDestroy()
+    }
+
+    private fun registerAudioDeviceObserver() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (audioDeviceCallback != null) return
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+
+        audioDeviceCallback = object : AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                super.onAudioDevicesAdded(addedDevices)
+                val hasAudioOutput = addedDevices?.any { device ->
+                    device.isSink && (
+                        device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                        device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                        device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                        device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                        device.type == AudioDeviceInfo.TYPE_USB_HEADSET
+                    )
+                } ?: false
+
+                if (hasAudioOutput) {
+                    Log.d(TAG, "Audio output device connected — notifying Dart")
+                    runOnUiThread {
+                        mediaMethodChannel?.invokeMethod("bluetooth_connected", null)
+                    }
+                }
+            }
+        }
+        audioManager.registerAudioDeviceCallback(audioDeviceCallback, Handler(Looper.getMainLooper()))
+    }
+
+    private fun registerBluetoothReceiver() {
+        if (bluetoothReceiver != null) return
+        bluetoothReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.action == BluetoothDevice.ACTION_ACL_CONNECTED) {
+                    Log.d(TAG, "Bluetooth device connected — notifying Dart")
+                    runOnUiThread {
+                        mediaMethodChannel?.invokeMethod("bluetooth_connected", null)
+                    }
+                }
+            }
+        }
+        val filter = IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(bluetoothReceiver, filter)
+        }
     }
 
     private fun setupReverb(sessionId: Int) {

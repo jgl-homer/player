@@ -173,6 +173,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _mediaChannel.setMethodCallHandler((call) async {
       if (call.method == 'media_changed') {
         _scheduleLibraryRefresh();
+      } else if (call.method == 'bluetooth_connected') {
+        await _onBluetoothConnected();
       }
     });
     // Escuchar acciones del widget
@@ -1161,6 +1163,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         await _playInternal(_globalQueue, startIndex);
       }
     } else {
+      setPlaybackMode(PlaybackMode.global);
       await _playInternal(songs, startIndex);
     }
   }
@@ -1392,6 +1395,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Autoplay al conectar dispositivo de audio / Bluetooth: reanuda si no está reproduciendo.
+  Future<void> _onBluetoothConnected() async {
+    if (_player.playing) return;
+    if (_currentSong == null || _currentPlaylist.isEmpty) {
+      if (_allSongs.isNotEmpty) {
+        await _loadPlaybackState();
+      }
+    }
+    if (_currentSong == null || _currentPlaylist.isEmpty) return;
+    debugPrint('[Audio] Dispositivo de salida conectado — reanudando reproducción');
+    await _handler.playDirect();
+    notifyListeners();
+  }
+
   Future<void> _rebuildQueueForShuffleState() async {
     if (_currentSong == null || _currentPlaylist.length <= 1) return;
 
@@ -1422,16 +1439,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _currentPlaylist.indexWhere((song) => song.id == _currentSong!.id);
     if (desiredIndex == -1) return;
     _currentIndex = desiredIndex;
-    final mediaItems = await _songsToMediaItems(_currentPlaylist, fast: true);
-    if (_handler.queue.value.length == mediaItems.length &&
-        _handler.queue.value.isNotEmpty) {
-      await _handler.reorderQueueToMatch(mediaItems);
-    } else {
-      await _replacePlaybackQueue(
-        position: _player.position,
-        shouldPlay: _player.playing,
-      );
-    }
+    await _replacePlaybackQueue(
+      position: _player.position,
+      shouldPlay: _player.playing,
+    );
     notifyListeners();
   }
 
@@ -1441,8 +1452,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   ) {
     final safeIndex = startIndex.clamp(0, songs.length - 1);
     final current = songs[safeIndex];
-    final remaining =
-        songs.where((song) => song.id != current.id).toList(growable: true);
+    final remaining = <SongModel>[
+      for (var i = 0; i < songs.length; i++)
+        if (i != safeIndex) songs[i]
+    ];
 
     final random = Random();
     for (var i = remaining.length - 1; i > 0; i--) {

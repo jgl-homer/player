@@ -24,6 +24,13 @@ class PlaylistDetailScreen extends StatelessWidget {
         title: Text(playlistName),
         actions: [
           IconButton(
+            tooltip: 'Reproducir en aleatorio',
+            icon: const Icon(Icons.shuffle),
+            onPressed: songs.isEmpty
+                ? null
+                : () => audioProvider.playPlaylistShuffled(songs),
+          ),
+          IconButton(
             tooltip: 'Reproducir playlist',
             icon: const Icon(Icons.play_arrow),
             onPressed: songs.isEmpty
