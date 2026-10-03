@@ -198,12 +198,35 @@ class _SongInfoModalState extends State<SongInfoModal> {
                   final id3 = details?.id3Tag;
                   final stat = details?.fileStat;
 
-                  final displayTitle =
-                      id3?.title ?? TitleUtils.getDisplayTitle(song);
-                  final displayAlbum =
-                      id3?.album ?? TitleUtils.getDisplayAlbum(song);
-                  final displayArtist =
-                      TitleUtils.getDisplayArtist(id3?.artist ?? song.artist);
+                  final rawRTitle = rData['title']?.trim();
+                  final rawRArtist = rData['artist']?.trim();
+                  final rawRAlbum = rData['album']?.trim();
+                  final fileNameOnly =
+                      song.data.replaceAll('\\', '/').split('/').last;
+
+                  final displayTitle = id3?.title?.trim().isNotEmpty == true
+                      ? id3!.title!.trim()
+                      : (rawRTitle != null &&
+                              rawRTitle.isNotEmpty &&
+                              rawRTitle != 'Desconocido' &&
+                              rawRTitle != fileNameOnly)
+                          ? rawRTitle
+                          : TitleUtils.getDisplayTitle(song);
+                  final displayAlbum = id3?.album?.trim().isNotEmpty == true
+                      ? id3!.album!.trim()
+                      : (rawRAlbum != null &&
+                              rawRAlbum.isNotEmpty &&
+                              rawRAlbum != 'Desconocido')
+                          ? rawRAlbum
+                          : TitleUtils.getDisplayAlbum(song);
+                  final displayArtist = id3?.artist?.trim().isNotEmpty == true
+                      ? TitleUtils.getDisplayArtist(id3!.artist)
+                      : (rawRArtist != null &&
+                              rawRArtist.isNotEmpty &&
+                              rawRArtist != 'Artista Desconocido' &&
+                              rawRArtist != 'Desconocido')
+                          ? TitleUtils.getDisplayArtist(rawRArtist)
+                          : TitleUtils.getDisplayArtist(song.artist);
                   final displayAlbumArtist =
                       rData['albumArtist'] ?? "Desconocido";
                   final displayComposer = rData['composer'] ?? "Desconocido";

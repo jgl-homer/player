@@ -315,8 +315,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             _currentSong = _currentPlaylist[_currentIndex];
           }
 
-          // Si el MediaItem contiene metadata real (p.ej. WMA extraído vía FFprobe),
-          // sincronizarla con _currentSong para que la UI muestre los tags reales.
+          // Sincronizar metadata enriquecida del MediaItem (ej. WMA vía FFprobe) a _currentSong
           if (_currentSong != null &&
               _currentSong!.data.toLowerCase().endsWith('.wma')) {
             final map = Map<String, dynamic>.from(_currentSong!.getMap);
@@ -356,6 +355,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
               final fIdx =
                   _folderQueue.indexWhere((s) => s.id == updatedSong.id);
               if (fIdx != -1) _folderQueue[fIdx] = updatedSong;
+              _rebuildSongIndex();
             }
           }
         } else {
@@ -2073,8 +2073,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         : (rawWmaTitle != null &&
                 rawWmaTitle.isNotEmpty &&
                 rawWmaTitle != 'Desconocido' &&
-                rawWmaTitle != fileName &&
-                rawWmaTitle != song.displayName)
+                rawWmaTitle != fileName)
             ? rawWmaTitle
             : TitleUtils.getDisplayTitle(song);
 
@@ -2325,6 +2324,40 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
       await _syncPlayerLoopMode();
       final mediaItems = await _songsToMediaItems(_currentPlaylist, fast: true);
+      if (_currentSong != null &&
+          _currentSong!.data.toLowerCase().endsWith('.wma') &&
+          _currentIndex < mediaItems.length) {
+        final item = mediaItems[_currentIndex];
+        final map = Map<String, dynamic>.from(_currentSong!.getMap);
+        final fileName =
+            _currentSong!.data.replaceAll('\\', '/').split('/').last;
+        bool changed = false;
+        if (item.title.isNotEmpty &&
+            item.title != fileName &&
+            item.title != _currentSong!.title) {
+          map['title'] = item.title;
+          changed = true;
+        }
+        if (item.artist != null &&
+            item.artist!.isNotEmpty &&
+            item.artist != 'Artista Desconocido' &&
+            item.artist != _currentSong!.artist) {
+          map['artist'] = item.artist;
+          changed = true;
+        }
+        if (item.album != null &&
+            item.album!.isNotEmpty &&
+            item.album != 'Desconocido' &&
+            item.album != _currentSong!.album) {
+          map['album'] = item.album;
+          changed = true;
+        }
+        if (changed) {
+          final updatedSong = SongModel(map);
+          _currentSong = updatedSong;
+          _currentPlaylist[_currentIndex] = updatedSong;
+        }
+      }
       // Cargar en estado PAUSADO con seek a la posición guardada
       await _handler.loadPlaylist(
         mediaItems,
