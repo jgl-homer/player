@@ -314,6 +314,50 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             _currentIndex = index.clamp(0, _currentPlaylist.length - 1);
             _currentSong = _currentPlaylist[_currentIndex];
           }
+
+          // Si el MediaItem contiene metadata real (p.ej. WMA extraído vía FFprobe),
+          // sincronizarla con _currentSong para que la UI muestre los tags reales.
+          if (_currentSong != null &&
+              _currentSong!.data.toLowerCase().endsWith('.wma')) {
+            final map = Map<String, dynamic>.from(_currentSong!.getMap);
+            bool changed = false;
+            final fileName =
+                _currentSong!.data.replaceAll('\\', '/').split('/').last;
+            if (currentTag.title.isNotEmpty &&
+                currentTag.title != _currentSong!.title &&
+                currentTag.title != fileName) {
+              map['title'] = currentTag.title;
+              changed = true;
+            }
+            if (currentTag.artist != null &&
+                currentTag.artist!.isNotEmpty &&
+                currentTag.artist != 'Artista Desconocido' &&
+                currentTag.artist != _currentSong!.artist) {
+              map['artist'] = currentTag.artist;
+              changed = true;
+            }
+            if (currentTag.album != null &&
+                currentTag.album!.isNotEmpty &&
+                currentTag.album != 'Desconocido' &&
+                currentTag.album != _currentSong!.album) {
+              map['album'] = currentTag.album;
+              changed = true;
+            }
+            if (changed) {
+              final updatedSong = SongModel(map);
+              _currentSong = updatedSong;
+              _currentPlaylist[_currentIndex] = updatedSong;
+              final allIdx =
+                  _allSongs.indexWhere((s) => s.id == updatedSong.id);
+              if (allIdx != -1) _allSongs[allIdx] = updatedSong;
+              final gIdx =
+                  _globalQueue.indexWhere((s) => s.id == updatedSong.id);
+              if (gIdx != -1) _globalQueue[gIdx] = updatedSong;
+              final fIdx =
+                  _folderQueue.indexWhere((s) => s.id == updatedSong.id);
+              if (fIdx != -1) _folderQueue[fIdx] = updatedSong;
+            }
+          }
         } else {
           _currentIndex = index.clamp(0, _currentPlaylist.length - 1);
           _currentSong = _currentPlaylist[_currentIndex];
@@ -1998,22 +2042,59 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<MediaItem> _mediaItemFromSong(SongModel song, Uri artUri) async {
     final isWma = song.data.toLowerCase().endsWith('.wma');
     Tag? tag;
+    Map<String, String>? wmaMeta;
+
     if (isWma) {
       try {
         tag = await AudioTags.read(song.data);
-      } catch (e) {
+      } catch (_) {
+        // AudioTags falla con WMA en Android; usamos el fallback nativo FFprobe
+      }
+
+      if (tag == null || tag.title == null || tag.title!.trim().isEmpty) {
+        try {
+          wmaMeta = await _mediaChannel.invokeMapMethod<String, String>(
+            'extract_metadata',
+            {'path': song.data},
+          );
+        } catch (e) {
+          debugPrint('Error extrayendo metadata WMA vía nativa: $e');
+        }
       }
     }
 
+    final rawWmaTitle = wmaMeta?['title']?.trim();
+    final rawWmaArtist = wmaMeta?['artist']?.trim();
+    final rawWmaAlbum = wmaMeta?['album']?.trim();
+    final fileName = song.data.replaceAll('\\', '/').split('/').last;
+
     final title = tag?.title?.trim().isNotEmpty == true
         ? tag!.title!.trim()
-        : TitleUtils.getDisplayTitle(song);
+        : (rawWmaTitle != null &&
+                rawWmaTitle.isNotEmpty &&
+                rawWmaTitle != 'Desconocido' &&
+                rawWmaTitle != fileName &&
+                rawWmaTitle != song.displayName)
+            ? rawWmaTitle
+            : TitleUtils.getDisplayTitle(song);
+
     final artist = tag?.artist?.trim().isNotEmpty == true
         ? tag!.artist!.trim()
-        : TitleUtils.getDisplayArtist(song.artist);
+        : (rawWmaArtist != null &&
+                rawWmaArtist.isNotEmpty &&
+                rawWmaArtist != 'Artista Desconocido' &&
+                rawWmaArtist != 'Desconocido')
+            ? rawWmaArtist
+            : TitleUtils.getDisplayArtist(song.artist);
+
     final album = tag?.album?.trim().isNotEmpty == true
         ? tag!.album!.trim()
-        : TitleUtils.getDisplayAlbum(song);
+        : (rawWmaAlbum != null &&
+                rawWmaAlbum.isNotEmpty &&
+                rawWmaAlbum != 'Desconocido')
+            ? rawWmaAlbum
+            : TitleUtils.getDisplayAlbum(song);
+
     final durationMs = song.duration != null && song.duration! > 0
         ? song.duration
         : tag?.duration;

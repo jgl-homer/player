@@ -143,14 +143,26 @@ public class MediaUtils {
             }
 
             org.json.JSONObject tags = information.getTags();
-            putIfPresent(metadata, "title", tag(tags, "title"), file.getName());
-            putIfPresent(metadata, "artist", tag(tags, "artist"), "Artista Desconocido");
-            putIfPresent(metadata, "albumArtist", firstTag(tags, "album_artist", "albumartist"), "");
-            putIfPresent(metadata, "album", tag(tags, "album"), "");
-            putIfPresent(metadata, "composer", tag(tags, "composer"), "");
-            putIfPresent(metadata, "genre", tag(tags, "genre"), "");
-            putIfPresent(metadata, "year", firstTag(tags, "date", "year"), "");
-            putIfPresent(metadata, "track", firstTag(tags, "track", "tracknumber"), "");
+            if (tags == null && information.getStreams() != null) {
+                for (StreamInformation stream : information.getStreams()) {
+                    if ("audio".equals(stream.getType()) && stream.getTags() != null) {
+                        tags = stream.getTags();
+                        break;
+                    }
+                }
+            }
+
+            putIfPresent(metadata, "title", tag(tags, "title", "Title", "TITLE"), file.getName());
+            putIfPresent(metadata, "artist", tag(tags, "artist", "Artist", "author", "Author", "performer", "Performer", "WM/AlbumArtist", "WM/Author"), "Artista Desconocido");
+            putIfPresent(metadata, "albumArtist", tag(tags, "album_artist", "albumartist", "AlbumArtist", "WM/AlbumArtist"), "");
+            putIfPresent(metadata, "album", tag(tags, "album", "Album", "ALBUM", "WM/AlbumTitle"), "");
+            putIfPresent(metadata, "composer", tag(tags, "composer", "Composer", "WM/Composer"), "");
+            putIfPresent(metadata, "genre", tag(tags, "genre", "Genre", "WM/Genre"), "");
+
+            String rawYear = tag(tags, "date", "year", "Date", "Year", "WM/Year", "WM/OriginalReleaseYear", "encoded_date");
+            putIfPresent(metadata, "year", cleanYear(rawYear), "");
+
+            putIfPresent(metadata, "track", tag(tags, "track", "tracknumber", "Track", "WM/TrackNumber", "WM/Track"), "");
             putIfPresent(metadata, "bitrate", information.getBitrate(), "");
             putIfPresent(metadata, "duration", information.getDuration(), "0");
             putIfPresent(metadata, "mimeType", "audio/x-ms-wma", "");
@@ -159,6 +171,10 @@ public class MediaUtils {
                 for (StreamInformation stream : information.getStreams()) {
                     if ("audio".equals(stream.getType())) {
                         putIfPresent(metadata, "sampleRate", stream.getSampleRate(), "");
+                        Number ch = stream.getNumberProperty("channels");
+                        if (ch != null) {
+                            metadata.put("channels", String.valueOf(ch));
+                        }
                         break;
                     }
                 }
@@ -169,13 +185,37 @@ public class MediaUtils {
         return metadata;
     }
 
-    private static String tag(org.json.JSONObject tags, String key) {
-        return tags == null ? null : tags.optString(key, null);
+    private static String cleanYear(String yearStr) {
+        if (yearStr == null || yearStr.isEmpty()) return "";
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b(\\d{4})\\b").matcher(yearStr);
+        if (m.find()) {
+            return m.group(1);
+        }
+        return yearStr;
     }
 
-    private static String firstTag(org.json.JSONObject tags, String first, String second) {
-        String value = tag(tags, first);
-        return value != null && !value.isEmpty() ? value : tag(tags, second);
+    private static String tag(org.json.JSONObject tags, String... keys) {
+        if (tags == null) return null;
+        for (String key : keys) {
+            String val = tags.optString(key, null);
+            if (val != null && !val.trim().isEmpty() && !val.equalsIgnoreCase("null")) {
+                return val.trim();
+            }
+        }
+        // Búsqueda case-insensitive si no hubo coincidencia exacta
+        java.util.Iterator<String> it = tags.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            for (String targetKey : keys) {
+                if (k.equalsIgnoreCase(targetKey)) {
+                    String val = tags.optString(k, null);
+                    if (val != null && !val.trim().isEmpty() && !val.equalsIgnoreCase("null")) {
+                        return val.trim();
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private static void putIfPresent(
