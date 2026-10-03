@@ -28,14 +28,19 @@ class PlaylistDetailScreen extends StatelessWidget {
             icon: const Icon(Icons.shuffle),
             onPressed: songs.isEmpty
                 ? null
-                : () => audioProvider.playPlaylistShuffled(songs),
+                : () {
+                    audioProvider.playPlaylistNamed(songs, 0,
+                        playlistName: playlistName);
+                    if (!audioProvider.isShuffle) audioProvider.toggleShuffle();
+                  },
           ),
           IconButton(
             tooltip: 'Reproducir playlist',
             icon: const Icon(Icons.play_arrow),
             onPressed: songs.isEmpty
                 ? null
-                : () => audioProvider.playPlaylist(songs, 0),
+                : () => audioProvider.playPlaylistNamed(songs, 0,
+                    playlistName: playlistName),
           ),
         ],
       ),
@@ -51,7 +56,8 @@ class PlaylistDetailScreen extends StatelessWidget {
                 return SongListTile(
                   song: song,
                   isSelected: audioProvider.currentSong?.id == song.id,
-                  onTap: () => audioProvider.playPlaylist(songs, index),
+                  onTap: () => audioProvider.playPlaylistNamed(songs, index,
+                      playlistName: playlistName),
                 );
               },
             ),

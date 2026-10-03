@@ -93,7 +93,7 @@ class FavoritesTab extends StatelessWidget {
               return SongListTile(
                 song: song,
                 isSelected: isSelected,
-                onTap: () => audioProvider.playPlaylist(favoriteSongs, index),
+                onTap: () => audioProvider.playFavorites(favoriteSongs, index),
               );
             },
           ),

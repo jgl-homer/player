@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'lyrics_service.dart';
 
-enum PlaybackMode { folder, global }
+enum PlaybackMode { folder, album, artist, playlist, favorites, global }
 
 class StatePersistence {
   static const double defaultEpicenterSweepFreq = 45.0;
@@ -13,10 +13,13 @@ class StatePersistence {
 
   static const String _modeKey = 'playback_mode';
   static const String _folderPathKey = 'active_folder_path';
+  static const String _contextIdKey = 'playback_context_id';
   static const String _songPathKey = 'current_song_path';
   static const String _trackIdKey = 'current_track_id';
   static const String _positionKey = 'position_ms';
   static const String _playlistKey = 'playback_playlist_paths_v1';
+  static const String _shuffleKey = 'playback_shuffle';
+  static const String _loopModeKey = 'playback_loop_mode';
   static const String _favoritesKey = 'favorites';
   static const String _playlistsKey = 'saved_playlists_v1';
   static const String _lyricsSourceKey = 'lyrics_source_v1';
@@ -91,10 +94,13 @@ class StatePersistence {
   static Future<void> savePlaybackState({
     required PlaybackMode mode,
     String? folderPath,
+    String? contextId,
     required String songPath,
     int? trackId,
     List<String>? playlistPaths,
     required int positionMs,
+    bool isShuffle = false,
+    String loopMode = 'off',
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_modeKey, mode.toString());
@@ -103,6 +109,12 @@ class StatePersistence {
       await prefs.setString(_folderPathKey, folderPath);
     } else {
       await prefs.remove(_folderPathKey);
+    }
+
+    if (contextId != null) {
+      await prefs.setString(_contextIdKey, contextId);
+    } else {
+      await prefs.remove(_contextIdKey);
     }
 
     await prefs.setString(_songPathKey, songPath);
@@ -117,22 +129,31 @@ class StatePersistence {
       await prefs.remove(_playlistKey);
     }
     await prefs.setInt(_positionKey, positionMs);
+    await prefs.setBool(_shuffleKey, isShuffle);
+    await prefs.setString(_loopModeKey, loopMode);
   }
 
   static Future<Map<String, dynamic>> loadPlaybackState() async {
     final prefs = await SharedPreferences.getInstance();
     final modeStr = prefs.getString(_modeKey);
-    final mode = (modeStr == PlaybackMode.folder.toString())
-        ? PlaybackMode.folder
-        : PlaybackMode.global;
+    PlaybackMode mode = PlaybackMode.global;
+    for (final m in PlaybackMode.values) {
+      if (m.toString() == modeStr) {
+        mode = m;
+        break;
+      }
+    }
 
     return {
       'mode': mode,
       'folderPath': prefs.getString(_folderPathKey),
+      'contextId': prefs.getString(_contextIdKey),
       'songPath': prefs.getString(_songPathKey),
       'trackId': prefs.getInt(_trackIdKey),
       'playlistPaths': prefs.getStringList(_playlistKey) ?? <String>[],
       'positionMs': prefs.getInt(_positionKey) ?? 0,
+      'isShuffle': prefs.getBool(_shuffleKey) ?? false,
+      'loopMode': prefs.getString(_loopModeKey) ?? 'off',
     };
   }
 

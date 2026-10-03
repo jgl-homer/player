@@ -133,7 +133,9 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                       child: _ActionButton(
                         icon: Icons.play_arrow,
                         label: 'REPRODUCIR TODO',
-                        onTap: () => audioProvider.playPlaylist(filteredSongs, 0),
+                        onTap: () => audioProvider.playArtistSongs(
+                            filteredSongs, 0,
+                            artistName: widget.artistName),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -141,7 +143,11 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                       child: _ActionButton(
                         icon: Icons.shuffle,
                         label: 'ALEATORIO',
-                        onTap: () => audioProvider.playPlaylistShuffled(filteredSongs),
+                        onTap: () {
+                            audioProvider.playArtistSongs(filteredSongs, 0,
+                                artistName: widget.artistName);
+                            if (!audioProvider.isShuffle) audioProvider.toggleShuffle();
+                          },
                       ),
                     ),
                   ],
@@ -252,7 +258,9 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   trailing: const Icon(Icons.more_vert, color: Colors.grey),
-                  onTap: () => audioProvider.playPlaylist(filteredSongs, i),
+                  onTap: () => audioProvider.playArtistSongs(
+                      filteredSongs, i,
+                      artistName: widget.artistName),
                 );
               },
               childCount: filteredSongs.length,

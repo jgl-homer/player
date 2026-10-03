@@ -141,7 +141,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     child: _ActionButton(
                       icon: Icons.play_arrow,
                       label: 'REPRODUCIR TODO',
-                      onTap: () => audioProvider.playPlaylist(songs, 0),
+                      onTap: () => audioProvider.playAlbumSongs(songs, 0,
+                          albumId: albumId),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -149,7 +150,10 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     child: _ActionButton(
                       icon: Icons.shuffle,
                       label: 'ALEATORIO',
-                      onTap: () => audioProvider.playPlaylistShuffled(songs),
+                      onTap: () {
+                          audioProvider.playAlbumSongs(songs, 0, albumId: albumId);
+                          if (!audioProvider.isShuffle) audioProvider.toggleShuffle();
+                        },
                     ),
                   ),
                 ],
@@ -192,7 +196,8 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     onPressed: () =>
                         showOptionsMenu(context, audioProvider, song: song),
                   ),
-                  onTap: () => audioProvider.playPlaylist(songs, index),
+                  onTap: () => audioProvider.playAlbumSongs(songs, index,
+                      albumId: albumId),
                 );
               },
               childCount: songs.length,

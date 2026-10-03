@@ -38,6 +38,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   PlaybackMode _playbackMode = PlaybackMode.global;
   String? _activeFolderPath;
+  String? _activeContextId; // stable ID for album/artist/playlist/favorites context
 
   // Concert Hall FX State
   AudioPreset _currentPreset = AudioPreset.concertHall;
@@ -415,8 +416,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _handler.onNextRequested = next;
 
     _handler.onTrackCompleted = () {
-      if (_playbackMode == PlaybackMode.folder) {
-        unawaited(playNextFolder());
+      switch (_playbackMode) {
+        case PlaybackMode.folder:
+          unawaited(playNextFolder());
+          break;
+        case PlaybackMode.album:
+          unawaited(playNextAlbum());
+          break;
+        case PlaybackMode.artist:
+          unawaited(playNextArtist());
+          break;
+        case PlaybackMode.playlist:
+        case PlaybackMode.favorites:
+          // Stop at end — do not bleed into another context
+          unawaited(stop());
+          break;
+        case PlaybackMode.global:
+          // just_audio handles LoopMode.all natively; nothing extra needed
+          break;
       }
     };
 
@@ -1105,8 +1122,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // --- Playback Logic ---
 
-  void setPlaybackMode(PlaybackMode mode, {String? folderPath}) {
+  void setPlaybackMode(PlaybackMode mode,
+      {String? folderPath, String? contextId}) {
     _playbackMode = mode;
+    _activeContextId = contextId;
     if (mode == PlaybackMode.folder && folderPath != null) {
       if (folderPath.endsWith('/')) {
         _activeFolderPath = folderPath.substring(0, folderPath.length - 1);
@@ -1166,6 +1185,127 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       setPlaybackMode(PlaybackMode.global);
       await _playInternal(songs, startIndex);
     }
+  }
+
+  // --- Contextual play entry-points ---
+
+  /// Play songs from a specific album. Uses albumId as stable context ID.
+  Future<void> playAlbumSongs(List<SongModel> songs, int startIndex,
+      {required int albumId}) async {
+    if (songs.isEmpty) return;
+    setPlaybackMode(PlaybackMode.album, contextId: albumId.toString());
+    await _playInternal(songs, startIndex);
+  }
+
+  /// Play songs from a specific artist. Uses artistName as context (no stable ID in on_audio_query).
+  Future<void> playArtistSongs(List<SongModel> songs, int startIndex,
+      {required String artistName}) async {
+    if (songs.isEmpty) return;
+    setPlaybackMode(PlaybackMode.artist, contextId: artistName);
+    await _playInternal(songs, startIndex);
+  }
+
+  /// Play a named playlist by name (stable key stored in savedPlaylists map).
+  Future<void> playPlaylistNamed(List<SongModel> songs, int startIndex,
+      {required String playlistName}) async {
+    if (songs.isEmpty) return;
+    setPlaybackMode(PlaybackMode.playlist, contextId: playlistName);
+    await _playInternal(songs, startIndex);
+  }
+
+  /// Play favorites list. Uses fixed ID '__favorites__'.
+  Future<void> playFavorites(List<SongModel> songs, int startIndex) async {
+    if (songs.isEmpty) return;
+    setPlaybackMode(PlaybackMode.favorites, contextId: '__favorites__');
+    await _playInternal(songs, startIndex);
+  }
+
+  // --- Album navigation (mirrors folder navigation pattern) ---
+
+  Future<void> playNextAlbum() => _changeAlbum(1);
+  Future<void> playPreviousAlbum({bool playLastTrack = false}) =>
+      _changeAlbum(-1, playLastTrack: playLastTrack);
+
+  Future<void> _changeAlbum(int offset, {bool playLastTrack = false}) async {
+    if (_allSongs.isEmpty) return;
+    // Build sorted album list (same order as albums_tab.dart)
+    final Map<String, List<SongModel>> albumsByKey = {};
+    for (final s in _allSongs) {
+      albumsByKey.putIfAbsent(TitleUtils.getAlbumKey(s), () => []).add(s);
+    }
+    final sortedAlbums = albumsByKey.entries.toList()
+      ..sort((a, b) => TitleUtils.getDisplayAlbum(a.value.first)
+          .toLowerCase()
+          .compareTo(
+              TitleUtils.getDisplayAlbum(b.value.first).toLowerCase()));
+
+    if (sortedAlbums.isEmpty) return;
+    // Find current album by contextId (albumId string) or by song's album
+    int currentIdx = -1;
+    if (_activeContextId != null) {
+      final targetAlbumId = int.tryParse(_activeContextId!);
+      if (targetAlbumId != null) {
+        currentIdx = sortedAlbums.indexWhere(
+            (e) => e.value.any((s) => s.albumId == targetAlbumId));
+      }
+    }
+    if (currentIdx == -1 && _currentSong != null) {
+      final currentAlbumKey = TitleUtils.getAlbumKey(_currentSong!);
+      currentIdx =
+          sortedAlbums.indexWhere((e) => e.key == currentAlbumKey);
+    }
+    if (currentIdx == -1) currentIdx = 0;
+
+    final nextIdx =
+        ((currentIdx + offset) % sortedAlbums.length + sortedAlbums.length) %
+            sortedAlbums.length;
+    final nextEntry = sortedAlbums[nextIdx];
+    final nextSongs = nextEntry.value;
+    final nextAlbumId = nextSongs.first.albumId ?? 0;
+
+    final startIndex = playLastTrack ? nextSongs.length - 1 : 0;
+    await playAlbumSongs(nextSongs, startIndex, albumId: nextAlbumId);
+  }
+
+  // --- Artist navigation ---
+
+  Future<void> playNextArtist() => _changeArtist(1);
+  Future<void> playPreviousArtist({bool playLastTrack = false}) =>
+      _changeArtist(-1, playLastTrack: playLastTrack);
+
+  Future<void> _changeArtist(int offset, {bool playLastTrack = false}) async {
+    if (_allSongs.isEmpty) return;
+    // Build sorted artist list (same order as artists_tab.dart)
+    final Map<String, List<SongModel>> byArtist = {};
+    for (final s in _allSongs) {
+      byArtist.putIfAbsent(TitleUtils.getDisplayArtist(s.artist), () => [])
+          .add(s);
+    }
+    final sortedArtists = byArtist.entries.toList()
+      ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+
+    if (sortedArtists.isEmpty) return;
+
+    int currentIdx = -1;
+    if (_activeContextId != null) {
+      currentIdx = sortedArtists
+          .indexWhere((e) => e.key == _activeContextId);
+    }
+    if (currentIdx == -1 && _currentSong != null) {
+      final currentArtist = TitleUtils.getDisplayArtist(_currentSong!.artist);
+      currentIdx =
+          sortedArtists.indexWhere((e) => e.key == currentArtist);
+    }
+    if (currentIdx == -1) currentIdx = 0;
+
+    final nextIdx =
+        ((currentIdx + offset) % sortedArtists.length + sortedArtists.length) %
+            sortedArtists.length;
+    final nextEntry = sortedArtists[nextIdx];
+    final nextSongs = nextEntry.value;
+
+    final startIndex = playLastTrack ? nextSongs.length - 1 : 0;
+    await playArtistSongs(nextSongs, startIndex, artistName: nextEntry.key);
   }
 
   bool _matchesCurrentGlobalOrder(List<SongModel> songs) {
@@ -1368,8 +1508,25 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             now.difference(_lastTapTime!) < const Duration(milliseconds: 700)) {
           if (_player.hasPrevious) {
             await _handler.skipToPreviousDirect();
-          } else if (_playbackMode == PlaybackMode.folder) {
-            await playPreviousFolder(playLastTrack: true);
+          } else {
+            // At first track: context-aware cross-boundary navigation
+            switch (_playbackMode) {
+              case PlaybackMode.folder:
+                await playPreviousFolder(playLastTrack: true);
+                break;
+              case PlaybackMode.album:
+                await playPreviousAlbum(playLastTrack: true);
+                break;
+              case PlaybackMode.artist:
+                await playPreviousArtist(playLastTrack: true);
+                break;
+              case PlaybackMode.playlist:
+              case PlaybackMode.favorites:
+              case PlaybackMode.global:
+                // Stay at beginning — no cross-boundary jump
+                await _player.seek(Duration.zero);
+                break;
+            }
           }
         } else {
           await _player.seek(Duration.zero);
@@ -2231,13 +2388,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await StatePersistence.savePlaybackState(
         mode: _playbackMode,
         folderPath: _activeFolderPath,
+        contextId: _activeContextId,
         songPath: _currentSong!.data,
         trackId: _currentSong!.id,
         playlistPaths: _currentPlaylist.map((s) => s.data).toList(),
         positionMs: pos >= 0 ? pos : 0,
+        isShuffle: _shuffle,
+        loopMode: _loopMode == LoopMode.off
+            ? 'off'
+            : (_loopMode == LoopMode.all ? 'all' : 'one'),
       );
       debugPrint(
-          '[Persistence] Estado guardado inmediatamente: ${_currentSong!.title} ($pos ms)');
+          '[Persistence] Estado guardado: ${_currentSong!.title} ($pos ms) mode=$_playbackMode ctx=$_activeContextId shuffle=$_shuffle loop=$_loopMode');
     } catch (e) {
       debugPrint('[Persistence] Error guardando estado inmediato: $e');
     }
@@ -2257,14 +2419,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final state = await StatePersistence.loadPlaybackState();
     final mode = state['mode'] as PlaybackMode;
     final folderPath = state['folderPath'] as String?;
+    final contextId = state['contextId'] as String?;
     final songPath = state['songPath'] as String?;
     final trackId = state['trackId'] as int?;
     final List<String> playlistPaths =
         List<String>.from(state['playlistPaths'] ?? []);
     final positionMs = state['positionMs'] as int;
+    final isShuffle = state['isShuffle'] as bool? ?? false;
+    final loopModeStr = state['loopMode'] as String? ?? 'off';
+
+    // Restore shuffle and loop mode
+    _shuffle = isShuffle;
+    _loopMode = loopModeStr == 'all'
+        ? LoopMode.all
+        : (loopModeStr == 'one' ? LoopMode.one : LoopMode.off);
+    unawaited(_syncPlayerLoopMode());
 
     debugPrint(
-        '[Persistence] Cargando estado previo: songPath=$songPath, trackId=$trackId, pos=${positionMs}ms, mode=$mode');
+        '[Persistence] Cargando estado previo: songPath=$songPath, trackId=$trackId, pos=${positionMs}ms, mode=$mode, ctx=$contextId, shuffle=$isShuffle, loop=$loopModeStr');
 
     if (songPath == null && trackId == null) {
       return;
@@ -2278,8 +2450,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     List<SongModel> targetQueue = [];
 
-    // La carpeta activa tiene prioridad sobre playlistPaths: de lo contrario,
-    // una cola global guardada podría volver a incluir todas las subcarpetas.
+    // Restore by mode, using contextId when available for accurate context
     if (mode == PlaybackMode.folder && folderPath != null) {
       final normFolder = _normalizeFolderPath(folderPath);
       targetQueue = _allSongs
@@ -2287,26 +2458,44 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           .toList();
       _playbackMode = PlaybackMode.folder;
       _activeFolderPath = normFolder;
+      _activeContextId = normFolder;
       _folderQueue = List.from(targetQueue);
+    } else if ((mode == PlaybackMode.album ||
+            mode == PlaybackMode.artist ||
+            mode == PlaybackMode.playlist ||
+            mode == PlaybackMode.favorites) &&
+        playlistPaths.isNotEmpty) {
+      final songMap = {for (var s in _allSongs) s.data: s};
+      final reconstructed =
+          playlistPaths.map((p) => songMap[p]).whereType<SongModel>().toList();
+      if (reconstructed.isNotEmpty) {
+        targetQueue = reconstructed;
+        _playbackMode = mode;
+        _activeContextId = contextId;
+      }
     } else if (playlistPaths.isNotEmpty) {
       final songMap = {for (var s in _allSongs) s.data: s};
       final reconstructed =
           playlistPaths.map((p) => songMap[p]).whereType<SongModel>().toList();
       if (reconstructed.isNotEmpty) {
         targetQueue = reconstructed;
+        _playbackMode = mode;
+        _activeContextId = contextId;
       }
     }
 
-    // Si no se pudo restaurar la carpeta o la playlist, usar la cola global.
+    // Fallback to global queue
     if (targetQueue.isEmpty) {
       targetQueue = _globalQueue.isNotEmpty ? _globalQueue : _allSongs;
       _playbackMode = PlaybackMode.global;
+      _activeContextId = null;
       _folderQueue = [];
     }
 
     if (targetQueue.isEmpty) {
       targetQueue = _allSongs;
       _playbackMode = PlaybackMode.global;
+      _activeContextId = null;
     }
 
     // 3. Buscar la canción activa por songPath o trackId
