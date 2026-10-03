@@ -52,7 +52,7 @@ class EpicenterDsp(private val sampleRate: Int) {
         val balanceNorm = clamp(params.balance, 0f, 100f) / 100f
         val widthNorm = clamp(params.width, 0f, 100f) / 100f
         val volumeGain = clamp(params.volume / 100f, 0f, 1f)
-        val synthAmount = 0.42f + intensityNorm * 1.28f
+        val synthAmount = intensityNorm * 1.84f
         val bassProgramAmount = 0.68f + balanceNorm * 0.38f
         val lowMidBodyAmount = 0.12f + balanceNorm * 0.08f
         val lowMidDipAmount = (0.08f + intensityNorm * 0.16f) * (0.45f + widthNorm * 0.3f)
@@ -111,7 +111,7 @@ class EpicenterDsp(private val sampleRate: Int) {
                 mixed *= volumeGain * (0.94f + voiceProtection * 0.06f)
                 mixed = tanh(mixed * 0.94f) / tanh(0.94f)
                 val currentDspOutput = floor(state.outputDcHighpass.process(mixed))
-                val finalSignal = currentDspOutput
+                val finalSignal = currentDspOutput.coerceIn(-1f, 1f)
                 output[index] = finalSignal
             }
         }
