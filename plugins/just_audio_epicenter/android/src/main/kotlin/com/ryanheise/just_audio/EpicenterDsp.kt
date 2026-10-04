@@ -12,24 +12,32 @@ import kotlin.math.tanh
 private const val DENORMAL_FLOOR = 1e-24f
 private const val TWO_PI = Math.PI * 2.0
 private const val EPICENTER_INTENSITY_HEADROOM = 0.75f
+private const val FIXED_BALANCE = 82f
+private const val LIMITER_THRESHOLD = 0.97f
+private const val SOFT_CLIP_THRESHOLD = 0.995f
 
 data class EpicenterParams(
     val sweepFreq: Float = 45f,
     val width: Float = 50f,
     val intensity: Float = 50f,
-    val balance: Float = 50f,
     val volume: Float = 100f,
 )
 
 class EpicenterDsp(private val sampleRate: Int) {
     private val channels = mutableListOf<ChannelState>()
     private var monoState: MonoState? = null
+    private val limiter = StereoLinkedLimiter()
+    private var subBuffer = FloatArray(0)
+    private var frameMix = FloatArray(0)
     private var lastSweepFreq = -1f
     private var lastWidth = -1f
 
     fun reset() {
         channels.clear()
         monoState = null
+        limiter.reset()
+        subBuffer = FloatArray(0)
+        frameMix = FloatArray(0)
         lastSweepFreq = -1f
         lastWidth = -1f
     }
@@ -46,13 +54,12 @@ class EpicenterDsp(private val sampleRate: Int) {
 
         ensureState(channelCount, params)
         val mono = monoState ?: return
-        val originalSignal = input
-        val generatedRawSignal = FloatArray(frames)
+        ensureBuffers(frames, channelCount)
         val intensityNorm = clamp(params.intensity, 0f, 100f) / 100f * EPICENTER_INTENSITY_HEADROOM
-        val balanceNorm = clamp(params.balance, 0f, 100f) / 100f
+        val balanceNorm = FIXED_BALANCE / 100f
         val widthNorm = clamp(params.width, 0f, 100f) / 100f
         val volumeGain = clamp(params.volume / 100f, 0f, 1f)
-        val synthAmount = intensityNorm * 1.84f
+        val synthAmount = 0.42f + intensityNorm * 1.28f
         val bassProgramAmount = 0.68f + balanceNorm * 0.38f
         val lowMidBodyAmount = 0.12f + balanceNorm * 0.08f
         val lowMidDipAmount = (0.08f + intensityNorm * 0.16f) * (0.45f + widthNorm * 0.3f)
@@ -60,8 +67,8 @@ class EpicenterDsp(private val sampleRate: Int) {
 
         for (i in 0 until frames) {
             val base = i * channelCount
-            val left = originalSignal[base]
-            val right = if (channelCount > 1) originalSignal[base + 1] else left
+            val left = input[base]
+            val right = if (channelCount > 1) input[base + 1] else left
             val monoSample = floor((left + right) * 0.5f)
             val diff = floor((left - right) * 0.5f)
             val monoBand = mono.band60.process(monoSample) +
@@ -88,33 +95,43 @@ class EpicenterDsp(private val sampleRate: Int) {
             val remixGate = max(gateValue, if (mono.holdSamples > 0) 0.45f else 0f)
             val leveledSynth = mono.synthLevelEnv.process(synth) * sign(synth)
             val protectedSynth = tanh((synth * 0.65f + leveledSynth * 0.35f) * 2.1f) * 0.72f
-            generatedRawSignal[i] = floor(protectedSynth * synthAmount * remixGate)
+            subBuffer[i] = floor(protectedSynth * synthAmount * remixGate)
         }
 
-        for (ch in 0 until channelCount) {
-            val state = channels[ch]
-            for (i in 0 until frames) {
+        for (i in 0 until frames) {
+            var framePeak = 0f
+            for (ch in 0 until channelCount) {
+                val state = channels[ch]
                 val index = i * channelCount + ch
-                val originalSample = floor(originalSignal[index])
-                val voicePath = state.voiceHighpass.process(originalSample)
+                val sample = floor(input[index])
+                val voicePath = state.voiceHighpass.process(sample)
                 val voicePresence = state.voiceEnv.process(voicePath)
                 val voiceProtection = max(0.5f, 1f - voicePresence * (0.85f + intensityNorm * 0.3f))
-                val bassProgram = state.bassLowpass.process(originalSample)
-                val body = state.lowMidBody.process(originalSample)
-                val dip = state.lowMidDip.process(originalSample)
+                val bassProgram = state.bassLowpass.process(sample)
+                val body = state.lowMidBody.process(sample)
+                val dip = state.lowMidDip.process(sample)
                 val shapedBassProgram = bassProgram * bassProgramAmount +
                     body * lowMidBodyAmount * (0.45f + voiceProtection * 0.55f) -
                     dip * lowMidDipAmount
-                val generatedSignal = state.subLowpass.process(generatedRawSignal[i])
-                val originalProcessingSignal = voicePath + shapedBassProgram
-                var mixed = originalProcessingSignal + generatedSignal
+                val generatedSub = state.subLowpass.process(subBuffer[i]) * (0.4f + voiceProtection * 0.6f)
+                var mixed = voicePath + shapedBassProgram + generatedSub
                 mixed *= volumeGain * (0.94f + voiceProtection * 0.06f)
                 mixed = tanh(mixed * 0.94f) / tanh(0.94f)
-                val currentDspOutput = floor(state.outputDcHighpass.process(mixed))
-                val finalSignal = currentDspOutput.coerceIn(-1f, 1f)
-                output[index] = finalSignal
+                val motorOutput = floor(state.outputDcHighpass.process(mixed))
+                frameMix[ch] = motorOutput
+                framePeak = max(framePeak, abs(motorOutput))
+            }
+
+            val limiterGain = limiter.processPeak(framePeak)
+            for (ch in 0 until channelCount) {
+                output[i * channelCount + ch] = floor(finalProtection(frameMix[ch] * limiterGain))
             }
         }
+    }
+
+    private fun ensureBuffers(frames: Int, channelCount: Int) {
+        if (subBuffer.size < frames) subBuffer = FloatArray(frames)
+        if (frameMix.size < channelCount) frameMix = FloatArray(channelCount)
     }
 
     private fun ensureState(channelCount: Int, params: EpicenterParams) {
@@ -204,8 +221,33 @@ class EpicenterDsp(private val sampleRate: Int) {
         return exp(-1f / samples)
     }
 
+    private fun finalProtection(value: Float): Float {
+        if (abs(value) <= SOFT_CLIP_THRESHOLD) return value
+        return tanh(value * 1.02f) / tanh(1.02f)
+    }
+
     private fun floor(value: Float): Float = if (abs(value) < DENORMAL_FLOOR) 0f else value
     private fun clamp(value: Float, minValue: Float, maxValue: Float): Float = max(minValue, min(maxValue, value))
+}
+
+private class StereoLinkedLimiter {
+    private var gain = 1f
+
+    fun reset() {
+        gain = 1f
+    }
+
+    fun processPeak(peak: Float): Float {
+        val target = if (peak > LIMITER_THRESHOLD) LIMITER_THRESHOLD / (peak + 1e-6f) else 1f
+        if (target >= 1f && gain >= 0.999999f) {
+            gain = 1f
+            return 1f
+        }
+        val coeff = if (target < gain) 0.45f else 0.004f
+        gain += (target - gain) * coeff
+        if (gain > 0.999999f) gain = 1f
+        return gain
+    }
 }
 
 private data class Derived(
