@@ -13,6 +13,9 @@ private const val DENORMAL_FLOOR = 1e-24f
 private const val TWO_PI = Math.PI * 2.0
 private const val EPICENTER_INTENSITY_HEADROOM = 0.75f
 private const val FIXED_BALANCE = 82f
+private const val LIMITER_THRESHOLD = 0.96f
+private const val LIMITER_RELEASE_MS = 80f
+private const val SOFT_CLIP_START = 0.985f
 
 data class EpicenterParams(
     val sweepFreq: Float = 45f,
@@ -26,12 +29,14 @@ class EpicenterDsp(private val sampleRate: Int) {
     private var monoState: MonoState? = null
     private var lastSweepFreq = -1f
     private var lastWidth = -1f
+    private var protectionGain = 1f
 
     fun reset() {
         channels.clear()
         monoState = null
         lastSweepFreq = -1f
         lastWidth = -1f
+        protectionGain = 1f
     }
 
     fun processInterleaved(input: FloatArray, output: FloatArray, channelCount: Int, params: EpicenterParams) {
@@ -111,10 +116,52 @@ class EpicenterDsp(private val sampleRate: Int) {
                 mixed *= volumeGain * (0.94f + voiceProtection * 0.06f)
                 mixed = tanh(mixed * 0.94f) / tanh(0.94f)
                 val currentDspOutput = floor(state.outputDcHighpass.process(mixed))
-                val finalSignal = currentDspOutput.coerceIn(-1f, 1f)
-                output[index] = finalSignal
+                output[index] = currentDspOutput
             }
         }
+
+        applyPeakProtection(output, frames, channelCount)
+    }
+
+    private fun applyPeakProtection(output: FloatArray, frames: Int, channelCount: Int) {
+        val releaseCoeff = coeffFromMs(LIMITER_RELEASE_MS)
+        for (i in 0 until frames) {
+            val base = i * channelCount
+            var peak = 0f
+            for (ch in 0 until channelCount) {
+                peak = max(peak, abs(output[base + ch]))
+            }
+
+            val targetGain = if (peak > LIMITER_THRESHOLD) LIMITER_THRESHOLD / peak else 1f
+            protectionGain = if (targetGain < protectionGain) {
+                targetGain
+            } else {
+                targetGain + releaseCoeff * (protectionGain - targetGain)
+            }
+
+            if (protectionGain < 0.9999f) {
+                for (ch in 0 until channelCount) {
+                    val index = base + ch
+                    output[index] = softClipLastDefense(output[index] * protectionGain)
+                }
+            } else {
+                protectionGain = 1f
+                for (ch in 0 until channelCount) {
+                    val index = base + ch
+                    val sample = output[index]
+                    output[index] = if (abs(sample) > SOFT_CLIP_START) softClipLastDefense(sample) else sample
+                }
+            }
+        }
+    }
+
+    private fun softClipLastDefense(sample: Float): Float {
+        val magnitude = abs(sample)
+        if (magnitude <= SOFT_CLIP_START) return sample
+        val normalized = ((magnitude - SOFT_CLIP_START) / (1f - SOFT_CLIP_START)).coerceIn(0f, 1f)
+        val curved = normalized - (normalized * normalized * normalized) / 3f
+        val defended = SOFT_CLIP_START + curved * (1f - SOFT_CLIP_START)
+        return sign(sample) * min(defended, 1f)
     }
 
     private fun ensureState(channelCount: Int, params: EpicenterParams) {
