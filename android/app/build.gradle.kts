@@ -90,6 +90,7 @@ dependencies {
     implementation(files("libs/decoder_ffmpeg-release.aar"))
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
     implementation("com.arthenica:smart-exception-java:0.2.1")
+    implementation("androidx.core:core:1.13.1")
     implementation("androidx.media3:media3-common:1.4.1")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     // Fix Bug #3: DocumentFile necesario para operaciones SAF en SD Card

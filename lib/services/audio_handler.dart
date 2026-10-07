@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
@@ -24,7 +26,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   Future<int?> getAndroidAudioSessionId() async {
-    return await _player.androidAudioSessionId;
+    return _player.androidAudioSessionId;
   }
 
   Future<void> _init() async {
@@ -267,8 +269,9 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     });
   }
 
-  Future<void> addQueueItems(List<MediaItem> items) async {
-    await insertQueueItems(queue.value.length, items);
+  @override
+  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
+    await insertQueueItems(queue.value.length, mediaItems);
   }
 
   Future<void> moveQueueItem(int oldIndex, int newIndex) async {

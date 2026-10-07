@@ -22,11 +22,9 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
     @Volatile private var width = 50f
     @Volatile private var intensity = 50f
     @Volatile private var volume = 100f
-
     private var dsp: EpicenterDsp? = null
     private var channelCount = 0
-    private var inputSamples = FloatArray(0)
-    private var outputSamples = FloatArray(0)
+    private var encoding = C.ENCODING_PCM_16BIT
 
     fun setEpicenterEnabled(value: Boolean) {
         enabled = value
@@ -39,10 +37,15 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
     fun setVolume(value: Float) { volume = value.coerceIn(0f, 100f) }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
+            inputAudioFormat.encoding != C.ENCODING_PCM_24BIT &&
+            inputAudioFormat.encoding != C.ENCODING_PCM_32BIT &&
+            inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
+        ) {
             throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
         }
         channelCount = inputAudioFormat.channelCount
+        encoding = inputAudioFormat.encoding
         dsp = EpicenterDsp(inputAudioFormat.sampleRate)
         return inputAudioFormat
     }
@@ -64,34 +67,76 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
         }
 
         val inSlice = inputBuffer.slice().order(ByteOrder.LITTLE_ENDIAN)
-        val samples = byteCount / 2
-        ensureSampleCapacity(samples)
+        val bytesPerSample = when (encoding) {
+            C.ENCODING_PCM_16BIT -> 2
+            C.ENCODING_PCM_24BIT -> 3
+            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 4
+            else -> throw AudioProcessor.UnhandledAudioFormatException(
+                AudioProcessor.AudioFormat(0, 0, encoding)
+            )
+        }
+        if (byteCount % bytesPerSample != 0) {
+            throw IllegalStateException("PCM buffer is not aligned to the configured encoding")
+        }
+        val samples = byteCount / bytesPerSample
+        val input = FloatArray(samples)
         for (i in 0 until samples) {
-            inputSamples[i] = inSlice.short.toFloat() / 32768f
+            val sample = when (encoding) {
+                C.ENCODING_PCM_16BIT -> inSlice.short.toFloat() / 32768f
+                C.ENCODING_PCM_24BIT -> {
+                    val value = inSlice.get().toInt() and 0xff or
+                        ((inSlice.get().toInt() and 0xff) shl 8) or
+                        (inSlice.get().toInt() shl 16)
+                    value.toFloat() / 8388608f
+                }
+                C.ENCODING_PCM_32BIT -> inSlice.int.toFloat() / 2147483648f
+                C.ENCODING_PCM_FLOAT -> inSlice.float
+                else -> error("Unsupported PCM encoding")
+            }
+            if (encoding == C.ENCODING_PCM_FLOAT && !sample.isFinite()) {
+                throw IllegalArgumentException("FLOAT PCM sample must be finite")
+            }
+            input[i] = sample
         }
         inputBuffer.position(inputBuffer.position() + byteCount)
 
+        val output = FloatArray(samples)
         val params = EpicenterParams(
             sweepFreq = sweepFreq,
             width = width,
             intensity = intensity,
             volume = volume,
         )
-        dsp?.processInterleaved(inputSamples, outputSamples, channelCount, params)
+        dsp?.processInterleaved(input, output, channelCount, params)
 
         outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-        for (i in 0 until samples) {
-            val sample = outputSamples[i]
-            val intSample = (sample.coerceIn(-1f, 1f) * 32767f).toInt().coerceIn(-32768, 32767)
-            outputBuffer.put((intSample and 0xff).toByte())
-            outputBuffer.put(((intSample shr 8) and 0xff).toByte())
-        }
+        writeSamples(outputBuffer, output)
         outputBuffer.flip()
     }
 
-    private fun ensureSampleCapacity(samples: Int) {
-        if (inputSamples.size < samples) inputSamples = FloatArray(samples)
-        if (outputSamples.size < samples) outputSamples = FloatArray(samples)
+    private fun writeSamples(outputBuffer: ByteBuffer, samples: FloatArray) {
+        for (sample in samples) {
+            when (encoding) {
+                C.ENCODING_PCM_16BIT -> {
+                    val intSample = (sample.coerceIn(-1f, 1f) * 32767f).toInt().coerceIn(-32768, 32767)
+                    outputBuffer.put((intSample and 0xff).toByte())
+                    outputBuffer.put(((intSample shr 8) and 0xff).toByte())
+                }
+                C.ENCODING_PCM_24BIT -> {
+                    val intSample = (sample.coerceIn(-1f, 1f) * 8388607f).toInt().coerceIn(-8388608, 8388607)
+                    outputBuffer.put((intSample and 0xff).toByte())
+                    outputBuffer.put(((intSample shr 8) and 0xff).toByte())
+                    outputBuffer.put(((intSample shr 16) and 0xff).toByte())
+                }
+                C.ENCODING_PCM_32BIT -> {
+                    val intSample = (sample.coerceIn(-1f, 1f) * 2147483647f).toLong()
+                        .coerceIn(-2147483648L, 2147483647L).toInt()
+                    outputBuffer.putInt(intSample)
+                }
+                C.ENCODING_PCM_FLOAT -> outputBuffer.putFloat(sample.coerceIn(-1f, 1f))
+                else -> error("Unsupported PCM encoding")
+            }
+        }
     }
 
     override fun onFlush() {
@@ -101,7 +146,6 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
     override fun onReset() {
         dsp = null
         channelCount = 0
-        inputSamples = FloatArray(0)
-        outputSamples = FloatArray(0)
+        encoding = C.ENCODING_PCM_16BIT
     }
 }

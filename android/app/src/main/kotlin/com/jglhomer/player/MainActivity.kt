@@ -17,6 +17,7 @@ import android.provider.MediaStore
 import android.util.Log
 import android.media.MediaMetadataRetriever
 import android.view.WindowManager
+import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -28,6 +29,7 @@ import android.media.audiofx.Virtualizer
 import android.media.AudioManager
 import android.media.AudioDeviceInfo
 import android.media.AudioDeviceCallback
+import java.io.File
 
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
@@ -103,6 +105,20 @@ class MainActivity : AudioServiceActivity() {
                         }
                     } else {
                         result.error("INVALID_ARGUMENT", "filePath is required", null)
+                    }
+                }
+                "cacheNotificationArtwork" -> {
+                    val songId = call.argument<Any>("songId")?.toString()
+                    val bytes = call.argument<ByteArray>("bytes")
+                    if (songId == null || bytes == null || bytes.isEmpty()) {
+                        result.error("INVALID_ARGUMENT", "songId and artwork bytes are required", null)
+                    } else {
+                        try {
+                            result.success(cacheNotificationArtwork(songId, bytes))
+                        } catch (e: Exception) {
+                            Log.e(TAG, "cacheNotificationArtwork error: ${e.message}", e)
+                            result.success(null)
+                        }
                     }
                 }
                 "extractEmbeddedLyrics" -> {
@@ -270,6 +286,29 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
+    private fun cacheNotificationArtwork(songId: String, bytes: ByteArray): String? {
+        val safeId = songId.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val artworkDir = File(cacheDir, "artwork_cache")
+        if (!artworkDir.exists()) artworkDir.mkdirs()
+
+        val artworkFile = File(artworkDir, "artwork_$safeId.jpg")
+        artworkFile.writeBytes(bytes)
+
+        val uri = FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            artworkFile
+        )
+
+        grantUriPermission(
+            "com.android.systemui",
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+
+        return uri.toString()
+    }
+
     private fun registerMediaObserver() {
         if (mediaObserver != null) return
 
@@ -295,7 +334,6 @@ class MainActivity : AudioServiceActivity() {
         (params["sweepFreq"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setSweepFreq(it.toFloat()) }
         (params["width"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setWidth(it.toFloat()) }
         (params["intensity"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setIntensity(it.toFloat()) }
-        (params["balance"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setBalance(it.toFloat()) }
         (params["volume"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setVolume(it.toFloat()) }
     }
     private fun deleteMedia(id: Long, result: MethodChannel.Result) {

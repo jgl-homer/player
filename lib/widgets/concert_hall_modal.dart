@@ -68,7 +68,7 @@ class ConcertHallModal extends StatelessWidget {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            const Color(0xFF1A1005).withOpacity(0.8),
+            const Color(0xFF1A1005).withValues(alpha: 0.8),
             Colors.transparent,
           ],
         ),
@@ -196,7 +196,7 @@ class ConcertHallModal extends StatelessWidget {
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
                 color: isActive
-                    ? const Color(0xFFC9A84C).withOpacity(0.1)
+                    ? const Color(0xFFC9A84C).withValues(alpha: 0.1)
                     : Colors.transparent,
                 border: Border.all(
                   color: isActive
@@ -309,7 +309,7 @@ class ConcertHallModal extends StatelessWidget {
             inactiveTrackColor: const Color(0xFF110E07),
             thumbColor: const Color(0xFFC9A84C),
             thumbShape: const RectSliderThumbShape(),
-            overlayColor: const Color(0xFFC9A84C).withOpacity(0.1),
+            overlayColor: const Color(0xFFC9A84C).withValues(alpha: 0.1),
           ),
           child: Slider(
             value: value,
@@ -339,7 +339,7 @@ class _PowerToggle extends StatelessWidget {
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           color: isEnabled
-              ? const Color(0xFFC9A84C).withOpacity(0.2)
+              ? const Color(0xFFC9A84C).withValues(alpha: 0.2)
               : const Color(0xFF1A0808),
           border: Border.all(
             color:
@@ -361,7 +361,7 @@ class _PowerToggle extends StatelessWidget {
               boxShadow: [
                 if (isEnabled)
                   BoxShadow(
-                    color: const Color(0xFFC9A84C).withOpacity(0.5),
+                    color: const Color(0xFFC9A84C).withValues(alpha: 0.5),
                     blurRadius: 10,
                   ),
               ],

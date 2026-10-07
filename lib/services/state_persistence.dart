@@ -5,10 +5,9 @@ import 'lyrics_service.dart';
 enum PlaybackMode { folder, album, artist, playlist, favorites, global }
 
 class StatePersistence {
-  static const double defaultEpicenterSweepFreq = 45.0;
-  static const double defaultEpicenterWidth = 50.0;
-  static const double defaultEpicenterIntensity = 50.0;
-  static const double defaultEpicenterBalance = 50.0;
+  static const double defaultEpicenterSweepFreq = 41.0;
+  static const double defaultEpicenterWidth = 86.0;
+  static const double defaultEpicenterIntensity = 84.0;
   static const double defaultEpicenterVolume = 100.0;
 
   static const String _modeKey = 'playback_mode';
@@ -61,17 +60,18 @@ class StatePersistence {
   static const String _epicenterIntensityKey = 'epicenter_intensity';
   static const String _epicenterBalanceKey = 'epicenter_balance';
   static const String _epicenterVolumeKey = 'epicenter_volume';
+  static const String _epicenterTuningVersionKey = 'epicenter_tuning_version';
+  static const int _epicenterTuningVersion = 6;
 
   static Future<Map<String, double>> loadEpicenterParams() async {
     final prefs = await SharedPreferences.getInstance();
+    await _migrateEpicenterDefaultsIfNeeded(prefs);
     return {
       'sweepFreq':
           prefs.getDouble(_epicenterSweepFreqKey) ?? defaultEpicenterSweepFreq,
       'width': prefs.getDouble(_epicenterWidthKey) ?? defaultEpicenterWidth,
       'intensity':
           prefs.getDouble(_epicenterIntensityKey) ?? defaultEpicenterIntensity,
-      'balance':
-          prefs.getDouble(_epicenterBalanceKey) ?? defaultEpicenterBalance,
       'volume': prefs.getDouble(_epicenterVolumeKey) ?? defaultEpicenterVolume,
     };
   }
@@ -80,15 +80,79 @@ class StatePersistence {
     required double sweepFreq,
     required double width,
     required double intensity,
-    required double balance,
     required double volume,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_epicenterSweepFreqKey, sweepFreq);
     await prefs.setDouble(_epicenterWidthKey, width);
     await prefs.setDouble(_epicenterIntensityKey, intensity);
-    await prefs.setDouble(_epicenterBalanceKey, balance);
     await prefs.setDouble(_epicenterVolumeKey, volume);
+    await prefs.setInt(_epicenterTuningVersionKey, _epicenterTuningVersion);
+  }
+
+  static Future<void> _migrateEpicenterDefaultsIfNeeded(
+    SharedPreferences prefs,
+  ) async {
+    final version = prefs.getInt(_epicenterTuningVersionKey) ?? 0;
+    if (version >= _epicenterTuningVersion) return;
+
+    final sweep = prefs.getDouble(_epicenterSweepFreqKey);
+    final width = prefs.getDouble(_epicenterWidthKey);
+    final intensity = prefs.getDouble(_epicenterIntensityKey);
+    final balance = prefs.getDouble(_epicenterBalanceKey);
+
+    final canAutoTune = sweep == null ||
+        (_closeTo(sweep, 45.0) &&
+            _closeTo(width, 50.0) &&
+            _closeTo(intensity, 50.0) &&
+            _closeTo(balance, 50.0)) ||
+        (_closeTo(sweep, 41.0) &&
+            _closeTo(width, 68.0) &&
+            _closeTo(intensity, 64.0) &&
+            _closeTo(balance, 58.0)) ||
+        (_closeTo(sweep, 42.0) &&
+            _closeTo(width, 74.0) &&
+            _closeTo(intensity, 72.0) &&
+            _closeTo(balance, 72.0)) ||
+        _looksLikeRoughTestTune(
+          sweep: sweep,
+          width: width,
+          intensity: intensity,
+          balance: balance,
+        );
+
+    if (canAutoTune) {
+      await prefs.setDouble(_epicenterSweepFreqKey, defaultEpicenterSweepFreq);
+      await prefs.setDouble(_epicenterWidthKey, defaultEpicenterWidth);
+      await prefs.setDouble(_epicenterIntensityKey, defaultEpicenterIntensity);
+      await prefs.setDouble(_epicenterVolumeKey, defaultEpicenterVolume);
+    }
+
+    await prefs.setInt(_epicenterTuningVersionKey, _epicenterTuningVersion);
+  }
+
+  static bool _closeTo(double? value, double target) =>
+      value != null && (value - target).abs() < 0.01;
+
+  static bool _looksLikeRoughTestTune({
+    required double? sweep,
+    required double? width,
+    required double? intensity,
+    required double? balance,
+  }) {
+    if (sweep == null ||
+        width == null ||
+        intensity == null ||
+        balance == null) {
+      return false;
+    }
+    return sweep >= 30.0 &&
+        sweep <= 42.0 &&
+        width >= 50.0 &&
+        width <= 62.0 &&
+        intensity >= 95.0 &&
+        balance >= 45.0 &&
+        balance <= 90.0;
   }
 
   static Future<void> savePlaybackState({
@@ -282,7 +346,4 @@ class StatePersistence {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getInt(_recentSongsLimitKey) ?? 100).clamp(100, 10000);
   }
-
-  // Legacy: kept for migration if needed
-  static const String _tabCountKey = 'main_tab_count';
 }

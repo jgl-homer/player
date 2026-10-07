@@ -3,6 +3,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -35,10 +36,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
   static const String _fallbackArtworkAsset =
       'assets/icon/music_note_fallback.png';
-
   PlaybackMode _playbackMode = PlaybackMode.global;
   String? _activeFolderPath;
-  String? _activeContextId; // stable ID for album/artist/playlist/favorites context
+  String?
+      _activeContextId; // stable ID for album/artist/playlist/favorites context
 
   // Concert Hall FX State
   AudioPreset _currentPreset = AudioPreset.concertHall;
@@ -51,7 +52,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double _epicenterWidth = StatePersistence.defaultEpicenterWidth; // 0-100
   double _epicenterIntensity =
       StatePersistence.defaultEpicenterIntensity; // 0-100
-  double _epicenterBalance = StatePersistence.defaultEpicenterBalance; // 0-100
   double _epicenterVolume = StatePersistence.defaultEpicenterVolume; // 0-100
 
   double _reverbDecay = 8.0;
@@ -63,7 +63,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<double> _eqGains = [3, -1, 0, 1, 2, 1, 0, -2, -4];
 
   List<SongModel> _allSongs = [];
-  Map<String, int> _songIndexByPath = {};
+  final Map<String, int> _songIndexByPath = {};
   List<SongModel> _currentPlaylist = [];
   List<SongModel> _unshuffledPlaylist = [];
   List<SongModel> _globalQueue = [];
@@ -96,9 +96,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
   final Map<int, Uri> _systemArtworkUriCache = {};
-  Uri? _fallbackArtworkFileUri;
   int _queueLoadGeneration = 0;
   bool _navigationBusy = false;
+  Future<void> Function()? _pendingNavigationAction;
 
   // Bug #9: Estado de selección múltiple
   final Set<int> _selectedSongIds = {};
@@ -152,7 +152,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double get epicenterSweepFreq => _epicenterSweepFreq;
   double get epicenterWidth => _epicenterWidth;
   double get epicenterIntensity => _epicenterIntensity;
-  double get epicenterBalance => _epicenterBalance;
   double get epicenterVolume => _epicenterVolume;
 
   double get reverbDecay => _reverbDecay;
@@ -239,7 +238,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _epicenterSweepFreq = params['sweepFreq'] ?? _epicenterSweepFreq;
       _epicenterWidth = params['width'] ?? _epicenterWidth;
       _epicenterIntensity = params['intensity'] ?? _epicenterIntensity;
-      _epicenterBalance = params['balance'] ?? _epicenterBalance;
       _epicenterVolume = params['volume'] ?? _epicenterVolume;
     } catch (e) {
       debugPrint('Error loading epicenter params: $e');
@@ -253,10 +251,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     bool restoredFromCache = false;
 
     try {
-      print('[SQL] Buscando datos indexados en SQLite...');
+      debugPrint('[SQL] Buscando datos indexados en SQLite...');
       final restoredFromDatabase = await _restoreFromDatabase();
       if (restoredFromDatabase) {
-        print('[SQL] Datos restaurados correctamente desde SQLite.');
+        debugPrint('[SQL] Datos restaurados correctamente desde SQLite.');
         restoredFromCache = true;
         _isLoading = false;
         notifyListeners();
@@ -270,11 +268,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     if (!restoredFromCache) {
       try {
-        print(
+        debugPrint(
             '[SQL] No se encontraron datos en SQLite. Intentando caché JSON...');
         final restoredFromJson = await _restoreLibraryCache();
         if (restoredFromJson) {
-          print('[SQL] Datos restaurados desde caché JSON.');
+          debugPrint('[SQL] Datos restaurados desde caché JSON.');
           restoredFromCache = true;
           _isLoading = false;
           notifyListeners();
@@ -289,7 +287,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     if (!restoredFromCache) {
       try {
-        print(
+        debugPrint(
             '[SQL] Cargando biblioteca desde el dispositivo por primera vez...');
         await _refreshLibraryFromDevice(showLoading: true);
         await _loadPlaybackState();
@@ -306,7 +304,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   void _listenToPlayer() {
     _player.currentIndexStream.listen((index) async {
       if (index != null && index < _currentPlaylist.length) {
-        final currentTag = _player.sequenceState?.currentSource?.tag;
+        final currentTag = _player.sequenceState.currentSource?.tag;
         if (currentTag is MediaItem) {
           final foundIndex =
               _currentPlaylist.indexWhere((s) => s.data == currentTag.id);
@@ -397,7 +395,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             sweepFreq: _epicenterSweepFreq,
             width: _epicenterWidth,
             intensity: _epicenterIntensity,
-            balance: _epicenterBalance,
             volume: _epicenterVolume,
           );
         } catch (e) {
@@ -716,6 +713,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     required Duration position,
     required bool shouldPlay,
   }) async {
+    _queueLoadGeneration++;
     if (_currentPlaylist.isEmpty) {
       await stop();
       return;
@@ -741,15 +739,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _updateCurrentSongArtwork(SongModel song) async {
     try {
       final artUri = await _systemArtworkUriForSong(song);
+      if (artUri == null) return;
       // Verificar que la canción actual no cambió mientras esperábamos
       if (_currentSong?.id != song.id) return;
       final queueItems = _handler.queue.value;
       if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
         final currentItem = queueItems[_currentIndex];
         if (currentItem.id != song.data) return;
-        // Solo actualizar si la uri real es diferente al fallback/placeholder
-        final fallbackUri = _fallbackArtworkFileUri;
-        if (fallbackUri != null && artUri.path == fallbackUri.path) return;
         final updatedItem = currentItem.copyWith(artUri: artUri);
         _handler.mediaItem.add(updatedItem);
         final updatedQueue = List<MediaItem>.from(queueItems);
@@ -882,14 +878,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     double? sweepFreq,
     double? width,
     double? intensity,
-    double? balance,
     double? volume,
   }) async {
     await _mediaChannel.invokeMethod('set_epicenter_params', {
       if (sweepFreq != null) 'sweepFreq': sweepFreq,
       if (width != null) 'width': width,
       if (intensity != null) 'intensity': intensity,
-      if (balance != null) 'balance': balance,
       if (volume != null) 'volume': volume,
     });
   }
@@ -899,13 +893,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     double? sweepFreq,
     double? width,
     double? intensity,
-    double? balance,
     double? volume,
   }) async {
     if (sweepFreq != null) _epicenterSweepFreq = sweepFreq;
     if (width != null) _epicenterWidth = width;
     if (intensity != null) _epicenterIntensity = intensity;
-    if (balance != null) _epicenterBalance = balance;
     if (volume != null) _epicenterVolume = volume;
 
     notifyListeners();
@@ -916,7 +908,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         sweepFreq: _epicenterSweepFreq,
         width: _epicenterWidth,
         intensity: _epicenterIntensity,
-        balance: _epicenterBalance,
         volume: _epicenterVolume,
       );
     } catch (e) {
@@ -929,7 +920,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         sweepFreq: _epicenterSweepFreq,
         width: _epicenterWidth,
         intensity: _epicenterIntensity,
-        balance: _epicenterBalance,
         volume: _epicenterVolume,
       );
     } catch (e) {
@@ -942,7 +932,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       sweepFreq: StatePersistence.defaultEpicenterSweepFreq,
       width: StatePersistence.defaultEpicenterWidth,
       intensity: StatePersistence.defaultEpicenterIntensity,
-      balance: StatePersistence.defaultEpicenterBalance,
       volume: StatePersistence.defaultEpicenterVolume,
     );
   }
@@ -1026,16 +1015,16 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     if (_player.androidAudioSessionId != null) {
-      final sessionId = await _player.androidAudioSessionId;
+      final sessionId = _player.androidAudioSessionId;
       if (sessionId != null && sessionId != 0) {
         try {
           await _mediaChannel.invokeMethod('enableReverb', {
             'sessionId': sessionId,
             'preset': presetName,
           });
-          print('✓ Native Preset applied: $presetName');
+          debugPrint('Native Preset applied: $presetName');
         } catch (e) {
-          print('✗ Error setting native preset: $e');
+          debugPrint('Error setting native preset: $e');
         }
       }
     }
@@ -1074,13 +1063,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _isReverbEnabled = !_isReverbEnabled;
     await _mediaChannel
         .invokeMethod('setBypass', {'bypass': !_isReverbEnabled});
-    print('✓ Reverb bypass: ${!_isReverbEnabled}');
+    debugPrint('Reverb bypass: ${!_isReverbEnabled}');
     notifyListeners();
     await _applyCurrentEffects();
   }
 
   Future<void> _updateReverbParameters() async {
-    final sessionId = await _player.androidAudioSessionId;
+    final sessionId = _player.androidAudioSessionId;
     if (sessionId != null && sessionId != 0 && _isReverbEnabled) {
       try {
         final params = {
@@ -1103,9 +1092,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         };
 
         await _mediaChannel.invokeMethod('setReverbParams', params);
-        print('✓ Native Reverb params updated: $params');
+        debugPrint('Native Reverb params updated: $params');
       } catch (e) {
-        print('✗ Error updating native params: $e');
+        debugPrint('Error updating native params: $e');
       }
     }
   }
@@ -1236,8 +1225,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final sortedAlbums = albumsByKey.entries.toList()
       ..sort((a, b) => TitleUtils.getDisplayAlbum(a.value.first)
           .toLowerCase()
-          .compareTo(
-              TitleUtils.getDisplayAlbum(b.value.first).toLowerCase()));
+          .compareTo(TitleUtils.getDisplayAlbum(b.value.first).toLowerCase()));
 
     if (sortedAlbums.isEmpty) return;
     // Find current album by contextId (albumId string) or by song's album
@@ -1245,14 +1233,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (_activeContextId != null) {
       final targetAlbumId = int.tryParse(_activeContextId!);
       if (targetAlbumId != null) {
-        currentIdx = sortedAlbums.indexWhere(
-            (e) => e.value.any((s) => s.albumId == targetAlbumId));
+        currentIdx = sortedAlbums
+            .indexWhere((e) => e.value.any((s) => s.albumId == targetAlbumId));
       }
     }
     if (currentIdx == -1 && _currentSong != null) {
       final currentAlbumKey = TitleUtils.getAlbumKey(_currentSong!);
-      currentIdx =
-          sortedAlbums.indexWhere((e) => e.key == currentAlbumKey);
+      currentIdx = sortedAlbums.indexWhere((e) => e.key == currentAlbumKey);
     }
     if (currentIdx == -1) currentIdx = 0;
 
@@ -1278,7 +1265,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // Build sorted artist list (same order as artists_tab.dart)
     final Map<String, List<SongModel>> byArtist = {};
     for (final s in _allSongs) {
-      byArtist.putIfAbsent(TitleUtils.getDisplayArtist(s.artist), () => [])
+      byArtist
+          .putIfAbsent(TitleUtils.getDisplayArtist(s.artist), () => [])
           .add(s);
     }
     final sortedArtists = byArtist.entries.toList()
@@ -1288,13 +1276,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     int currentIdx = -1;
     if (_activeContextId != null) {
-      currentIdx = sortedArtists
-          .indexWhere((e) => e.key == _activeContextId);
+      currentIdx = sortedArtists.indexWhere((e) => e.key == _activeContextId);
     }
     if (currentIdx == -1 && _currentSong != null) {
       final currentArtist = TitleUtils.getDisplayArtist(_currentSong!.artist);
-      currentIdx =
-          sortedArtists.indexWhere((e) => e.key == currentArtist);
+      currentIdx = sortedArtists.indexWhere((e) => e.key == currentArtist);
     }
     if (currentIdx == -1) currentIdx = 0;
 
@@ -1441,8 +1427,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _jumpWithinCurrentPlaylist() async {
     try {
-      await _handler.skipToQueueItem(_currentIndex);
-      await _handler.playDirect();
+      final playerQueue = _handler.queue.value;
+      final queueMissingTarget = _currentIndex >= playerQueue.length ||
+          playerQueue[_currentIndex].id != _currentSong?.data;
+      if (queueMissingTarget) {
+        await _replacePlaybackQueue(
+          position: Duration.zero,
+          shouldPlay: true,
+        );
+      } else {
+        await _handler.skipToQueueItem(_currentIndex);
+        await _handler.playDirect();
+      }
       _savePlaybackState();
       await _updateHomeWidget();
       // Actualizar artwork de la pantalla de bloqueo para esta pista
@@ -1479,12 +1475,25 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           if (_player.hasNext) {
             await _handler.skipToNextDirect();
             unawaited(_updateHomeWidget());
-          } else if (_playbackMode == PlaybackMode.folder) {
-            // Folder navigation is reserved for the dedicated folder controls.
-            // A manual next press must not leave the current folder.
-            final nextIndex = _currentIndex + 1;
-            if (nextIndex < _currentPlaylist.length) {
-              await skipToIndex(nextIndex);
+          } else {
+            switch (_playbackMode) {
+              case PlaybackMode.folder:
+                await playNextFolder();
+                break;
+              case PlaybackMode.album:
+                await playNextAlbum();
+                break;
+              case PlaybackMode.artist:
+                await playNextArtist();
+                break;
+              case PlaybackMode.playlist:
+              case PlaybackMode.favorites:
+              case PlaybackMode.global:
+                final nextIndex = _currentIndex + 1;
+                if (nextIndex < _currentPlaylist.length) {
+                  await skipToIndex(nextIndex);
+                }
+                break;
             }
           }
         } catch (e) {
@@ -1496,6 +1505,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         try {
           if (_player.hasPrevious) {
             await _handler.skipToPreviousDirect();
+          } else {
+            final previousIndex = _currentIndex - 1;
+            if (previousIndex >= 0) {
+              await skipToIndex(previousIndex);
+            }
           }
         } catch (e) {
           debugPrint("Error skipping to previous: $e");
@@ -1508,6 +1522,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             now.difference(_lastTapTime!) < const Duration(milliseconds: 700)) {
           if (_player.hasPrevious) {
             await _handler.skipToPreviousDirect();
+          } else if (_currentIndex > 0) {
+            await skipToIndex(_currentIndex - 1);
           } else {
             // At first track: context-aware cross-boundary navigation
             switch (_playbackMode) {
@@ -1535,11 +1551,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       });
 
   Future<void> _runNavigation(Future<void> Function() action) async {
-    if (_navigationBusy) return;
+    if (_navigationBusy) {
+      _pendingNavigationAction = action;
+      return;
+    }
     _navigationBusy = true;
     try {
-      await action();
-      await Future<void>.delayed(const Duration(milliseconds: 120));
+      var nextAction = action;
+      while (true) {
+        _pendingNavigationAction = null;
+        await nextAction();
+        nextAction = _pendingNavigationAction ?? (() async {});
+        if (_pendingNavigationAction == null) break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     } finally {
       _navigationBusy = false;
     }
@@ -1561,7 +1586,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     if (_currentSong == null || _currentPlaylist.isEmpty) return;
-    debugPrint('[Audio] Dispositivo de salida conectado — reanudando reproducción');
+    debugPrint(
+        '[Audio] Dispositivo de salida conectado — reanudando reproducción');
     await _handler.playDirect();
     notifyListeners();
   }
@@ -1857,8 +1883,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _currentIndex = index;
     _currentSong = _currentPlaylist[_currentIndex];
     notifyListeners();
-    await _handler.skipToQueueItem(_currentIndex);
-    await _handler.playDirect();
+    final playerQueue = _handler.queue.value;
+    final queueMissingTarget = _currentIndex >= playerQueue.length ||
+        playerQueue[_currentIndex].id != _currentSong!.data;
+    if (queueMissingTarget) {
+      await _replacePlaybackQueue(
+        position: Duration.zero,
+        shouldPlay: true,
+      );
+    } else {
+      await _handler.skipToQueueItem(_currentIndex);
+      await _handler.playDirect();
+    }
     _savePlaybackState();
     if (_currentSong != null) {
       unawaited(_updateCurrentSongArtwork(_currentSong!));
@@ -2204,12 +2240,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<MediaItem> _songToMediaItem(SongModel s, {bool fast = false}) async {
-    final Uri artUri =
-        fast ? await _fallbackArtworkUri() : await _systemArtworkUriForSong(s);
+    final Uri? artUri = fast ? null : await _systemArtworkUriForSong(s);
     return _mediaItemFromSong(s, artUri);
   }
 
-  Future<MediaItem> _mediaItemFromSong(SongModel song, Uri artUri) async {
+  Future<MediaItem> _mediaItemFromSong(SongModel song, Uri? artUri) async {
     final isWma = song.data.toLowerCase().endsWith('.wma');
     Tag? tag;
     Map<String, String>? wmaMeta;
@@ -2281,89 +2316,136 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs,
       {bool fast = false}) async {
     if (fast) {
-      final artUri = await _fallbackArtworkUri();
       return Future.wait(
-        songs.map((song) => _mediaItemFromSong(song, artUri)),
+        songs.map((song) => _mediaItemFromSong(song, null)),
       );
     }
     return Future.wait(songs.map((s) => _songToMediaItem(s, fast: fast)));
   }
 
-  Future<Uri> _systemArtworkUriForSong(SongModel song) async {
+  Future<Uri?> _systemArtworkUriForSong(SongModel song) async {
     final cached = _systemArtworkUriCache[song.id];
     if (cached != null) return cached;
 
-    // Solución Bug #1: Guardamos los bytes de la carátula en un archivo
-    // temporal con esquema file://, que el sistema de notificaciones de
-    // Android puede leer sin restricciones de Scoped Storage.
-    // Los content://media/... URIs fallan en Android 10+ porque el proceso
-    // de MediaSession no tiene el mismo contexto de ContentProvider.
-
     try {
-      // Nivel 1: MediaMetadataRetriever (MethodChannel nativo) para máxima calidad
-      // Esto previene que en la pantalla de bloqueo y notificaciones se vea
-      // la miniatura borrosa de MediaStore.
-      final Uint8List? embedded =
-          await const MethodChannel('com.jglhomer.player/media_utils')
-              .invokeMethod('extractEmbeddedArtwork', {'filePath': song.data});
+      final bytes = await _systemArtworkBytesForSong(song) ??
+          await _fallbackArtworkBytes();
+      if (bytes.isEmpty) return null;
 
-      if (embedded != null && embedded.isNotEmpty) {
-        final fileUri = await ArtworkCacheService.saveArtworkToTempFile(
-          song.id,
-          embedded,
-        );
-        if (fileUri != null) {
-          _systemArtworkUriCache[song.id] = fileUri;
-          return fileUri;
-        }
-      }
-    } catch (_) {}
-
-    try {
-      // Nivel 2: MediaStore (on_audio_query)
-      final artwork = await _audioQuery.queryArtwork(
-        song.id,
-        ArtworkType.AUDIO,
-        size: 512,
-        quality: 100,
+      final uriString = await _mediaChannel.invokeMethod<String>(
+        'cacheNotificationArtwork',
+        {'songId': song.id, 'bytes': bytes},
       );
+      if (uriString == null || uriString.isEmpty) return null;
 
-      if (artwork != null && artwork.isNotEmpty) {
-        final fileUri = await ArtworkCacheService.saveArtworkToTempFile(
-          song.id,
-          artwork,
-        );
-        if (fileUri != null) {
-          _systemArtworkUriCache[song.id] = fileUri;
-          return fileUri;
-        }
-      }
+      final artUri = Uri.parse(uriString);
+      _systemArtworkUriCache[song.id] = artUri;
+      return artUri;
     } catch (e) {
-      debugPrint('Error checking artwork for MediaSession: $e');
+      debugPrint('Error preparando carátula para notificación: $e');
+      return null;
     }
-
-    // Nivel 3: Fallback asset
-    final fallbackUri = await _fallbackArtworkUri();
-    _systemArtworkUriCache[song.id] = fallbackUri;
-    return fallbackUri;
   }
 
-  Future<Uri> _fallbackArtworkUri() async {
-    final cached = _fallbackArtworkFileUri;
-    if (cached != null && File(cached.toFilePath()).existsSync()) {
-      return cached;
+  Future<Uint8List?> _systemArtworkBytesForSong(SongModel song) async {
+    Uint8List? bytes;
+
+    try {
+      bytes = await _mediaChannel.invokeMethod<Uint8List>(
+        'extractEmbeddedArtwork',
+        {'filePath': song.data},
+      );
+    } catch (_) {}
+
+    if (bytes != null && bytes.isNotEmpty) return bytes;
+
+    bytes = await _preferredFolderArtworkBytesForSong(song.data);
+    if (bytes != null && bytes.isNotEmpty) return bytes;
+
+    bytes = await _folderArtworkBytesForSong(song.data);
+    if (bytes != null && bytes.isNotEmpty) return bytes;
+
+    final albumId = song.albumId;
+    if (albumId != null && albumId > 0) {
+      try {
+        bytes = await _audioQuery.queryArtwork(
+          albumId,
+          ArtworkType.ALBUM,
+          size: 1024,
+          quality: 100,
+        );
+      } catch (_) {}
+      if (bytes != null && bytes.isNotEmpty) return bytes;
     }
 
-    final directory = await getTemporaryDirectory();
-    final file = File('${directory.path}/music_note_fallback_material_v2.png');
-    final data = await rootBundle.load(_fallbackArtworkAsset);
-    await file.writeAsBytes(
-      data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-      flush: true,
-    );
+    return null;
+  }
 
-    _fallbackArtworkFileUri = file.uri;
-    return file.uri;
+  Future<Uint8List?> _preferredFolderArtworkBytesForSong(
+      String songPath) async {
+    final normalizedPath = songPath.replaceAll('\\', '/');
+    final lastSeparator = normalizedPath.lastIndexOf('/');
+    if (lastSeparator <= 0) return null;
+
+    final dir = Directory(normalizedPath.substring(0, lastSeparator));
+    if (!await dir.exists()) return null;
+
+    const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+    for (final ext in extensions) {
+      final file = File('${dir.path}/folder.$ext');
+      if (!await file.exists()) continue;
+      final length = await file.length();
+      if (length <= 0 || length > 20 * 1024 * 1024) continue;
+      return file.readAsBytes();
+    }
+
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final fileName = entity.path.replaceAll('\\', '/').split('/').last;
+      final dot = fileName.lastIndexOf('.');
+      if (dot <= 0 || dot == fileName.length - 1) continue;
+      final base = fileName.substring(0, dot).toLowerCase();
+      final ext = fileName.substring(dot + 1).toLowerCase();
+      if (base != 'folder' || !extensions.contains(ext)) continue;
+      final length = await entity.length();
+      if (length <= 0 || length > 20 * 1024 * 1024) continue;
+      return entity.readAsBytes();
+    }
+    return null;
+  }
+
+  Future<Uint8List> _fallbackArtworkBytes() async {
+    final data = await rootBundle.load(_fallbackArtworkAsset);
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
+
+  Future<Uint8List?> _folderArtworkBytesForSong(String songPath) async {
+    final normalizedPath = songPath.replaceAll('\\', '/');
+    final lastSeparator = normalizedPath.lastIndexOf('/');
+    if (lastSeparator <= 0) return null;
+
+    final dir = Directory(normalizedPath.substring(0, lastSeparator));
+    if (!await dir.exists()) return null;
+
+    const names = {'folder', 'cover', 'front', 'album', 'albumart'};
+    const extensions = {'jpg', 'jpeg', 'png', 'webp'};
+
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final fileName = entity.path.replaceAll('\\', '/').split('/').last;
+      final dot = fileName.lastIndexOf('.');
+      if (dot <= 0 || dot == fileName.length - 1) continue;
+
+      final base = fileName.substring(0, dot).toLowerCase();
+      final ext = fileName.substring(dot + 1).toLowerCase();
+      if (!names.contains(base) || !extensions.contains(ext)) continue;
+
+      final length = await entity.length();
+      if (length <= 0 || length > 20 * 1024 * 1024) continue;
+      return entity.readAsBytes();
+    }
+
+    return null;
   }
 
   // --- Widget ---
