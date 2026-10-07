@@ -22,6 +22,7 @@ data class EpicenterParams(
     val width: Float = 50f,
     val intensity: Float = 50f,
     val volume: Float = 100f,
+    val peakProtectionEnabled: Boolean = true,
 )
 
 class EpicenterDsp(private val sampleRate: Int) {
@@ -116,11 +117,19 @@ class EpicenterDsp(private val sampleRate: Int) {
                 mixed *= volumeGain * (0.94f + voiceProtection * 0.06f)
                 mixed = tanh(mixed * 0.94f) / tanh(0.94f)
                 val currentDspOutput = floor(state.outputDcHighpass.process(mixed))
-                output[index] = currentDspOutput
+                output[index] = if (params.peakProtectionEnabled) {
+                    currentDspOutput
+                } else {
+                    currentDspOutput.coerceIn(-1f, 1f)
+                }
             }
         }
 
-        applyPeakProtection(output, frames, channelCount)
+        if (params.peakProtectionEnabled) {
+            applyPeakProtection(output, frames, channelCount)
+        } else {
+            protectionGain = 1f
+        }
     }
 
     private fun applyPeakProtection(output: FloatArray, frames: Int, channelCount: Int) {

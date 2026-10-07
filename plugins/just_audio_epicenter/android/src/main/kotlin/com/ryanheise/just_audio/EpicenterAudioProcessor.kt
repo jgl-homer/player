@@ -14,6 +14,7 @@ object EpicenterProcessorController {
     fun setWidth(value: Float) = processor.setWidth(value)
     fun setIntensity(value: Float) = processor.setIntensity(value)
     fun setVolume(value: Float) = processor.setVolume(value)
+    fun setPeakProtectionEnabled(enabled: Boolean) = processor.setPeakProtectionEnabled(enabled)
 }
 
 class EpicenterAudioProcessor : BaseAudioProcessor() {
@@ -22,6 +23,7 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
     @Volatile private var width = 50f
     @Volatile private var intensity = 50f
     @Volatile private var volume = 100f
+    @Volatile private var peakProtectionEnabled = true
     private var dsp: EpicenterDsp? = null
     private var channelCount = 0
     private var encoding = C.ENCODING_PCM_16BIT
@@ -35,6 +37,7 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
     fun setWidth(value: Float) { width = value.coerceIn(0f, 100f) }
     fun setIntensity(value: Float) { intensity = value.coerceIn(0f, 100f) }
     fun setVolume(value: Float) { volume = value.coerceIn(0f, 100f) }
+    fun setPeakProtectionEnabled(value: Boolean) { peakProtectionEnabled = value }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
@@ -106,6 +109,7 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
             width = width,
             intensity = intensity,
             volume = volume,
+            peakProtectionEnabled = peakProtectionEnabled,
         )
         dsp?.processInterleaved(input, output, channelCount, params)
 

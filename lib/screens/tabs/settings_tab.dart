@@ -94,6 +94,22 @@ class SettingsTab extends StatelessWidget {
                 ],
               ),
             ),
+            SwitchListTile(
+              title: const Text('Protección anti-clip',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: Text(
+                audioProvider.epicenterPeakProtectionEnabled
+                    ? 'Activa el límite transparente actual del Epicentro'
+                    : 'Deja la salida como antes, sin el límite nuevo',
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+              value: audioProvider.epicenterPeakProtectionEnabled,
+              onChanged: (v) => audioProvider.updateEpicenterSettings(
+                peakProtectionEnabled: v,
+              ),
+              activeThumbColor: Colors.tealAccent,
+              activeTrackColor: Colors.teal.withAlpha(100),
+            ),
             Theme(
               data:
                   Theme.of(context).copyWith(dividerColor: Colors.transparent),

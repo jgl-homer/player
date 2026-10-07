@@ -9,6 +9,7 @@ class StatePersistence {
   static const double defaultEpicenterWidth = 86.0;
   static const double defaultEpicenterIntensity = 84.0;
   static const double defaultEpicenterVolume = 100.0;
+  static const bool defaultEpicenterPeakProtectionEnabled = true;
 
   static const String _modeKey = 'playback_mode';
   static const String _folderPathKey = 'active_folder_path';
@@ -59,6 +60,8 @@ class StatePersistence {
   static const String _epicenterWidthKey = 'epicenter_width';
   static const String _epicenterIntensityKey = 'epicenter_intensity';
   static const String _epicenterVolumeKey = 'epicenter_volume';
+  static const String _epicenterPeakProtectionKey =
+      'epicenter_peak_protection';
   static const String _epicenterTuningVersionKey = 'epicenter_tuning_version';
   static const int _epicenterTuningVersion = 6;
 
@@ -87,6 +90,17 @@ class StatePersistence {
     await prefs.setDouble(_epicenterIntensityKey, intensity);
     await prefs.setDouble(_epicenterVolumeKey, volume);
     await prefs.setInt(_epicenterTuningVersionKey, _epicenterTuningVersion);
+  }
+
+  static Future<bool> loadEpicenterPeakProtectionEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_epicenterPeakProtectionKey) ??
+        defaultEpicenterPeakProtectionEnabled;
+  }
+
+  static Future<void> saveEpicenterPeakProtectionEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_epicenterPeakProtectionKey, enabled);
   }
 
   static Future<void> _migrateEpicenterDefaultsIfNeeded(

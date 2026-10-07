@@ -53,6 +53,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double _epicenterIntensity =
       StatePersistence.defaultEpicenterIntensity; // 0-100
   double _epicenterVolume = StatePersistence.defaultEpicenterVolume; // 0-100
+  bool _epicenterPeakProtectionEnabled =
+      StatePersistence.defaultEpicenterPeakProtectionEnabled;
 
   double _reverbDecay = 8.0;
   double _reverbPreDelay = 0.1;
@@ -152,6 +154,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double get epicenterWidth => _epicenterWidth;
   double get epicenterIntensity => _epicenterIntensity;
   double get epicenterVolume => _epicenterVolume;
+  bool get epicenterPeakProtectionEnabled =>
+      _epicenterPeakProtectionEnabled;
 
   double get reverbDecay => _reverbDecay;
   double get reverbPreDelay => _reverbPreDelay;
@@ -219,6 +223,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await _requestInitialPermissions();
     await ArtworkCacheService.init();
     _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
+    _epicenterPeakProtectionEnabled =
+        await StatePersistence.loadEpicenterPeakProtectionEnabled();
     _savedPlaylists = await StatePersistence.loadPlaylists();
     _recentSongsLimit = await StatePersistence.loadRecentSongsLimit();
     _activeTabId = await StatePersistence.loadActiveTab() ?? _activeTabId;
@@ -395,6 +401,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             width: _epicenterWidth,
             intensity: _epicenterIntensity,
             volume: _epicenterVolume,
+            peakProtectionEnabled: _epicenterPeakProtectionEnabled,
           );
         } catch (e) {
           debugPrint('Error applying epicenter params to native: $e');
@@ -472,10 +479,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _indexingCurrentTitle = null;
         notifyListeners();
 
-        final freshSongs = await StorageScanner.filterSongs(
+        final scannedSongs = await StorageScanner.filterSongs(
           rawSongs,
           onProgress: _updateIndexingProgress,
         );
+        final freshSongs = await _enrichWmaMetadataForIndexing(scannedSongs);
         final freshAlbums = await _audioQuery.queryAlbums();
         await _applyFreshLibrary(freshSongs, freshAlbums);
         await _indexSongsToDatabase();
@@ -532,9 +540,21 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (diff.toInsert.isNotEmpty || diff.toUpdate.isNotEmpty) {
       final upserts = [...diff.toInsert, ...diff.toUpdate];
+      final enrichedUpserts = await _enrichWmaMetadataForIndexing(upserts);
       await LibraryDatabase.instance.upsertSongsBatched(
-        upserts.map((s) => s.getMap).toList(),
+        enrichedUpserts.map((s) => s.getMap).toList(),
       );
+      final enrichedByPath = {
+        for (final song in enrichedUpserts) song.data: song,
+      };
+      for (var i = 0; i < diff.toInsert.length; i++) {
+        diff.toInsert[i] = enrichedByPath[diff.toInsert[i].data] ??
+            diff.toInsert[i];
+      }
+      for (var i = 0; i < diff.toUpdate.length; i++) {
+        diff.toUpdate[i] = enrichedByPath[diff.toUpdate[i].data] ??
+            diff.toUpdate[i];
+      }
     }
 
     // ── 3. Memoria in-place: primero updates (índices estables) ──────────
@@ -641,6 +661,110 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await LibraryDatabase.instance.upsertSongsBatched(
       _allSongs.map((s) => s.getMap).toList(),
     );
+  }
+
+  Future<List<SongModel>> _enrichWmaMetadataForIndexing(
+    List<SongModel> songs,
+  ) async {
+    if (songs.isEmpty) return songs;
+
+    final enriched = List<SongModel>.from(songs);
+    var processedWma = 0;
+    for (var i = 0; i < enriched.length; i++) {
+      final song = enriched[i];
+      if (!song.data.toLowerCase().endsWith('.wma')) continue;
+      if (_hasUsefulIndexedWmaMetadata(song)) continue;
+
+      final updated = await _songWithNativeWmaMetadata(song);
+      if (updated != null) {
+        enriched[i] = updated;
+      }
+
+      processedWma++;
+      if (processedWma % 8 == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+    return enriched;
+  }
+
+  bool _hasUsefulIndexedWmaMetadata(SongModel song) {
+    final fileName = song.data.replaceAll('\\', '/').split('/').last;
+    final title = song.title.trim();
+    final artist = song.artist?.trim() ?? '';
+    final duration = song.duration ?? 0;
+
+    return title.isNotEmpty &&
+        title != fileName &&
+        artist.isNotEmpty &&
+        artist != 'Artista Desconocido' &&
+        artist != 'Desconocido' &&
+        duration > 0;
+  }
+
+  Future<SongModel?> _songWithNativeWmaMetadata(SongModel song) async {
+    try {
+      final metadata = await _mediaChannel.invokeMapMethod<String, String>(
+        'extract_metadata',
+        {'path': song.data},
+      );
+      if (metadata == null || metadata.isEmpty) return null;
+
+      final fileName = song.data.replaceAll('\\', '/').split('/').last;
+      final map = Map<String, dynamic>.from(song.getMap);
+      var changed = false;
+
+      changed = _putCleanMetadata(
+            map,
+            'title',
+            metadata['title'],
+            blockedValues: {fileName, 'Desconocido'},
+          ) ||
+          changed;
+      changed = _putCleanMetadata(
+            map,
+            'artist',
+            metadata['artist'],
+            blockedValues: {'Artista Desconocido', 'Desconocido'},
+          ) ||
+          changed;
+      changed = _putCleanMetadata(
+            map,
+            'album',
+            metadata['album'],
+            blockedValues: {'Desconocido'},
+          ) ||
+          changed;
+
+      final durationSeconds = double.tryParse(metadata['duration'] ?? '');
+      if (durationSeconds != null && durationSeconds > 0) {
+        final durationMs = (durationSeconds * 1000).round();
+        if (durationMs > 0 && durationMs != song.duration) {
+          map['duration'] = durationMs;
+          changed = true;
+        }
+      }
+
+      return changed ? SongModel(map) : null;
+    } catch (e) {
+      debugPrint('[Indexer] No se pudo indexar metadata WMA: $e');
+      return null;
+    }
+  }
+
+  bool _putCleanMetadata(
+    Map<String, dynamic> map,
+    String key,
+    String? value, {
+    required Set<String> blockedValues,
+  }) {
+    final clean = value?.trim();
+    if (clean == null || clean.isEmpty || blockedValues.contains(clean)) {
+      return false;
+    }
+    if (map[key] == clean) return false;
+    map[key] = clean;
+    return true;
   }
 
   /// Refresca la biblioteca de forma incremental.
@@ -864,6 +988,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _mediaChannel.invokeMethod('toggle_epicenter', {
         'enabled': _isEpicenterEnabled,
       });
+      if (_isEpicenterEnabled) {
+        await setEpicenterParams(
+          sweepFreq: _epicenterSweepFreq,
+          width: _epicenterWidth,
+          intensity: _epicenterIntensity,
+          volume: _epicenterVolume,
+          peakProtectionEnabled: _epicenterPeakProtectionEnabled,
+        );
+      }
     } catch (e) {
       debugPrint('Epicenter error: $e');
       _isEpicenterEnabled = false;
@@ -877,12 +1010,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     double? width,
     double? intensity,
     double? volume,
+    bool? peakProtectionEnabled,
   }) async {
     await _mediaChannel.invokeMethod('set_epicenter_params', {
       if (sweepFreq != null) 'sweepFreq': sweepFreq,
       if (width != null) 'width': width,
       if (intensity != null) 'intensity': intensity,
       if (volume != null) 'volume': volume,
+      if (peakProtectionEnabled != null)
+        'peakProtectionEnabled': peakProtectionEnabled,
     });
   }
 
@@ -892,11 +1028,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     double? width,
     double? intensity,
     double? volume,
+    bool? peakProtectionEnabled,
   }) async {
     if (sweepFreq != null) _epicenterSweepFreq = sweepFreq;
     if (width != null) _epicenterWidth = width;
     if (intensity != null) _epicenterIntensity = intensity;
     if (volume != null) _epicenterVolume = volume;
+    if (peakProtectionEnabled != null) {
+      _epicenterPeakProtectionEnabled = peakProtectionEnabled;
+    }
 
     notifyListeners();
 
@@ -907,6 +1047,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         width: _epicenterWidth,
         intensity: _epicenterIntensity,
         volume: _epicenterVolume,
+      );
+      await StatePersistence.saveEpicenterPeakProtectionEnabled(
+        _epicenterPeakProtectionEnabled,
       );
     } catch (e) {
       debugPrint('Error saving epicenter params: $e');
@@ -919,6 +1062,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         width: _epicenterWidth,
         intensity: _epicenterIntensity,
         volume: _epicenterVolume,
+        peakProtectionEnabled: _epicenterPeakProtectionEnabled,
       );
     } catch (e) {
       debugPrint('Error applying epicenter params to native: $e');
@@ -931,6 +1075,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       width: StatePersistence.defaultEpicenterWidth,
       intensity: StatePersistence.defaultEpicenterIntensity,
       volume: StatePersistence.defaultEpicenterVolume,
+      peakProtectionEnabled:
+          StatePersistence.defaultEpicenterPeakProtectionEnabled,
     );
   }
 
@@ -2215,10 +2361,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<MediaItem> _mediaItemFromSong(SongModel song, Uri? artUri) async {
     final isWma = song.data.toLowerCase().endsWith('.wma');
+    final hasIndexedWmaMetadata = isWma && _hasUsefulIndexedWmaMetadata(song);
     Tag? tag;
     Map<String, String>? wmaMeta;
 
-    if (isWma) {
+    if (isWma && !hasIndexedWmaMetadata) {
       try {
         tag = await AudioTags.read(song.data);
       } catch (_) {

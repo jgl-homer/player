@@ -170,7 +170,19 @@ public class MediaUtils {
     }
 
     private static String tag(org.json.JSONObject tags, String key) {
-        return tags == null ? null : tags.optString(key, null);
+        if (tags == null) return null;
+        String direct = tags.optString(key, null);
+        if (direct != null && !direct.isEmpty()) return direct;
+
+        java.util.Iterator<String> keys = tags.keys();
+        while (keys.hasNext()) {
+            String candidate = keys.next();
+            if (candidate != null && candidate.equalsIgnoreCase(key)) {
+                String value = tags.optString(candidate, null);
+                if (value != null && !value.isEmpty()) return value;
+            }
+        }
+        return null;
     }
 
     private static String firstTag(org.json.JSONObject tags, String first, String second) {

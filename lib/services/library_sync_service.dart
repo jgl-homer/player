@@ -36,12 +36,34 @@ class LibrarySyncService {
         final dbSize = dbRow['size_bytes'] as int?;
         final dbDate = dbRow['date_modified'] as int?;
         
-        if (dbSize != song.size || dbDate != song.dateModified) {
+        if (dbSize != song.size ||
+            dbDate != song.dateModified ||
+            _wmaNeedsMetadataRefresh(song, dbRow)) {
           toUpdate.add(song);
         }
       }
     }
 
     return SyncResult(toInsert, toUpdate, toDelete);
+  }
+
+  static bool _wmaNeedsMetadataRefresh(
+    SongModel song,
+    Map<String, dynamic> dbRow,
+  ) {
+    if (!song.data.toLowerCase().endsWith('.wma')) return false;
+
+    final title = (dbRow['title'] as String?)?.trim() ?? '';
+    final artist = (dbRow['artist'] as String?)?.trim() ?? '';
+    final duration = dbRow['duration'] as int?;
+    final fileName = song.data.replaceAll('\\', '/').split('/').last;
+
+    return title.isEmpty ||
+        title == fileName ||
+        artist.isEmpty ||
+        artist == 'Artista Desconocido' ||
+        artist == 'Desconocido' ||
+        duration == null ||
+        duration <= 0;
   }
 }

@@ -174,7 +174,18 @@ class LibraryDatabase {
     final db = await database;
     return db.query(
       tableLibraryIndex,
-      columns: ['path', 'size_bytes', 'date_modified', 'media_store_id'],
+      columns: [
+        'path',
+        'size_bytes',
+        'date_modified',
+        'media_store_id',
+        'title',
+        'artist',
+        'album',
+        'duration',
+        'format',
+        'display_name',
+      ],
     );
   }
 

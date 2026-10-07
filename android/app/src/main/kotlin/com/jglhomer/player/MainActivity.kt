@@ -335,6 +335,7 @@ class MainActivity : AudioServiceActivity() {
         (params["width"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setWidth(it.toFloat()) }
         (params["intensity"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setIntensity(it.toFloat()) }
         (params["volume"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setVolume(it.toFloat()) }
+        (params["peakProtectionEnabled"] as? Boolean)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setPeakProtectionEnabled(it) }
     }
     private fun deleteMedia(id: Long, result: MethodChannel.Result) {
         val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
