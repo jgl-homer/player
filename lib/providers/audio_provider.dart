@@ -96,7 +96,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
   final Map<int, Uri> _systemArtworkUriCache = {};
-  int _queueLoadGeneration = 0;
   bool _navigationBusy = false;
   Future<void> Function()? _pendingNavigationAction;
 
@@ -713,7 +712,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     required Duration position,
     required bool shouldPlay,
   }) async {
-    _queueLoadGeneration++;
     if (_currentPlaylist.isEmpty) {
       await stop();
       return;
@@ -1356,41 +1354,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _loadCurrentPlaylistFromScratch() async {
-    final loadGeneration = ++_queueLoadGeneration;
     // Ruta rápida para listas grandes: no bloquear el inicio de reproducción
     // esperando la carátula de cada pista. Usamos el fallback placeholder para
     // arrancar el player de inmediato y luego actualizamos la canción actual.
     final useFast = _currentPlaylist.length > 20;
-    final loadInBackground = _playbackMode != PlaybackMode.folder &&
-        !_shuffle &&
-        _currentPlaylist.length > 100;
-    if (loadInBackground) {
-      final selected = _currentPlaylist[_currentIndex];
-      final remaining = <SongModel>[
-        ..._currentPlaylist.sublist(_currentIndex + 1),
-        ..._currentPlaylist.sublist(0, _currentIndex),
-      ];
-      _currentPlaylist = [selected, ...remaining];
-      _currentIndex = 0;
-    }
-    final mediaItems = loadInBackground
-        ? await _songsToMediaItems([_currentPlaylist.first], fast: true)
-        : await _songsToMediaItems(_currentPlaylist, fast: useFast);
+    final mediaItems = await _songsToMediaItems(_currentPlaylist, fast: useFast);
 
     try {
       await _syncPlayerLoopMode();
       await _handler.loadPlaylist(
         mediaItems,
-        loadInBackground ? 0 : _currentIndex,
+        _currentIndex,
       );
       _savePlaybackState();
       await _updateHomeWidget();
-      if (loadInBackground) {
-        unawaited(_appendRemainingQueueInBackground(
-          loadGeneration,
-          _currentPlaylist.skip(1).toList(growable: false),
-        ));
-      }
     } catch (e) {
       debugPrint("Error loading playlist: $e");
       if (_currentPlaylist.length > 1) {
@@ -1404,24 +1381,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // principal para que aparezca la imagen en la pantalla de bloqueo.
     if (useFast && _currentSong != null) {
       unawaited(_updateCurrentSongArtwork(_currentSong!));
-    }
-  }
-
-  Future<void> _appendRemainingQueueInBackground(
-    int generation,
-    List<SongModel> songs,
-  ) async {
-    const batchSize = 150;
-    for (var offset = 0; offset < songs.length; offset += batchSize) {
-      if (generation != _queueLoadGeneration) return;
-      final end = (offset + batchSize).clamp(0, songs.length);
-      final batch = await _songsToMediaItems(
-        songs.sublist(offset, end),
-        fast: true,
-      );
-      if (generation != _queueLoadGeneration) return;
-      await _handler.addQueueItems(batch);
-      await Future<void>.delayed(Duration.zero);
     }
   }
 
@@ -2244,6 +2203,16 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     return _mediaItemFromSong(s, artUri);
   }
 
+  MediaItem _fastMediaItemFromSong(SongModel song) {
+    return MediaItem(
+      id: song.data,
+      album: TitleUtils.getDisplayAlbum(song),
+      title: TitleUtils.getDisplayTitle(song),
+      artist: TitleUtils.getDisplayArtist(song.artist),
+      duration: Duration(milliseconds: song.duration ?? 0),
+    );
+  }
+
   Future<MediaItem> _mediaItemFromSong(SongModel song, Uri? artUri) async {
     final isWma = song.data.toLowerCase().endsWith('.wma');
     Tag? tag;
@@ -2316,9 +2285,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs,
       {bool fast = false}) async {
     if (fast) {
-      return Future.wait(
-        songs.map((song) => _mediaItemFromSong(song, null)),
-      );
+      return songs.map(_fastMediaItemFromSong).toList(growable: false);
     }
     return Future.wait(songs.map((s) => _songToMediaItem(s, fast: fast)));
   }
