@@ -79,7 +79,7 @@ class ConcertHallModal extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const SizedBox(width: 48), // Spacer for balance
+          const SizedBox(width: 48),
           Column(
             children: [
               const Text(

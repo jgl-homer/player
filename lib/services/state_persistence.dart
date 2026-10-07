@@ -58,7 +58,6 @@ class StatePersistence {
   static const String _epicenterSweepFreqKey = 'epicenter_sweep_freq';
   static const String _epicenterWidthKey = 'epicenter_width';
   static const String _epicenterIntensityKey = 'epicenter_intensity';
-  static const String _epicenterBalanceKey = 'epicenter_balance';
   static const String _epicenterVolumeKey = 'epicenter_volume';
   static const String _epicenterTuningVersionKey = 'epicenter_tuning_version';
   static const int _epicenterTuningVersion = 6;
@@ -99,26 +98,21 @@ class StatePersistence {
     final sweep = prefs.getDouble(_epicenterSweepFreqKey);
     final width = prefs.getDouble(_epicenterWidthKey);
     final intensity = prefs.getDouble(_epicenterIntensityKey);
-    final balance = prefs.getDouble(_epicenterBalanceKey);
 
     final canAutoTune = sweep == null ||
         (_closeTo(sweep, 45.0) &&
             _closeTo(width, 50.0) &&
-            _closeTo(intensity, 50.0) &&
-            _closeTo(balance, 50.0)) ||
+            _closeTo(intensity, 50.0)) ||
         (_closeTo(sweep, 41.0) &&
             _closeTo(width, 68.0) &&
-            _closeTo(intensity, 64.0) &&
-            _closeTo(balance, 58.0)) ||
+            _closeTo(intensity, 64.0)) ||
         (_closeTo(sweep, 42.0) &&
             _closeTo(width, 74.0) &&
-            _closeTo(intensity, 72.0) &&
-            _closeTo(balance, 72.0)) ||
+            _closeTo(intensity, 72.0)) ||
         _looksLikeRoughTestTune(
           sweep: sweep,
           width: width,
           intensity: intensity,
-          balance: balance,
         );
 
     if (canAutoTune) {
@@ -138,21 +132,15 @@ class StatePersistence {
     required double? sweep,
     required double? width,
     required double? intensity,
-    required double? balance,
   }) {
-    if (sweep == null ||
-        width == null ||
-        intensity == null ||
-        balance == null) {
+    if (sweep == null || width == null || intensity == null) {
       return false;
     }
     return sweep >= 30.0 &&
         sweep <= 42.0 &&
         width >= 50.0 &&
         width <= 62.0 &&
-        intensity >= 95.0 &&
-        balance >= 45.0 &&
-        balance <= 90.0;
+        intensity >= 95.0;
   }
 
   static Future<void> savePlaybackState({
