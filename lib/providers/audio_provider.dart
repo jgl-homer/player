@@ -25,8 +25,6 @@ import '../services/library_database.dart';
 import '../services/library_sync_service.dart';
 import '../utils/title_utils.dart';
 
-enum AudioPreset { concertHall, chamber, cathedral, studio, plate }
-
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
@@ -41,10 +39,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   String?
       _activeContextId; // stable ID for album/artist/playlist/favorites context
 
-  // Concert Hall FX State
-  AudioPreset _currentPreset = AudioPreset.concertHall;
-  bool _isEqEnabled = true;
-  bool _isReverbEnabled = false;
   bool _isEpicenterEnabled = false;
   // Epicenter parameters (defaults mirror native defaults)
   double _epicenterSweepFreq =
@@ -55,14 +49,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double _epicenterVolume = StatePersistence.defaultEpicenterVolume; // 0-100
   bool _epicenterPeakProtectionEnabled =
       StatePersistence.defaultEpicenterPeakProtectionEnabled;
-
-  double _reverbDecay = 8.0;
-  double _reverbPreDelay = 0.1;
-  double _reverbRoomSize = 0.85;
-  double _reverbDamping = 0.51;
-  double _reverbWet = 100.0;
-  double _reverbDry = 24.0;
-  List<double> _eqGains = [3, -1, 0, 1, 2, 1, 0, -2, -4];
 
   List<SongModel> _allSongs = [];
   final Map<String, int> _songIndexByPath = {};
@@ -143,10 +129,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   // Legacy compat getter
   int get tabCount => _enabledTabs.length.clamp(1, 8);
 
-  // Concert Hall / Epicenter Getters
-  AudioPreset get currentPreset => _currentPreset;
-  bool get isEqEnabled => _isEqEnabled;
-  bool get isReverbEnabled => _isReverbEnabled;
   bool get isEpicenterEnabled => _isEpicenterEnabled;
 
   // Epicenter params
@@ -156,14 +138,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double get epicenterVolume => _epicenterVolume;
   bool get epicenterPeakProtectionEnabled =>
       _epicenterPeakProtectionEnabled;
-
-  double get reverbDecay => _reverbDecay;
-  double get reverbPreDelay => _reverbPreDelay;
-  double get reverbRoomSize => _reverbRoomSize;
-  double get reverbDamping => _reverbDamping;
-  double get reverbWet => _reverbWet;
-  double get reverbDry => _reverbDry;
-  List<double> get eqGains => _eqGains;
 
   AudioProvider(
     AudioHandler handler, {
@@ -390,7 +364,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     _player.androidAudioSessionIdStream.listen((sessionId) async {
       if (sessionId != null && sessionId != 0) {
-        await _mediaChannel.invokeMethod('setBypass', {'bypass': true});
         await _mediaChannel.invokeMethod('toggle_epicenter', {
           'enabled': _isEpicenterEnabled,
         });
@@ -1089,157 +1062,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await StatePersistence.saveEnabledTabs(tabs);
     } catch (e) {
       debugPrint('Error saving enabled tabs: $e');
-    }
-  }
-
-  Future<void> _applyCurrentEffects() async {
-    await _mediaChannel
-        .invokeMethod('toggle_reverb', {'enabled': _isReverbEnabled});
-    await _updateReverbParameters();
-  }
-
-  Future<void> setAudioPreset(AudioPreset preset) async {
-    _currentPreset = preset;
-
-    final presetName = {
-      AudioPreset.concertHall: 'LARGE_HALL',
-      AudioPreset.chamber: 'MEDIUM_HALL',
-      AudioPreset.cathedral: 'CATHEDRAL',
-      AudioPreset.studio: 'STUDIO',
-      AudioPreset.plate: 'PLATE',
-    }[preset]!;
-
-    // Update local values based on user snippet
-    switch (preset) {
-      case AudioPreset.concertHall:
-        _reverbDecay = 8.0;
-        _reverbPreDelay = 0.1;
-        _reverbRoomSize = 0.85;
-        _reverbDamping = 0.51;
-        _reverbWet = 100;
-        _reverbDry = 24;
-        _eqGains = [3, -1, 0, 1, 2, 1, 0, -2, -4];
-        break;
-      case AudioPreset.chamber:
-        _reverbDecay = 1.8;
-        _reverbPreDelay = 0.02;
-        _reverbRoomSize = 0.7;
-        _reverbDamping = 0.6;
-        _reverbWet = 45;
-        _reverbDry = 55;
-        _eqGains = [-1, 0, 1, 2, 1, 0, -1, -2, -1];
-        break;
-      case AudioPreset.cathedral:
-        _reverbDecay = 5.0;
-        _reverbPreDelay = 0.04;
-        _reverbRoomSize = 0.95;
-        _reverbDamping = 0.4;
-        _reverbWet = 80;
-        _reverbDry = 20;
-        _eqGains = [4, 3, 1, 0, -1, -2, -3, -5, -7];
-        break;
-      case AudioPreset.studio:
-        _reverbDecay = 0.5;
-        _reverbPreDelay = 0.01;
-        _reverbRoomSize = 0.3;
-        _reverbDamping = 0.8;
-        _reverbWet = 20;
-        _reverbDry = 80;
-        _eqGains = [-1, 1, 2, 3, 2, 1, 0, -1, -1];
-        break;
-      case AudioPreset.plate:
-        _reverbDecay = 2.0;
-        _reverbPreDelay = 0.02;
-        _reverbRoomSize = 0.5;
-        _reverbDamping = 0.7;
-        _reverbWet = 50;
-        _reverbDry = 50;
-        _eqGains = [-2, -1, 0, 2, 3, 2, 0, -1, -2];
-        break;
-    }
-
-    if (_player.androidAudioSessionId != null) {
-      final sessionId = _player.androidAudioSessionId;
-      if (sessionId != null && sessionId != 0) {
-        try {
-          await _mediaChannel.invokeMethod('enableReverb', {
-            'sessionId': sessionId,
-            'preset': presetName,
-          });
-          debugPrint('Native Preset applied: $presetName');
-        } catch (e) {
-          debugPrint('Error setting native preset: $e');
-        }
-      }
-    }
-
-    notifyListeners();
-    await _applyCurrentEffects();
-  }
-
-  Future<void> updateReverbParam(String key, double value) async {
-    switch (key) {
-      case 'decay':
-        _reverbDecay = value;
-        break;
-      case 'preDelay':
-        _reverbPreDelay = value;
-        break;
-      case 'roomSize':
-        _reverbRoomSize = value;
-        break;
-      case 'damping':
-        _reverbDamping = value;
-        break;
-      case 'wet':
-        _reverbWet = value;
-        break;
-      case 'dry':
-        _reverbDry = value;
-        break;
-    }
-    notifyListeners();
-    await _updateReverbParameters();
-  }
-
-  Future<void> toggleBypass() async {
-    _isEqEnabled = !_isEqEnabled;
-    _isReverbEnabled = !_isReverbEnabled;
-    await _mediaChannel
-        .invokeMethod('setBypass', {'bypass': !_isReverbEnabled});
-    debugPrint('Reverb bypass: ${!_isReverbEnabled}');
-    notifyListeners();
-    await _applyCurrentEffects();
-  }
-
-  Future<void> _updateReverbParameters() async {
-    final sessionId = _player.androidAudioSessionId;
-    if (sessionId != null && sessionId != 0 && _isReverbEnabled) {
-      try {
-        final params = {
-          'decayTime': (_reverbDecay * 1000).toInt().clamp(100, 20000),
-          'roomLevel': (-1000 + (_reverbRoomSize * 1000)).toInt(),
-          'reverbLevel':
-              ((_reverbWet - 50) * 40).toInt(), // Map wet % to dB approx
-          'reflectionsDelay': (_reverbPreDelay * 1000).toInt(),
-          'diffusion': (_reverbRoomSize * 1000).toInt(),
-          'density': (_reverbRoomSize * 1000).toInt(),
-          'decayHFRatio':
-              (2000 - (_reverbDamping * 1500)).toInt().clamp(100, 2000),
-          'reverbDelay': (_reverbPreDelay * 1300).toInt().clamp(0, 100),
-          'virtualizerStrength':
-              (_reverbRoomSize * _reverbWet * 10).toInt().clamp(0, 1000),
-          'loudnessGainMb':
-              (_currentPreset == AudioPreset.concertHall ? 250 : 120),
-          'eqGains':
-              _isEqEnabled ? _eqGains : List<double>.filled(_eqGains.length, 0),
-        };
-
-        await _mediaChannel.invokeMethod('setReverbParams', params);
-        debugPrint('Native Reverb params updated: $params');
-      } catch (e) {
-        debugPrint('Error updating native params: $e');
-      }
     }
   }
 
