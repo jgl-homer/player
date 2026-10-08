@@ -22,10 +22,6 @@ import androidx.documentfile.provider.DocumentFile
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.ryanheise.audioservice.AudioServiceActivity
-import android.media.audiofx.EnvironmentalReverb
-import android.media.audiofx.Equalizer
-import android.media.audiofx.LoudnessEnhancer
-import android.media.audiofx.Virtualizer
 import android.media.AudioManager
 import android.media.AudioDeviceInfo
 import android.media.AudioDeviceCallback
@@ -47,12 +43,6 @@ class MainActivity : AudioServiceActivity() {
     private var myFlutterEngine: FlutterEngine? = null
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var audioDeviceCallback: AudioDeviceCallback? = null
-
-    private var reverb: EnvironmentalReverb? = null
-    private var virtualizer: Virtualizer? = null
-    private var equalizer: Equalizer? = null
-    private var loudnessEnhancer: LoudnessEnhancer? = null
-    private var currentSessionId: Int = 0
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -129,52 +119,6 @@ class MainActivity : AudioServiceActivity() {
                         result.error("INVALID_ARGUMENT", "filePath is required", null)
                     }
                 }
-                "init_reverb" -> {
-                    val sessionId = call.argument<Int>("sessionId") ?: 0
-                    if (sessionId != 0) {
-                        setupReverb(sessionId)
-                        result.success(true)
-                    } else {
-                        result.error("INVALID_ARGUMENT", "Session ID is required", null)
-                    }
-                }
-                "enableReverb" -> {
-                    val sessionId = call.argument<Int>("sessionId") ?: 0
-                    if (sessionId != 0) {
-                        setupReverb(sessionId)
-                        result.success(true)
-                    } else {
-                        result.error("INVALID_ARGUMENT", "Session ID is required", null)
-                    }
-                }
-                "update_reverb" -> {
-                    val params = call.arguments as? Map<String, Any>
-                    if (params != null) {
-                        applyReverbParams(params)
-                        result.success(true)
-                    } else {
-                        result.error("INVALID_ARGUMENT", "Params are required", null)
-                    }
-                }
-                "setReverbParams" -> {
-                    val params = call.arguments as? Map<String, Any>
-                    if (params != null) {
-                        applyReverbParams(params)
-                        result.success(true)
-                    } else {
-                        result.error("INVALID_ARGUMENT", "Params are required", null)
-                    }
-                }
-                "toggle_reverb" -> {
-                    val enabled = call.argument<Boolean>("enabled") ?: true
-                    setConcertHallEnabled(enabled)
-                    result.success(true)
-                }
-                "setBypass" -> {
-                    val bypass = call.argument<Boolean>("bypass") ?: false
-                    setConcertHallEnabled(!bypass)
-                    result.success(true)
-                }
                 "toggle_epicenter" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
                     com.ryanheise.just_audio.EpicenterProcessorController.setEpicenterEnabled(enabled)
@@ -199,10 +143,6 @@ class MainActivity : AudioServiceActivity() {
                             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                         }
                     }
-                    result.success(true)
-                }
-                "releaseReverb" -> {
-                    releaseConcertHallEffects()
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -468,107 +408,6 @@ class MainActivity : AudioServiceActivity() {
             registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
             registerReceiver(bluetoothReceiver, filter)
-        }
-    }
-
-    private fun setupReverb(sessionId: Int) {
-        if (reverb != null && currentSessionId == sessionId) return
-
-        releaseConcertHallEffects()
-        currentSessionId = sessionId
-        reverb = createEffect("EnvironmentalReverb") { EnvironmentalReverb(0, sessionId) }
-        virtualizer = createEffect("Virtualizer") { Virtualizer(0, sessionId) }
-        equalizer = createEffect("Equalizer") { Equalizer(0, sessionId) }
-        loudnessEnhancer = createEffect("LoudnessEnhancer") { LoudnessEnhancer(sessionId) }
-        setConcertHallEnabled(true)
-        Log.d(TAG, "Concert Hall FX initialized for session: $sessionId")
-    }
-
-    private fun applyReverbParams(params: Map<String, Any>) {
-        val r = reverb ?: return
-        try {
-            (params["decayTime"] as? Number)?.let { r.decayTime = it.toInt() }
-            (params["reflectionsDelay"] as? Number)?.let { r.reflectionsDelay = it.toInt() }
-            (params["reverbDelay"] as? Number)?.let { r.reverbDelay = it.toInt() }
-            (params["roomLevel"] as? Number)?.let { r.roomLevel = it.toInt().toShort() }
-            (params["density"] as? Number)?.let { r.density = it.toInt().toShort() }
-            (params["diffusion"] as? Number)?.let { r.diffusion = it.toInt().toShort() }
-            (params["decayHFRatio"] as? Number)?.let { r.decayHFRatio = it.toInt().toShort() }
-            (params["reverbLevel"] as? Number)?.let { r.reverbLevel = it.toInt().toShort() }
-
-            (params["virtualizerStrength"] as? Number)?.let { strength ->
-                virtualizer?.setStrength(strength.toInt().coerceIn(0, 1000).toShort())
-            }
-
-            (params["loudnessGainMb"] as? Number)?.let { gain ->
-                loudnessEnhancer?.setTargetGain(gain.toInt().coerceIn(0, 2000))
-            }
-
-            (params["eqGains"] as? List<*>)?.let { gains ->
-                applyEqGains(gains)
-            }
-
-            Log.d(TAG, "Concert Hall parameters applied: $params")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error applying Concert Hall params: ${e.message}")
-        }
-    }
-
-    private fun <T> createEffect(name: String, factory: () -> T): T? {
-        return try {
-            factory()
-        } catch (e: Exception) {
-            Log.e(TAG, "$name is not available: ${e.message}")
-            null
-        }
-    }
-
-    private fun setConcertHallEnabled(enabled: Boolean) {
-        setEffectEnabled("EnvironmentalReverb") { reverb?.enabled = enabled }
-        setEffectEnabled("Virtualizer") { virtualizer?.enabled = enabled }
-        setEffectEnabled("Equalizer") { equalizer?.enabled = enabled }
-        setEffectEnabled("LoudnessEnhancer") { loudnessEnhancer?.enabled = enabled }
-    }
-
-    private fun setEffectEnabled(name: String, setter: () -> Unit) {
-        try {
-            setter()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error toggling $name: ${e.message}")
-        }
-    }
-
-    private fun applyEqGains(gains: List<*>) {
-        val eq = equalizer ?: return
-        val bandCount = eq.numberOfBands.toInt()
-        if (bandCount <= 0 || gains.isEmpty()) return
-
-        val minLevel = eq.bandLevelRange[0].toInt()
-        val maxLevel = eq.bandLevelRange[1].toInt()
-        val lastGainIndex = gains.lastIndex.coerceAtLeast(0)
-
-        for (band in 0 until bandCount) {
-            val sourceIndex = if (bandCount == 1) 0 else
-                ((band * lastGainIndex).toFloat() / (bandCount - 1)).toInt()
-            val db = (gains[sourceIndex] as? Number)?.toDouble() ?: 0.0
-            val millibels = (db * 100).toInt().coerceIn(minLevel, maxLevel)
-            eq.setBandLevel(band.toShort(), millibels.toShort())
-        }
-    }
-
-    private fun releaseConcertHallEffects() {
-        try {
-            reverb?.release()
-            virtualizer?.release()
-            equalizer?.release()
-            loudnessEnhancer?.release()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing Concert Hall FX: ${e.message}")
-        } finally {
-            reverb = null
-            virtualizer = null
-            equalizer = null
-            loudnessEnhancer = null
         }
     }
 
