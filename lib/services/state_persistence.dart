@@ -5,9 +5,9 @@ import 'lyrics_service.dart';
 enum PlaybackMode { folder, album, artist, playlist, favorites, global }
 
 class StatePersistence {
-  static const double defaultEpicenterSweepFreq = 41.0;
-  static const double defaultEpicenterWidth = 86.0;
-  static const double defaultEpicenterIntensity = 84.0;
+  static const double defaultEpicenterSweepFreq = 40.0;
+  static const double defaultEpicenterWidth = 60.0;
+  static const double defaultEpicenterIntensity = 65.0;
   static const double defaultEpicenterVolume = 100.0;
   static const bool defaultEpicenterPeakProtectionEnabled = true;
 
@@ -60,10 +60,9 @@ class StatePersistence {
   static const String _epicenterWidthKey = 'epicenter_width';
   static const String _epicenterIntensityKey = 'epicenter_intensity';
   static const String _epicenterVolumeKey = 'epicenter_volume';
-  static const String _epicenterPeakProtectionKey =
-      'epicenter_peak_protection';
+  static const String _epicenterPeakProtectionKey = 'epicenter_peak_protection';
   static const String _epicenterTuningVersionKey = 'epicenter_tuning_version';
-  static const int _epicenterTuningVersion = 6;
+  static const int _epicenterTuningVersion = 7;
 
   static Future<Map<String, double>> loadEpicenterParams() async {
     final prefs = await SharedPreferences.getInstance();
@@ -113,8 +112,7 @@ class StatePersistence {
     final width = prefs.getDouble(_epicenterWidthKey);
     final intensity = prefs.getDouble(_epicenterIntensityKey);
 
-    final canAutoTune = sweep == null ||
-        (_closeTo(sweep, 45.0) &&
+    final historicalDefault = (_closeTo(sweep, 45.0) &&
             _closeTo(width, 50.0) &&
             _closeTo(intensity, 50.0)) ||
         (_closeTo(sweep, 41.0) &&
@@ -129,11 +127,18 @@ class StatePersistence {
           intensity: intensity,
         );
 
+    final canAutoTune = sweep == null ||
+        (_closeTo(sweep, 41.0) &&
+            _closeTo(width, 86.0) &&
+            _closeTo(intensity, 84.0)) ||
+        (version < 6 && historicalDefault);
+
     if (canAutoTune) {
       await prefs.setDouble(_epicenterSweepFreqKey, defaultEpicenterSweepFreq);
       await prefs.setDouble(_epicenterWidthKey, defaultEpicenterWidth);
       await prefs.setDouble(_epicenterIntensityKey, defaultEpicenterIntensity);
-      await prefs.setDouble(_epicenterVolumeKey, defaultEpicenterVolume);
+      await prefs.setDouble(_epicenterVolumeKey,
+          prefs.getDouble(_epicenterVolumeKey) ?? defaultEpicenterVolume);
     }
 
     await prefs.setInt(_epicenterTuningVersionKey, _epicenterTuningVersion);
