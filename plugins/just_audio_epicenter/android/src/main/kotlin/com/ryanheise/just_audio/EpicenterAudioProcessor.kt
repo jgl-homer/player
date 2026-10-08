@@ -5,10 +5,10 @@ import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.min
 
 object EpicenterProcessorController {
     val processor = EpicenterAudioProcessor()
-
     fun setEpicenterEnabled(enabled: Boolean) = processor.setEpicenterEnabled(enabled)
     fun setSweepFreq(value: Float) = processor.setSweepFreq(value)
     fun setWidth(value: Float) = processor.setWidth(value)
@@ -18,38 +18,33 @@ object EpicenterProcessorController {
 }
 
 class EpicenterAudioProcessor : BaseAudioProcessor() {
-    @Volatile private var enabled = false
-    @Volatile private var sweepFreq = 45f
-    @Volatile private var width = 50f
-    @Volatile private var intensity = 50f
-    @Volatile private var volume = 100f
-    @Volatile private var peakProtectionEnabled = true
+    private data class Control(val enabled: Boolean = false, val params: EpicenterParams = EpicenterParams())
+    // Setters run on the platform thread. Audio sees one immutable snapshot per callback.
+    @Volatile private var control = Control()
     private var dsp: EpicenterDsp? = null
     private var channelCount = 0
-    private var encoding = C.ENCODING_PCM_16BIT
+    private var sampleRate = 0
+    private var encoding = C.ENCODING_INVALID
+    private var bits = 16
+    private val inputSamples = FloatArray(4096)
+    private val outputSamples = FloatArray(4096)
 
-    fun setEpicenterEnabled(value: Boolean) {
-        enabled = value
-        if (!value) dsp?.reset()
-    }
-
-    fun setSweepFreq(value: Float) { sweepFreq = value.coerceIn(27f, 63f) }
-    fun setWidth(value: Float) { width = value.coerceIn(0f, 100f) }
-    fun setIntensity(value: Float) { intensity = value.coerceIn(0f, 100f) }
-    fun setVolume(value: Float) { volume = value.coerceIn(0f, 100f) }
-    fun setPeakProtectionEnabled(value: Boolean) { peakProtectionEnabled = value }
+    fun setEpicenterEnabled(value: Boolean) { control = control.copy(enabled = value) }
+    fun setSweepFreq(value: Float) { if (value.isFinite()) control = control.copy(params = control.params.copy(sweepFreq = value.coerceIn(27f, 63f))) }
+    fun setWidth(value: Float) { if (value.isFinite()) control = control.copy(params = control.params.copy(width = value.coerceIn(0f, 100f))) }
+    fun setIntensity(value: Float) { if (value.isFinite()) control = control.copy(params = control.params.copy(intensity = value.coerceIn(0f, 100f))) }
+    fun setVolume(value: Float) { if (value.isFinite()) control = control.copy(params = control.params.copy(volume = value.coerceIn(0f, 100f))) }
+    fun setPeakProtectionEnabled(value: Boolean) { control = control.copy(params = control.params.copy(peakProtectionEnabled = value)) }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
             inputAudioFormat.encoding != C.ENCODING_PCM_24BIT &&
             inputAudioFormat.encoding != C.ENCODING_PCM_32BIT &&
-            inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
-        ) {
+            inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT ||
+            inputAudioFormat.channelCount !in 1..32 || inputAudioFormat.sampleRate < 8000) {
             throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
         }
-        channelCount = inputAudioFormat.channelCount
-        encoding = inputAudioFormat.encoding
-        dsp = EpicenterDsp(inputAudioFormat.sampleRate)
+        // Media3 may configure the next stream while the current one is draining.
         return inputAudioFormat
     }
 
@@ -57,99 +52,55 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         val byteCount = inputBuffer.remaining()
-        val outputBuffer = replaceOutputBuffer(byteCount)
-        if (byteCount == 0) {
-            outputBuffer.flip()
-            return
-        }
-
-        if (!enabled || intensity <= 0.01f) {
+        val outputBuffer = replaceOutputBuffer(byteCount).order(ByteOrder.LITTLE_ENDIAN)
+        val state = control
+        val processor = dsp
+        val active = state.enabled && state.params.intensity > 0f
+        if (byteCount == 0) { outputBuffer.flip(); return }
+        if (processor == null || (!active && processor.isBypassed)) {
             outputBuffer.put(inputBuffer)
             outputBuffer.flip()
             return
         }
-
-        val inSlice = inputBuffer.slice().order(ByteOrder.LITTLE_ENDIAN)
-        val bytesPerSample = when (encoding) {
-            C.ENCODING_PCM_16BIT -> 2
-            C.ENCODING_PCM_24BIT -> 3
-            C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 4
-            else -> throw AudioProcessor.UnhandledAudioFormatException(
-                AudioProcessor.AudioFormat(0, 0, encoding)
-            )
-        }
-        if (byteCount % bytesPerSample != 0) {
-            throw IllegalStateException("PCM buffer is not aligned to the configured encoding")
-        }
-        val samples = byteCount / bytesPerSample
-        val input = FloatArray(samples)
-        for (i in 0 until samples) {
-            val sample = when (encoding) {
-                C.ENCODING_PCM_16BIT -> inSlice.short.toFloat() / 32768f
-                C.ENCODING_PCM_24BIT -> {
-                    val value = inSlice.get().toInt() and 0xff or
-                        ((inSlice.get().toInt() and 0xff) shl 8) or
-                        (inSlice.get().toInt() shl 16)
-                    value.toFloat() / 8388608f
-                }
-                C.ENCODING_PCM_32BIT -> inSlice.int.toFloat() / 2147483648f
-                C.ENCODING_PCM_FLOAT -> inSlice.float
-                else -> error("Unsupported PCM encoding")
+        val bytesPerSample = if (bits == 0) 4 else bits / 8
+        require(byteCount % (bytesPerSample * channelCount) == 0) { "PCM buffer must contain complete frames" }
+        inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
+        val capacity = inputSamples.size / channelCount * channelCount
+        while (inputBuffer.hasRemaining()) {
+            if (!active && processor.isBypassed) { outputBuffer.put(inputBuffer); break }
+            val count = min(capacity, inputBuffer.remaining() / bytesPerSample)
+            val sourcePosition = inputBuffer.position()
+            for (i in 0 until count) inputSamples[i] = EpicenterPcm.read(inputBuffer, bits)
+            processor.processInterleaved(inputSamples, outputSamples, channelCount, state.params, count, state.enabled)
+            for (i in 0 until count) {
+                val position = sourcePosition + i * bytesPerSample
+                // Preserve PCM32 low bits too when the float-domain mix is unchanged.
+                if (outputSamples[i] == inputSamples[i] && (bits != 0 || inputBuffer.getFloat(position).isFinite())) {
+                    for (b in 0 until bytesPerSample) outputBuffer.put(inputBuffer.get(position + b))
+                } else EpicenterPcm.write(outputBuffer, outputSamples[i], bits)
             }
-            if (encoding == C.ENCODING_PCM_FLOAT && !sample.isFinite()) {
-                throw IllegalArgumentException("FLOAT PCM sample must be finite")
-            }
-            input[i] = sample
         }
-        inputBuffer.position(inputBuffer.position() + byteCount)
-
-        val output = FloatArray(samples)
-        val params = EpicenterParams(
-            sweepFreq = sweepFreq,
-            width = width,
-            intensity = intensity,
-            volume = volume,
-            peakProtectionEnabled = peakProtectionEnabled,
-        )
-        dsp?.processInterleaved(input, output, channelCount, params)
-
-        outputBuffer.order(ByteOrder.LITTLE_ENDIAN)
-        writeSamples(outputBuffer, output)
         outputBuffer.flip()
     }
 
-    private fun writeSamples(outputBuffer: ByteBuffer, samples: FloatArray) {
-        for (sample in samples) {
-            when (encoding) {
-                C.ENCODING_PCM_16BIT -> {
-                    val intSample = (sample.coerceIn(-1f, 1f) * 32767f).toInt().coerceIn(-32768, 32767)
-                    outputBuffer.put((intSample and 0xff).toByte())
-                    outputBuffer.put(((intSample shr 8) and 0xff).toByte())
-                }
-                C.ENCODING_PCM_24BIT -> {
-                    val intSample = (sample.coerceIn(-1f, 1f) * 8388607f).toInt().coerceIn(-8388608, 8388607)
-                    outputBuffer.put((intSample and 0xff).toByte())
-                    outputBuffer.put(((intSample shr 8) and 0xff).toByte())
-                    outputBuffer.put(((intSample shr 16) and 0xff).toByte())
-                }
-                C.ENCODING_PCM_32BIT -> {
-                    val intSample = (sample.coerceIn(-1f, 1f) * 2147483647f).toLong()
-                        .coerceIn(-2147483648L, 2147483647L).toInt()
-                    outputBuffer.putInt(intSample)
-                }
-                C.ENCODING_PCM_FLOAT -> outputBuffer.putFloat(sample.coerceIn(-1f, 1f))
-                else -> error("Unsupported PCM encoding")
-            }
-        }
-    }
-
     override fun onFlush() {
-        dsp?.reset()
+        val format = inputAudioFormat
+        if (format == AudioProcessor.AudioFormat.NOT_SET) { dsp?.reset(); return }
+        if (sampleRate != format.sampleRate || channelCount != format.channelCount || encoding != format.encoding || dsp == null) {
+            sampleRate = format.sampleRate
+            channelCount = format.channelCount
+            encoding = format.encoding
+            bits = when (encoding) {
+                C.ENCODING_PCM_16BIT -> 16
+                C.ENCODING_PCM_24BIT -> 24
+                C.ENCODING_PCM_32BIT -> 32
+                else -> 0
+            }
+            dsp = EpicenterDsp(sampleRate).also { it.prepare(channelCount, control.params) }
+        } else dsp?.reset()
     }
 
     override fun onReset() {
-        dsp = null
-        channelCount = 0
-        encoding = C.ENCODING_PCM_16BIT
+        dsp = null; channelCount = 0; sampleRate = 0; encoding = C.ENCODING_INVALID
     }
 }
