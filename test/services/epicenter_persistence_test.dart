@@ -5,7 +5,35 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('SMART defaults and peak protection on a new installation', () async {
+  test('engine selection persists independently of tuning and enabled state',
+      () async {
+    SharedPreferences.setMockInitialValues({'epicenter_intensity': 72.0});
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.hybrid);
+    await StatePersistence.saveEpicenterEngine(EpicenterEngineMode.legacy);
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.legacy);
+    expect(await StatePersistence.loadEpicenterEnabled(), isFalse);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getDouble('epicenter_intensity'), 72.0);
+    await StatePersistence.saveEpicenterEngine(EpicenterEngineMode.smart);
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.smart);
+    await prefs.setString('epicenter_engine', 'invalid');
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.hybrid);
+  });
+
+  test('existing V2 engine choice migrates once to HYBRID default', () async {
+    SharedPreferences.setMockInitialValues({'epicenter_engine': 'smart'});
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.hybrid);
+    await StatePersistence.saveEpicenterEngine(EpicenterEngineMode.smart);
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.smart);
+  });
+
+  test('V2.1 defaults and peak protection on a new installation', () async {
     SharedPreferences.setMockInitialValues({});
     expect(await StatePersistence.loadEpicenterParams(), {
       'sweepFreq': 40.0,
