@@ -129,6 +129,8 @@ class MainActivity : AudioServiceActivity() {
                     val params = call.arguments as? Map<String, Any>
                     if (params == null) {
                         result.error("INVALID_ARGUMENT", "Params are required", null)
+                    } else if (params.containsKey("engine") && params["engine"] !in setOf("hybrid", "smart", "legacy")) {
+                        result.error("INVALID_ARGUMENT", "Unknown Epicenter engine", null)
                     } else {
                         applyEpicenterParams(params)
                         result.success(true)
@@ -271,6 +273,15 @@ class MainActivity : AudioServiceActivity() {
 
 
     private fun applyEpicenterParams(params: Map<String, Any>) {
+        (params["engine"] as? String)?.let {
+            val engine = when (it) {
+                "legacy" -> com.ryanheise.just_audio.EpicenterEngine.LEGACY
+                "smart" -> com.ryanheise.just_audio.EpicenterEngine.SMART
+                else -> com.ryanheise.just_audio.EpicenterEngine.HYBRID
+            }
+            com.ryanheise.just_audio.EpicenterProcessorController.setEngine(engine)
+            Log.d(TAG, "Epicenter engine requested: $engine")
+        }
         (params["sweepFreq"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setSweepFreq(it.toFloat()) }
         (params["width"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setWidth(it.toFloat()) }
         (params["intensity"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setIntensity(it.toFloat()) }

@@ -4,6 +4,8 @@ import 'lyrics_service.dart';
 
 enum PlaybackMode { folder, album, artist, playlist, favorites, global }
 
+enum EpicenterEngineMode { hybrid, smart, legacy }
+
 class StatePersistence {
   static const double defaultEpicenterSweepFreq = 40.0;
   static const double defaultEpicenterWidth = 60.0;
@@ -27,6 +29,9 @@ class StatePersistence {
   static const String _autoModeKey = 'auto_mode_enabled';
   static const String _legacyAutoModeKey = 'modo_auto';
   static const String _epicenterEnabledKey = 'epicenter_enabled';
+  static const String _epicenterEngineKey = 'epicenter_engine';
+  static const String _epicenterHybridMigrationKey =
+      'epicenter_hybrid_default_v1';
   static const String _legacyEpicenterKey = 'epicentro';
 
   static Future<bool> loadAutoMode() async {
@@ -53,6 +58,26 @@ class StatePersistence {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_epicenterEnabledKey, enabled);
     await prefs.setBool(_legacyEpicenterKey, enabled);
+  }
+
+  static Future<EpicenterEngineMode> loadEpicenterEngine() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(_epicenterHybridMigrationKey) ?? false)) {
+      await prefs.setBool(_epicenterHybridMigrationKey, true);
+      await prefs.setString(
+          _epicenterEngineKey, EpicenterEngineMode.hybrid.name);
+      return EpicenterEngineMode.hybrid;
+    }
+    return switch (prefs.getString(_epicenterEngineKey)) {
+      'smart' => EpicenterEngineMode.smart,
+      'legacy' => EpicenterEngineMode.legacy,
+      _ => EpicenterEngineMode.hybrid,
+    };
+  }
+
+  static Future<void> saveEpicenterEngine(EpicenterEngineMode engine) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_epicenterEngineKey, engine.name);
   }
 
   // Epicenter parameters persistence

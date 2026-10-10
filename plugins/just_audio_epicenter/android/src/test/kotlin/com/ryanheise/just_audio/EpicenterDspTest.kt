@@ -164,11 +164,11 @@ class EpicenterDspTest {
         assertTrue("wider filter admits off-center bass", wide.deltaRms() > narrow.deltaRms() * 1.5)
     }
 
-    @Test fun hotOriginalUsesGeneratedHeadroomWithoutGlobalLimiting() {
+    @Test fun hotOriginalKeepsBoundedGeneratedBassAndUsesFinalLimiterForPeaks() {
         val result = run(params = defaults.copy(intensity = 100f)) { missing(it) * 2.45f }
         assertTrue(result.dsp.debugState.confidence > 0.9f)
-        assertTrue("generated gain ${result.dsp.debugState.generatedGain}", result.dsp.debugState.generatedGain < 0.2f)
-        assertEquals(1f, result.dsp.debugState.limiterGain, 1e-6f)
+        assertTrue("generated gain ${result.dsp.debugState.generatedGain}", result.dsp.debugState.generatedGain in 0.30f..0.80f)
+        assertTrue("limiter must catch only remaining peaks", result.dsp.debugState.limiterGain in 0.70f..1f)
         assertTrue(result.output.all { abs(it) <= 0.96001f })
     }
 

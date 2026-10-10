@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../services/state_persistence.dart';
 import '../../services/lyrics_service.dart';
+import '../../widgets/epicenter_engine_selector.dart';
 
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
@@ -60,6 +61,13 @@ class SettingsTab extends StatelessWidget {
             activeTrackColor: Colors.teal.withAlpha(100),
           ),
           if (audioProvider.isEpicenterEnabled) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: EpicenterEngineSelector(
+                value: audioProvider.epicenterEngine,
+                onChanged: audioProvider.setEpicenterEngine,
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Column(

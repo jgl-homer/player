@@ -40,6 +40,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _activeContextId; // stable ID for album/artist/playlist/favorites context
 
   bool _isEpicenterEnabled = false;
+  EpicenterEngineMode _epicenterEngine = EpicenterEngineMode.hybrid;
   // Epicenter parameters (defaults mirror native defaults)
   double _epicenterSweepFreq =
       StatePersistence.defaultEpicenterSweepFreq; // Hz (27-63)
@@ -130,6 +131,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   int get tabCount => _enabledTabs.length.clamp(1, 8);
 
   bool get isEpicenterEnabled => _isEpicenterEnabled;
+  EpicenterEngineMode get epicenterEngine => _epicenterEngine;
 
   // Epicenter params
   double get epicenterSweepFreq => _epicenterSweepFreq;
@@ -197,6 +199,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await _requestInitialPermissions();
     await ArtworkCacheService.init();
     _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
+    _epicenterEngine = await StatePersistence.loadEpicenterEngine();
     _epicenterPeakProtectionEnabled =
         await StatePersistence.loadEpicenterPeakProtectionEnabled();
     _savedPlaylists = await StatePersistence.loadPlaylists();
@@ -979,6 +982,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setEpicenterParams({
+    EpicenterEngineMode? engine,
     double? sweepFreq,
     double? width,
     double? intensity,
@@ -986,6 +990,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     bool? peakProtectionEnabled,
   }) async {
     await _mediaChannel.invokeMethod('set_epicenter_params', {
+      'engine': (engine ?? _epicenterEngine).name,
       if (sweepFreq != null) 'sweepFreq': sweepFreq,
       if (width != null) 'width': width,
       if (intensity != null) 'intensity': intensity,
@@ -993,6 +998,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (peakProtectionEnabled != null)
         'peakProtectionEnabled': peakProtectionEnabled,
     });
+  }
+
+  /// Confirm the native selection before reflecting it in the UI.
+  Future<void> setEpicenterEngine(EpicenterEngineMode engine) async {
+    await setEpicenterParams(engine: engine);
+    _epicenterEngine = engine;
+    notifyListeners();
+    await StatePersistence.saveEpicenterEngine(engine);
   }
 
   /// Update local epicenter settings, persist them and apply to native DSP.
