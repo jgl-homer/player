@@ -36,6 +36,10 @@ class _EpicenterEngineSelectorState extends State<EpicenterEngineSelector> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleValue = widget.value == EpicenterEngineMode.legacy
+        ? EpicenterEngineMode.legacy
+        : EpicenterEngineMode.hybrid;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -55,15 +59,11 @@ class _EpicenterEngineSelectorState extends State<EpicenterEngineSelector> {
               label: Text('HYBRID'),
             ),
             ButtonSegment(
-              value: EpicenterEngineMode.smart,
-              label: Text('SMART'),
-            ),
-            ButtonSegment(
               value: EpicenterEngineMode.legacy,
               label: Text('LEGACY'),
             ),
           ],
-          selected: {widget.value},
+          selected: {visibleValue},
           onSelectionChanged: _changing ? null : _select,
         ),
       ],

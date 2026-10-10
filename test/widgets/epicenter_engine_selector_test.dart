@@ -24,16 +24,30 @@ void main() {
       await tester.tap(find.text('LEGACY'));
       await tester.pumpAndSettle();
       expect(selected, EpicenterEngineMode.legacy);
-      await tester.tap(find.text('SMART'));
-      await tester.pumpAndSettle();
-      expect(selected, EpicenterEngineMode.smart);
       await tester.tap(find.text('HYBRID'));
       await tester.pumpAndSettle();
       expect(selected, EpicenterEngineMode.hybrid);
+      expect(find.text('SMART'), findsNothing);
       expect(tester.takeException(), isNull);
     }
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
+  });
+
+  testWidgets('shows a persisted smart engine as the new engine',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: EpicenterEngineSelector(
+      value: EpicenterEngineMode.smart,
+      onChanged: (_) async {},
+    ))));
+
+    final button = tester.widget<SegmentedButton<EpicenterEngineMode>>(
+        find.byType(SegmentedButton<EpicenterEngineMode>));
+    expect(button.selected, {EpicenterEngineMode.hybrid});
+    expect(find.text('HYBRID'), findsOneWidget);
+    expect(find.text('SMART'), findsNothing);
   });
 
   testWidgets(
