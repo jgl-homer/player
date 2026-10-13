@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
 import '../theme/app_theme.dart';
 import '../utils/title_utils.dart';
+import '../widgets/mini_player.dart';
 import '../widgets/song_list_tile.dart';
 import '../widgets/smart_artwork.dart';
 import 'album_detail_screen.dart';
@@ -250,6 +251,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       ],
                     ),
             ),
+            if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
           ],
         ),
       ),

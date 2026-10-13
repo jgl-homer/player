@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'smart_artwork.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:audiotags/audiotags.dart';
@@ -8,6 +9,7 @@ import 'package:path/path.dart' as path;
 
 import '../utils/title_utils.dart';
 import '../services/artwork_cache_service.dart';
+import '../providers/audio_provider.dart';
 
 /// Modal de detalles de archivo que muestra los 19 campos técnicos y de metadatos.
 class SongInfoModal extends StatefulWidget {
@@ -33,10 +35,12 @@ class _SongInfoModalState extends State<SongInfoModal> {
 
   Future<_DetailedMetadata> _loadFullMetadata() async {
     final song = widget.song;
+    final audioProvider = context.read<AudioProvider>();
     Map<String, String> retrieverData = {};
     Tag? id3Tag;
     FileStat? fileStat;
     File? cachedCoverFile;
+    Map<String, double?> replayGainData = const {};
 
     try {
       final res = await _mediaChannel.invokeMapMethod<String, String>(
@@ -61,12 +65,23 @@ class _SongInfoModalState extends State<SongInfoModal> {
       cachedCoverFile = await ArtworkCacheService.getArtworkFile(song.id);
     } catch (_) {}
 
+    try {
+      replayGainData = await audioProvider.getReplayGainInfo(song.data);
+    } catch (_) {}
+
     return _DetailedMetadata(
       retrieverData: retrieverData,
       id3Tag: id3Tag,
       fileStat: fileStat,
       cachedCoverFile: cachedCoverFile,
+      replayGainData: replayGainData,
     );
+  }
+
+  String _formatReplayGain(double gainDb, double? peak) {
+    final gain = '${gainDb >= 0 ? '+' : ''}${gainDb.toStringAsFixed(2)} dB';
+    if (peak == null || !peak.isFinite || peak <= 0) return gain;
+    return '$gain · pico ${peak.toStringAsFixed(4)}';
   }
 
   String _formatSize(int bytes) {
@@ -197,6 +212,9 @@ class _SongInfoModalState extends State<SongInfoModal> {
                   final rData = details?.retrieverData ?? {};
                   final id3 = details?.id3Tag;
                   final stat = details?.fileStat;
+                  final replayGain = details?.replayGainData ?? const {};
+                  final trackGain = replayGain['trackGainDb'];
+                  final albumGain = replayGain['albumGainDb'];
 
                   final rawRTitle = rData['title']?.trim();
                   final rawRArtist = rData['artist']?.trim();
@@ -332,6 +350,24 @@ class _SongInfoModalState extends State<SongInfoModal> {
                           "Channels", _formatChannels(rData['channels'])),
                       _infoRowHorizontal("Bits per sample",
                           _formatBitsPerSample(rData['bitsPerSample'])),
+                      if (trackGain != null)
+                        _infoRowHorizontal(
+                          "ReplayGain pista",
+                          _formatReplayGain(
+                            trackGain,
+                            replayGain['trackPeak'],
+                          ),
+                        ),
+                      if (albumGain != null)
+                        _infoRowHorizontal(
+                          "ReplayGain álbum",
+                          _formatReplayGain(
+                            albumGain,
+                            replayGain['albumPeak'],
+                          ),
+                        ),
+                      if (trackGain == null && albumGain == null)
+                        _infoRowHorizontal("ReplayGain", "Sin etiqueta"),
                       _infoRowHorizontal("Date added", dateAdded),
                       _infoRowHorizontal("Date modified", dateModified),
                       const SizedBox(height: 24),
@@ -435,12 +471,14 @@ class _DetailedMetadata {
   final Tag? id3Tag;
   final FileStat? fileStat;
   final File? cachedCoverFile;
+  final Map<String, double?> replayGainData;
 
   _DetailedMetadata({
     required this.retrieverData,
     required this.id3Tag,
     required this.fileStat,
     required this.cachedCoverFile,
+    required this.replayGainData,
   });
 }
 

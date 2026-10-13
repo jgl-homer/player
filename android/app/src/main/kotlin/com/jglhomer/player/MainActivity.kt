@@ -26,6 +26,7 @@ import android.media.AudioManager
 import android.media.AudioDeviceInfo
 import android.media.AudioDeviceCallback
 import java.io.File
+import java.util.concurrent.Executors
 
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
@@ -43,6 +44,7 @@ class MainActivity : AudioServiceActivity() {
     private var myFlutterEngine: FlutterEngine? = null
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var audioDeviceCallback: AudioDeviceCallback? = null
+    private val metadataExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -117,6 +119,41 @@ class MainActivity : AudioServiceActivity() {
                         result.success(MediaUtils.getEmbeddedLyrics(filePath))
                     } else {
                         result.error("INVALID_ARGUMENT", "filePath is required", null)
+                    }
+                }
+                "extract_replay_gain" -> {
+                    val filePath = call.argument<String>("filePath")
+                    if (filePath == null) {
+                        result.error("INVALID_ARGUMENT", "filePath is required", null)
+                    } else {
+                        metadataExecutor.execute {
+                            val replayGain = MediaUtils.getReplayGainMetadata(filePath)
+                            runOnUiThread { result.success(replayGain) }
+                        }
+                    }
+                }
+                "set_tone_controls" -> {
+                    val params = call.arguments as? Map<String, Any>
+                    if (params == null) {
+                        result.error("INVALID_ARGUMENT", "Tone control params are required", null)
+                    } else {
+                        applyToneControls(params)
+                        result.success(true)
+                    }
+                }
+                "open_url" -> {
+                    val url = call.argument<String>("url")
+                    val uri = url?.let(Uri::parse)
+                    if (uri == null || uri.scheme !in setOf("http", "https")) {
+                        result.error("INVALID_ARGUMENT", "A valid HTTP URL is required", null)
+                    } else {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            result.success(true)
+                        } catch (error: Exception) {
+                            Log.w(TAG, "No se pudo abrir URL: $url", error)
+                            result.success(false)
+                        }
                     }
                 }
                 "toggle_epicenter" -> {
@@ -288,6 +325,20 @@ class MainActivity : AudioServiceActivity() {
         (params["volume"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setVolume(it.toFloat()) }
         (params["peakProtectionEnabled"] as? Boolean)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setPeakProtectionEnabled(it) }
     }
+
+    private fun applyToneControls(params: Map<String, Any>) {
+        val rawBands = params["bandGainsDb"] as? List<*>
+        val bands = FloatArray(com.ryanheise.just_audio.TONE_BAND_COUNT) { index ->
+            (rawBands?.getOrNull(index) as? Number)?.toFloat() ?: 0f
+        }
+        com.ryanheise.just_audio.ToneControlsProcessorController.setControls(
+            equalizerEnabled = params["equalizerEnabled"] as? Boolean ?: false,
+            bandGainsDb = bands,
+            replayGainEnabled = params["replayGainEnabled"] as? Boolean ?: false,
+            replayGainDb = (params["replayGainDb"] as? Number)?.toFloat() ?: 0f,
+            replayPeak = (params["replayPeak"] as? Number)?.toFloat() ?: 0f,
+        )
+    }
     private fun deleteMedia(id: Long, result: MethodChannel.Result) {
         val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
         Log.d(TAG, "Deleting media URI: $uri")
@@ -370,6 +421,7 @@ class MainActivity : AudioServiceActivity() {
             }
             audioDeviceCallback = null
         }
+        metadataExecutor.shutdownNow()
         super.onDestroy()
     }
 

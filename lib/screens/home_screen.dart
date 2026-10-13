@@ -12,6 +12,7 @@ import 'tabs/albums_tab.dart';
 import 'tabs/playlists_tab.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/recently_added_tab.dart';
+import '../theme/app_theme.dart';
 
 // ─── Metadata de cada tab ────────────────────────────────────────────────────
 class _TabDef {
@@ -83,6 +84,7 @@ class HomeScreen extends StatelessWidget {
         return DefaultTabController(
           key: ValueKey(audioProvider.enabledTabs.join('-')),
           length: tabCount,
+          animationDuration: AppMotion.tabTransition,
           initialIndex: activeDefs.isEmpty
               ? 0
               : activeDefs
@@ -90,10 +92,10 @@ class HomeScreen extends StatelessWidget {
                   .clamp(0, activeDefs.length - 1),
           child: Scaffold(
             appBar: AppBar(
-        title: Image.asset(
+              title: Image.asset(
                 'assets/icon/jglcustoms.png',
                 height: 40,
-              ), 
+              ),
               actions: [
                 IconButton(
                   icon: const Icon(Icons.search),
@@ -132,15 +134,18 @@ class HomeScreen extends StatelessWidget {
                             );
                           } else {
                             final lines = <String>[];
-                            if (result.toInsert.isNotEmpty)
+                            if (result.toInsert.isNotEmpty) {
                               lines
                                   .add('+ ${result.toInsert.length} agregadas');
-                            if (result.toUpdate.isNotEmpty)
+                            }
+                            if (result.toUpdate.isNotEmpty) {
                               lines.add(
                                   '~ ${result.toUpdate.length} modificadas');
-                            if (result.toDelete.isNotEmpty)
+                            }
+                            if (result.toDelete.isNotEmpty) {
                               lines.add(
                                   '- ${result.toDelete.length} eliminadas');
+                            }
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
@@ -253,6 +258,9 @@ class HomeScreen extends StatelessWidget {
                           }
 
                           return TabBarView(
+                            physics: const ClampingScrollPhysics(
+                              parent: PageScrollPhysics(),
+                            ),
                             children: defs.map((d) => d.widget).toList(),
                           );
                         },

@@ -21,13 +21,15 @@ void main() {
           ),
         ),
       ))));
-      await tester.tap(find.text('LEGACY'));
+      await tester.tap(find.text('Sintetizador 1'));
       await tester.pumpAndSettle();
       expect(selected, EpicenterEngineMode.legacy);
-      await tester.tap(find.text('HYBRID'));
+      await tester.tap(find.text('Sintetizador 2'));
       await tester.pumpAndSettle();
       expect(selected, EpicenterEngineMode.hybrid);
       expect(find.text('SMART'), findsNothing);
+      expect(find.text('HYBRID'), findsNothing);
+      expect(find.text('LEGACY'), findsNothing);
       expect(tester.takeException(), isNull);
     }
     tester.view.resetPhysicalSize();
@@ -46,7 +48,7 @@ void main() {
     final button = tester.widget<SegmentedButton<EpicenterEngineMode>>(
         find.byType(SegmentedButton<EpicenterEngineMode>));
     expect(button.selected, {EpicenterEngineMode.hybrid});
-    expect(find.text('HYBRID'), findsOneWidget);
+    expect(find.text('Sintetizador 2'), findsOneWidget);
     expect(find.text('SMART'), findsNothing);
   });
 
@@ -59,7 +61,7 @@ void main() {
       value: EpicenterEngineMode.hybrid,
       onChanged: (_) async => throw StateError('channel failure'),
     ))));
-    await tester.tap(find.text('LEGACY'));
+    await tester.tap(find.text('Sintetizador 1'));
     await tester.pumpAndSettle();
     expect(find.text('No se pudo cambiar el motor'), findsOneWidget);
     final button = tester.widget<SegmentedButton<EpicenterEngineMode>>(
