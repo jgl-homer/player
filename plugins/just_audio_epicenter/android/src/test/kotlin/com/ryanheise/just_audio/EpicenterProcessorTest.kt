@@ -8,6 +8,50 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class EpicenterProcessorTest {
+    @Test fun selectionReallySwitchesEnginesAndPreservesOffBypass() {
+        val p = configured(C.ENCODING_PCM_FLOAT)
+        val input = ByteBuffer.allocate(4096).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(1024) { input.putFloat(0.2f) }
+        val result = FloatArray(1024)
+        fun process() {
+            input.rewind()
+            p.queueInput(input)
+            val output = p.output.order(ByteOrder.LITTLE_ENDIAN)
+            for (i in result.indices) result[i] = output.float
+            assertTrue(result.all { it.isFinite() })
+        }
+        p.setEpicenterEnabled(true)
+        repeat(30) { process() }
+        assertEquals(0.2f, result.last(), 1e-6f)
+        p.setEngine(EpicenterEngine.LEGACY)
+        var previous = result.last()
+        repeat(60) {
+            process()
+            for (frame in 0 until 512) {
+                val value = result[2 * frame]
+                assertTrue("switch discontinuity", kotlin.math.abs(value - previous) < 0.02f)
+                previous = value
+            }
+        }
+        // The full legacy engine retains its original DC highpass, SMART does not.
+        assertTrue(kotlin.math.abs(result.last()) < 0.01f)
+        p.setEngine(EpicenterEngine.SMART)
+        repeat(40) { process() }
+        assertEquals(0.2f, result.last(), 1e-6f)
+        p.setEngine(EpicenterEngine.HYBRID)
+        repeat(40) { process() }
+        assertEquals(0.2f, result.last(), 1e-6f)
+        p.setEpicenterEnabled(false)
+        repeat(10) { process() }
+        p.setEngine(EpicenterEngine.LEGACY)
+        process()
+        assertTrue(result.all { it == 0.2f })
+        p.flush()
+        p.setEpicenterEnabled(true)
+        repeat(60) { process() }
+        assertTrue(kotlin.math.abs(result.last()) < 0.01f)
+    }
+
     private fun configured(encoding: Int, rate: Int = 48000): EpicenterAudioProcessor {
         val p = EpicenterAudioProcessor()
         p.configure(AudioProcessor.AudioFormat(rate, 2, encoding))

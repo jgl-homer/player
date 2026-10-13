@@ -7,7 +7,7 @@ class LibraryDatabase {
   static final LibraryDatabase instance = LibraryDatabase._();
 
   static const String _databaseName = 'library_index.db';
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 3;
   static const String tableLibraryIndex = 'library_index';
 
   Database? _database;
@@ -52,7 +52,12 @@ class LibraryDatabase {
         bitrate INTEGER,
         format TEXT,
         folder_path TEXT,
-        display_name TEXT
+        display_name TEXT,
+        replaygain_track_gain REAL,
+        replaygain_track_peak REAL,
+        replaygain_album_gain REAL,
+        replaygain_album_peak REAL,
+        replaygain_scanned INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -69,6 +74,24 @@ class LibraryDatabase {
     if (oldVersion < 2) {
       await db.execute('DROP TABLE IF EXISTS $tableLibraryIndex');
       await _createSchema(db);
+      return;
+    }
+    if (oldVersion < 3) {
+      await db.execute(
+        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_track_gain REAL',
+      );
+      await db.execute(
+        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_track_peak REAL',
+      );
+      await db.execute(
+        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_album_gain REAL',
+      );
+      await db.execute(
+        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_album_peak REAL',
+      );
+      await db.execute(
+        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_scanned INTEGER NOT NULL DEFAULT 0',
+      );
     }
   }
 
@@ -87,7 +110,8 @@ class LibraryDatabase {
     return count != null && count > 0;
   }
 
-  Map<String, dynamic> _songModelMapToRow(Map<dynamic, dynamic> songInfo, String folderPath) {
+  Map<String, dynamic> _songModelMapToRow(
+      Map<dynamic, dynamic> songInfo, String folderPath) {
     return {
       "media_store_id": songInfo["_id"],
       "path": songInfo["_data"],
@@ -97,7 +121,8 @@ class LibraryDatabase {
       "artist": songInfo["artist"],
       "album": songInfo["album"],
       "duration": songInfo["duration"],
-      "bitrate": null, // not natively provided by on_audio_query in this map without extra flags
+      "bitrate":
+          null, // not natively provided by on_audio_query in this map without extra flags
       "format": songInfo["file_extension"],
       "display_name": songInfo["_display_name"],
       "folder_path": folderPath,
@@ -128,7 +153,7 @@ class LibraryDatabase {
       final path = song["_data"] as String?;
       if (path == null) continue;
       final folderPath = p.dirname(path);
-      
+
       batch.insert(
         tableLibraryIndex,
         _songModelMapToRow(song, folderPath),
@@ -139,7 +164,8 @@ class LibraryDatabase {
     await batch.commit(noResult: true);
   }
 
-  Future<void> upsertSongsBatched(List<Map<dynamic, dynamic>> songs, {int batchSize = 500}) async {
+  Future<void> upsertSongsBatched(List<Map<dynamic, dynamic>> songs,
+      {int batchSize = 500}) async {
     if (songs.isEmpty) return;
     final db = await database;
     for (var i = 0; i < songs.length; i += batchSize) {
@@ -260,5 +286,52 @@ class LibraryDatabase {
   Future<int> clearLibraryIndex() async {
     final db = await database;
     return db.delete(tableLibraryIndex);
+  }
+
+  Future<Map<String, double?>?> getReplayGain(String path) async {
+    final db = await database;
+    final rows = await db.query(
+      tableLibraryIndex,
+      columns: const [
+        'replaygain_track_gain',
+        'replaygain_track_peak',
+        'replaygain_album_gain',
+        'replaygain_album_peak',
+        'replaygain_scanned',
+      ],
+      where: 'path = ?',
+      whereArgs: [path],
+      limit: 1,
+    );
+    if (rows.isEmpty || rows.first['replaygain_scanned'] != 1) return null;
+    final row = rows.first;
+    return {
+      'trackGainDb': (row['replaygain_track_gain'] as num?)?.toDouble(),
+      'trackPeak': (row['replaygain_track_peak'] as num?)?.toDouble(),
+      'albumGainDb': (row['replaygain_album_gain'] as num?)?.toDouble(),
+      'albumPeak': (row['replaygain_album_peak'] as num?)?.toDouble(),
+    };
+  }
+
+  Future<void> saveReplayGain(
+    String path, {
+    double? trackGainDb,
+    double? trackPeak,
+    double? albumGainDb,
+    double? albumPeak,
+  }) async {
+    final db = await database;
+    await db.update(
+      tableLibraryIndex,
+      {
+        'replaygain_track_gain': trackGainDb,
+        'replaygain_track_peak': trackPeak,
+        'replaygain_album_gain': albumGainDb,
+        'replaygain_album_peak': albumPeak,
+        'replaygain_scanned': 1,
+      },
+      where: 'path = ?',
+      whereArgs: [path],
+    );
   }
 }

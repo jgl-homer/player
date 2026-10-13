@@ -845,8 +845,11 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
 
 
     private AudioProcessor[] getEpicenterAudioProcessors() {
-        Log.d(TAG, "Epicenter AudioProcessor injected");
-        return new AudioProcessor[] { EpicenterProcessorController.INSTANCE.getProcessor() };
+        Log.d(TAG, "Tone controls and Epicenter AudioProcessors injected");
+        return new AudioProcessor[] {
+            ToneControlsProcessorController.INSTANCE.getProcessor(),
+            EpicenterProcessorController.INSTANCE.getProcessor()
+        };
     }
     private void ensurePlayerInitialized() {
         if (player == null) {

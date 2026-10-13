@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:device_preview/device_preview.dart';
-import 'package:flutter/foundation.dart';
 import 'package:audio_service/audio_service.dart';
 import 'services/audio_handler.dart';
 import 'services/state_persistence.dart';
@@ -15,6 +14,7 @@ import 'package:flutter/services.dart';
 
 late AudioHandler _audioHandler;
 late bool _initialAutoMode;
+const bool _devicePreviewEnabled = bool.fromEnvironment('DEVICE_PREVIEW');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,7 +55,7 @@ Future<void> main() async {
 
   runApp(
     DevicePreview(
-      enabled: !kReleaseMode,
+      enabled: _devicePreviewEnabled,
       builder: (context) => const MyApp(),
     ),
   );
@@ -76,14 +76,14 @@ class MyApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        locale: kReleaseMode ? null : DevicePreview.locale(context),
+        locale: _devicePreviewEnabled ? DevicePreview.locale(context) : null,
         builder: (context, child) {
           final viewport = _AppViewport(
             normalNavigator: child ?? const SizedBox.shrink(),
           );
-          return kReleaseMode
-              ? viewport
-              : DevicePreview.appBuilder(context, viewport);
+          return _devicePreviewEnabled
+              ? DevicePreview.appBuilder(context, viewport)
+              : viewport;
         },
         debugShowCheckedModeBanner: false,
         themeMode: ThemeMode.dark,

@@ -54,10 +54,13 @@ internal class BassAnalyzer(sampleRate: Int) {
     var detectedF0 = 0f; private set
     var targetHz = 0f; private set
     var confidence = 0f; private set
+    var hybridConfidence = 0f; private set
     var restoration = 0f; private set
     var bandSample = 0f; private set
     var periodicity = 0f; private set
     var harmonicFit = 0f; private set
+    var bassRatio = 0f; private set
+    var coherence = 0f; private set
     init {
         val qs = doubleArrayOf(0.50979558, 0.60134489, 0.89997622, 2.56291545)
         for (i in low.indices) low[i].configure(0, 200.0, qs[i])
@@ -69,8 +72,8 @@ internal class BassAnalyzer(sampleRate: Int) {
         low.forEach { it.reset() }; high.reset(); sideLow.reset()
         cursor = 0; filled = 0; count = 0; hopCount = 0
         midEnergy = 0.0; sideEnergy = 0.0; fullEnergy = 0.0
-        detectedF0 = 0f; targetHz = 0f; confidence = 0f; restoration = 0f
-        bandSample = 0f; periodicity = 0f; harmonicFit = 0f
+        detectedF0 = 0f; targetHz = 0f; confidence = 0f; hybridConfidence = 0f; restoration = 0f
+        bandSample = 0f; periodicity = 0f; harmonicFit = 0f; bassRatio = 0f; coherence = 0f
     }
     fun push(mid: Float, side: Float, sweep: Float, width: Float): Boolean {
         var x = high.process(mid)
@@ -99,7 +102,7 @@ internal class BassAnalyzer(sampleRate: Int) {
         mean /= size
         for (i in window.indices) { window[i] = (window[i] - mean).toFloat(); energy += window[i] * window[i] }
         energy /= size
-        confidence = 0f; restoration = 0f
+        confidence = 0f; hybridConfidence = 0f; restoration = 0f; bassRatio = 0f; coherence = 0f
         if (energy < 1e-8 || midEnergy < 1e-10) { detectedF0 = 0f; targetHz = 0f; return }
         for (lag in minLag - 1..maxLag) {
             var xy = 0.0; var xx = 0.0; var yy = 0.0
@@ -149,14 +152,29 @@ internal class BassAnalyzer(sampleRate: Int) {
         if (bestF == 0.0) { detectedF0 = 0f; targetHz = 0f; return }
         detectedF0 = bestF.toFloat()
         periodicity = bestPeriodic.toFloat(); harmonicFit = bestFit.toFloat()
-        val coherence = (midEnergy / (midEnergy + sideEnergy + 1e-20)).coerceIn(0.0, 1.0)
-        val bassRatio = (midEnergy / (fullEnergy + 1e-20)).coerceIn(0.0, 1.0)
+        val coherenceValue = (midEnergy / (midEnergy + sideEnergy + 1e-20)).coerceIn(0.0, 1.0)
+        val bassRatioValue = (midEnergy / (fullEnergy + 1e-20)).coerceIn(0.0, 1.0)
+        coherence = coherenceValue.toFloat()
+        bassRatio = bassRatioValue.toFloat()
         val tonal = ((bestPeriodic - 0.80) / 0.18).coerceIn(0.0, 1.0)
         val fitGate = ((bestFit - 0.50) / 0.40).coerceIn(0.0, 1.0)
-        val vocalGuard = ((bassRatio - 0.08) / 0.45).coerceIn(0.0, 1.0)
-        confidence = (tonal * fitGate * coherence * vocalGuard).toFloat()
+        val vocalGuard = ((bassRatioValue - 0.08) / 0.45).coerceIn(0.0, 1.0)
+        confidence = (tonal * fitGate * coherenceValue * vocalGuard).toFloat()
+        // HYBRID may confirm bass under a loud centered mix without weakening the
+        // conservative SMART reference. Absolute bass presence complements the
+        // ratio guard; pitch/harmonic and MID coherence remain mandatory.
+        val bassAmplitude = sqrt(midEnergy)
+        val presence = ((bassAmplitude - 0.002) / 0.030).coerceIn(0.0, 1.0)
+        val ratioSupport = ((bassRatioValue - 0.015) / 0.22).coerceIn(0.0, 1.0)
+        val hybridTonal = ((bestPeriodic - 0.72) / 0.24).coerceIn(0.0, 1.0)
+        val hybridFit = ((bestFit - 0.35) / 0.48).coerceIn(0.0, 1.0)
+        // Absolute presence may rescue a true multi-harmonic missing fundamental
+        // under a loud mix. Ambiguous octave-down candidates above 63 Hz must
+        // still occupy a meaningful share of the program (voice guard).
+        val hybridBassSupport = if (bestF <= 63.0) max(presence * 0.82, ratioSupport) else ratioSupport
+        hybridConfidence = (hybridTonal * hybridFit * coherenceValue * hybridBassSupport).toFloat()
         targetHz = (if (bestF > 63) bestF / 2 else bestF).toFloat()
-        if (targetHz !in 27f..63f) { confidence = 0f; restoration = 0f; return }
+        if (targetHz !in 27f..63f) { confidence = 0f; hybridConfidence = 0f; restoration = 0f; return }
         restoration = if (bestF > 63) 0.55f else
             ((bestHarmonics / (bestFundamental + bestHarmonics + 1e-20) - 0.45) / 0.5).coerceIn(0.0, 1.0).toFloat()
     }
@@ -178,11 +196,11 @@ internal class BassPitchTracker {
     var stableFrames = 0; private set
     private var octaveFrames = 0
     fun reset() { stableF0 = 0f; candidateF0 = 0f; previousF0 = 0f; stableFrames = 0; octaveFrames = 0 }
-    fun update(frequency: Float, confidence: Float) {
-        if (confidence < 0.5f || frequency <= 0f) { stableFrames = 0; return }
+    fun update(frequency: Float, confidence: Float, requiredFrames: Int = 3, minimumConfidence: Float = 0.5f) {
+        if (confidence < minimumConfidence || frequency <= 0f) { stableFrames = 0; return }
         if (candidateF0 > 0f && abs(ln(frequency / candidateF0)) < 0.06f) stableFrames++ else stableFrames = 1
         candidateF0 = frequency
-        if (stableFrames < 3) return
+        if (stableFrames < requiredFrames) return
         val octave = stableF0 > 0f && abs(abs(ln(frequency / stableF0)) - ln(2f)) < 0.06f
         if (octave && ++octaveFrames < 12) return
         octaveFrames = 0

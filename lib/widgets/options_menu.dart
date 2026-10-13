@@ -8,6 +8,7 @@ import '../providers/audio_provider.dart';
 import '../services/state_persistence.dart';
 import '../utils/title_utils.dart';
 import 'song_info_modal.dart';
+import 'epicenter_engine_selector.dart';
 
 void showOptionsMenu(BuildContext context, AudioProvider audioProvider, {SongModel? song}) {
   showModalBottomSheet(
@@ -205,6 +206,26 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
               ),
             ),
             const SizedBox(height: 12),
+            ListenableBuilder(
+              listenable: widget.audioProvider,
+              builder: (context, _) => Column(
+                children: [
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Epicentro habilitado',
+                        style: TextStyle(color: Colors.white)),
+                    value: widget.audioProvider.isEpicenterEnabled,
+                    onChanged: (_) => widget.audioProvider.toggleEpicenter(),
+                    activeThumbColor: Colors.tealAccent,
+                  ),
+                  EpicenterEngineSelector(
+                    value: widget.audioProvider.epicenterEngine,
+                    onChanged: widget.audioProvider.setEpicenterEngine,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            ),
             _ParamSlider(
               label: 'Sweep Freq',
               value: _sweepFreq,

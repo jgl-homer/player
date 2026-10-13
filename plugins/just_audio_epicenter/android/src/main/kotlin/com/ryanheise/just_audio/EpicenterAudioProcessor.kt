@@ -15,13 +15,22 @@ object EpicenterProcessorController {
     fun setIntensity(value: Float) = processor.setIntensity(value)
     fun setVolume(value: Float) = processor.setVolume(value)
     fun setPeakProtectionEnabled(enabled: Boolean) = processor.setPeakProtectionEnabled(enabled)
+    fun setEngine(engine: EpicenterEngine) = processor.setEngine(engine)
 }
 
 class EpicenterAudioProcessor : BaseAudioProcessor() {
-    private data class Control(val enabled: Boolean = false, val params: EpicenterParams = EpicenterParams())
+    private data class Control(
+        val enabled: Boolean = false,
+        val params: EpicenterParams = EpicenterParams(),
+        val engine: EpicenterEngine = EpicenterEngine.HYBRID,
+    )
     // Setters run on the platform thread. Audio sees one immutable snapshot per callback.
     @Volatile private var control = Control()
     private var dsp: EpicenterDsp? = null
+    private var hybridDsp: EpicenterDsp? = null
+    private var smartDsp: EpicenterDsp? = null
+    private var legacyDsp: EpicenterDsp? = null
+    private var selectedEngine = EpicenterEngine.HYBRID
     private var channelCount = 0
     private var sampleRate = 0
     private var encoding = C.ENCODING_INVALID
@@ -30,6 +39,7 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
     private val outputSamples = FloatArray(4096)
 
     fun setEpicenterEnabled(value: Boolean) { control = control.copy(enabled = value) }
+    fun setEngine(value: EpicenterEngine) { control = control.copy(engine = value) }
     fun setSweepFreq(value: Float) { if (value.isFinite()) control = control.copy(params = control.params.copy(sweepFreq = value.coerceIn(27f, 63f))) }
     fun setWidth(value: Float) { if (value.isFinite()) control = control.copy(params = control.params.copy(width = value.coerceIn(0f, 100f))) }
     fun setIntensity(value: Float) { if (value.isFinite()) control = control.copy(params = control.params.copy(intensity = value.coerceIn(0f, 100f))) }
@@ -54,24 +64,30 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
         val byteCount = inputBuffer.remaining()
         val outputBuffer = replaceOutputBuffer(byteCount).order(ByteOrder.LITTLE_ENDIAN)
         val state = control
-        val processor = dsp
+        selectEngineWhenBypassed(state.engine)
+        val initialProcessor = dsp
         val active = state.enabled && state.params.intensity > 0f
         if (byteCount == 0) { outputBuffer.flip(); return }
-        if (processor == null || (!active && processor.isBypassed)) {
+        if (initialProcessor == null || (!active && initialProcessor.isBypassed)) {
             outputBuffer.put(inputBuffer)
             outputBuffer.flip()
             return
         }
+        var processor: EpicenterDsp = initialProcessor
         val bytesPerSample = if (bits == 0) 4 else bits / 8
         require(byteCount % (bytesPerSample * channelCount) == 0) { "PCM buffer must contain complete frames" }
         inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
         val capacity = inputSamples.size / channelCount * channelCount
         while (inputBuffer.hasRemaining()) {
+            selectEngineWhenBypassed(state.engine)
+            processor = dsp ?: processor
             if (!active && processor.isBypassed) { outputBuffer.put(inputBuffer); break }
             val count = min(capacity, inputBuffer.remaining() / bytesPerSample)
             val sourcePosition = inputBuffer.position()
             for (i in 0 until count) inputSamples[i] = EpicenterPcm.read(inputBuffer, bits)
-            processor.processInterleaved(inputSamples, outputSamples, channelCount, state.params, count, state.enabled)
+            // Fade to dry, switch a prepared engine, then fade in. No allocation or UI-thread reset.
+            processor.processInterleaved(inputSamples, outputSamples, channelCount, state.params, count,
+                state.enabled && selectedEngine == state.engine)
             for (i in 0 until count) {
                 val position = sourcePosition + i * bytesPerSample
                 // Preserve PCM32 low bits too when the float-domain mix is unchanged.
@@ -96,11 +112,33 @@ class EpicenterAudioProcessor : BaseAudioProcessor() {
                 C.ENCODING_PCM_32BIT -> 32
                 else -> 0
             }
-            dsp = EpicenterDsp(sampleRate).also { it.prepare(channelCount, control.params) }
-        } else dsp?.reset()
+            hybridDsp = EpicenterDsp(sampleRate, EpicenterEngine.HYBRID).also { it.prepare(channelCount, control.params) }
+            smartDsp = EpicenterDsp(sampleRate, EpicenterEngine.SMART).also { it.prepare(channelCount, control.params) }
+            legacyDsp = EpicenterDsp(sampleRate, EpicenterEngine.LEGACY).also { it.prepare(channelCount, control.params) }
+        } else {
+            hybridDsp?.reset()
+            smartDsp?.reset()
+            legacyDsp?.reset()
+        }
+        selectedEngine = control.engine
+        dsp = selectedDsp(selectedEngine)
+    }
+
+    private fun selectEngineWhenBypassed(requested: EpicenterEngine) {
+        if (selectedEngine == requested || dsp?.isBypassed != true) return
+        selectedEngine = requested
+        dsp = selectedDsp(requested)
+        dsp?.reset()
+    }
+
+    private fun selectedDsp(engine: EpicenterEngine): EpicenterDsp? = when (engine) {
+        EpicenterEngine.HYBRID -> hybridDsp
+        EpicenterEngine.SMART -> smartDsp
+        EpicenterEngine.LEGACY -> legacyDsp
     }
 
     override fun onReset() {
         dsp = null; channelCount = 0; sampleRate = 0; encoding = C.ENCODING_INVALID
+        hybridDsp = null; smartDsp = null; legacyDsp = null
     }
 }

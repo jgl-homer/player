@@ -4,12 +4,17 @@ import 'lyrics_service.dart';
 
 enum PlaybackMode { folder, album, artist, playlist, favorites, global }
 
+enum EpicenterEngineMode { hybrid, smart, legacy }
+
+enum ReplayGainMode { track, album }
+
 class StatePersistence {
   static const double defaultEpicenterSweepFreq = 40.0;
   static const double defaultEpicenterWidth = 60.0;
   static const double defaultEpicenterIntensity = 65.0;
   static const double defaultEpicenterVolume = 100.0;
   static const bool defaultEpicenterPeakProtectionEnabled = true;
+  static const List<double> defaultEqualizerBandGains = [0, 0, 0, 0, 0];
 
   static const String _modeKey = 'playback_mode';
   static const String _folderPathKey = 'active_folder_path';
@@ -27,7 +32,14 @@ class StatePersistence {
   static const String _autoModeKey = 'auto_mode_enabled';
   static const String _legacyAutoModeKey = 'modo_auto';
   static const String _epicenterEnabledKey = 'epicenter_enabled';
+  static const String _epicenterEngineKey = 'epicenter_engine';
+  static const String _epicenterHybridMigrationKey =
+      'epicenter_hybrid_default_v1';
   static const String _legacyEpicenterKey = 'epicentro';
+  static const String _equalizerEnabledKey = 'equalizer_enabled_v1';
+  static const String _equalizerBandsKey = 'equalizer_bands_v1';
+  static const String _replayGainEnabledKey = 'replay_gain_enabled_v1';
+  static const String _replayGainModeKey = 'replay_gain_mode_v1';
 
   static Future<bool> loadAutoMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -53,6 +65,26 @@ class StatePersistence {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_epicenterEnabledKey, enabled);
     await prefs.setBool(_legacyEpicenterKey, enabled);
+  }
+
+  static Future<EpicenterEngineMode> loadEpicenterEngine() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(_epicenterHybridMigrationKey) ?? false)) {
+      await prefs.setBool(_epicenterHybridMigrationKey, true);
+      await prefs.setString(
+          _epicenterEngineKey, EpicenterEngineMode.hybrid.name);
+      return EpicenterEngineMode.hybrid;
+    }
+    return switch (prefs.getString(_epicenterEngineKey)) {
+      'smart' => EpicenterEngineMode.smart,
+      'legacy' => EpicenterEngineMode.legacy,
+      _ => EpicenterEngineMode.hybrid,
+    };
+  }
+
+  static Future<void> saveEpicenterEngine(EpicenterEngineMode engine) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_epicenterEngineKey, engine.name);
   }
 
   // Epicenter parameters persistence
@@ -100,6 +132,67 @@ class StatePersistence {
   static Future<void> saveEpicenterPeakProtectionEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_epicenterPeakProtectionKey, enabled);
+  }
+
+  static Future<bool> loadEqualizerEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_equalizerEnabledKey) ?? false;
+  }
+
+  static Future<List<double>> loadEqualizerBandGains() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_equalizerBandsKey);
+    if (saved == null || saved.length != defaultEqualizerBandGains.length) {
+      return List<double>.from(defaultEqualizerBandGains);
+    }
+    final parsed = saved.map(double.tryParse).toList(growable: false);
+    if (parsed.any((value) => value == null || !value.isFinite)) {
+      return List<double>.from(defaultEqualizerBandGains);
+    }
+    return parsed
+        .cast<double>()
+        .map((value) => value.clamp(-6.0, 6.0))
+        .toList(growable: false);
+  }
+
+  static Future<void> saveEqualizerSettings({
+    required bool enabled,
+    required List<double> bandGains,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = List<double>.generate(
+      defaultEqualizerBandGains.length,
+      (index) => index < bandGains.length && bandGains[index].isFinite
+          ? bandGains[index].clamp(-6.0, 6.0)
+          : 0.0,
+      growable: false,
+    );
+    await prefs.setBool(_equalizerEnabledKey, enabled);
+    await prefs.setStringList(
+      _equalizerBandsKey,
+      normalized.map((value) => value.toString()).toList(growable: false),
+    );
+  }
+
+  static Future<bool> loadReplayGainEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_replayGainEnabledKey) ?? false;
+  }
+
+  static Future<ReplayGainMode> loadReplayGainMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_replayGainModeKey) == ReplayGainMode.album.name
+        ? ReplayGainMode.album
+        : ReplayGainMode.track;
+  }
+
+  static Future<void> saveReplayGainSettings({
+    required bool enabled,
+    required ReplayGainMode mode,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_replayGainEnabledKey, enabled);
+    await prefs.setString(_replayGainModeKey, mode.name);
   }
 
   static Future<void> _migrateEpicenterDefaultsIfNeeded(
@@ -264,9 +357,9 @@ class StatePersistence {
 
   static Future<LyricsSource> loadLyricsSource() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_lyricsSourceKey) == LyricsSource.internet.name
-        ? LyricsSource.internet
-        : LyricsSource.embedded;
+    return prefs.getString(_lyricsSourceKey) == LyricsSource.embedded.name
+        ? LyricsSource.embedded
+        : LyricsSource.internet;
   }
 
   static Future<void> saveLyricsSource(LyricsSource source) async {

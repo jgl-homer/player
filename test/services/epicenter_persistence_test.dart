@@ -1,11 +1,71 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:player/services/lyrics_service.dart';
 import 'package:player/services/state_persistence.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('SMART defaults and peak protection on a new installation', () async {
+  test('lyrics default to internet while preserving an embedded choice',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    expect(await StatePersistence.loadLyricsSource(), LyricsSource.internet);
+
+    SharedPreferences.setMockInitialValues({'lyrics_source_v1': 'embedded'});
+    expect(await StatePersistence.loadLyricsSource(), LyricsSource.embedded);
+  });
+
+  test('tone controls default to transparent and persist bounded values',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    expect(await StatePersistence.loadEqualizerEnabled(), isFalse);
+    expect(await StatePersistence.loadEqualizerBandGains(), [0, 0, 0, 0, 0]);
+    expect(await StatePersistence.loadReplayGainEnabled(), isFalse);
+    expect(await StatePersistence.loadReplayGainMode(), ReplayGainMode.track);
+
+    await StatePersistence.saveEqualizerSettings(
+      enabled: true,
+      bandGains: [9, 2, 0, -2, -9],
+    );
+    await StatePersistence.saveReplayGainSettings(
+      enabled: true,
+      mode: ReplayGainMode.album,
+    );
+    expect(await StatePersistence.loadEqualizerEnabled(), isTrue);
+    expect(await StatePersistence.loadEqualizerBandGains(), [6, 2, 0, -2, -6]);
+    expect(await StatePersistence.loadReplayGainEnabled(), isTrue);
+    expect(await StatePersistence.loadReplayGainMode(), ReplayGainMode.album);
+  });
+
+  test('engine selection persists independently of tuning and enabled state',
+      () async {
+    SharedPreferences.setMockInitialValues({'epicenter_intensity': 72.0});
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.hybrid);
+    await StatePersistence.saveEpicenterEngine(EpicenterEngineMode.legacy);
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.legacy);
+    expect(await StatePersistence.loadEpicenterEnabled(), isFalse);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getDouble('epicenter_intensity'), 72.0);
+    await StatePersistence.saveEpicenterEngine(EpicenterEngineMode.smart);
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.smart);
+    await prefs.setString('epicenter_engine', 'invalid');
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.hybrid);
+  });
+
+  test('existing V2 engine choice migrates once to HYBRID default', () async {
+    SharedPreferences.setMockInitialValues({'epicenter_engine': 'smart'});
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.hybrid);
+    await StatePersistence.saveEpicenterEngine(EpicenterEngineMode.smart);
+    expect(await StatePersistence.loadEpicenterEngine(),
+        EpicenterEngineMode.smart);
+  });
+
+  test('V2.1 defaults and peak protection on a new installation', () async {
     SharedPreferences.setMockInitialValues({});
     expect(await StatePersistence.loadEpicenterParams(), {
       'sweepFreq': 40.0,
