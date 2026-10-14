@@ -58,6 +58,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double _activeReplayGainDb = 0;
   double _activeReplayPeak = 0;
   bool _currentReplayGainAvailable = false;
+  double _playbackSpeed = 1.0;
+  double _playbackPitchSemitones = 0.0;
+  Map<String, String> _librarySortModes = {};
   int _replayGainRequestSerial = 0;
   final Map<String, _ReplayGainData> _replayGainCache = {};
   final Map<String, Future<_ReplayGainData>> _replayGainLoads = {};
@@ -89,6 +92,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _libraryRefreshDebounce;
   Timer? _saveDebounce; // Bug #3: debounce para _savePlaybackState
   Timer? _positionSaveTimer; // Guardado periódico de posición (cada 5s)
+  Timer? _playbackRateSaveDebounce;
   bool _isRefreshingLibrary = false;
   bool _isSyncing = false;
   int _recentSongsLimit = 100;
@@ -156,6 +160,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get replayGainEnabled => _replayGainEnabled;
   ReplayGainMode get replayGainMode => _replayGainMode;
   bool get currentReplayGainAvailable => _currentReplayGainAvailable;
+  double get playbackSpeed => _playbackSpeed;
+  double get playbackPitchSemitones => _playbackPitchSemitones;
+
+  String librarySortMode(String tabId, String fallback) =>
+      _librarySortModes[tabId] ?? fallback;
 
   AudioProvider(
     AudioHandler handler, {
@@ -222,9 +231,22 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _equalizerBandGains = await StatePersistence.loadEqualizerBandGains();
     _replayGainEnabled = await StatePersistence.loadReplayGainEnabled();
     _replayGainMode = await StatePersistence.loadReplayGainMode();
+    _playbackSpeed = await StatePersistence.loadPlaybackSpeed();
+    _playbackPitchSemitones =
+        await StatePersistence.loadPlaybackPitchSemitones();
+    _librarySortModes = await StatePersistence.loadLibrarySortModes();
     _savedPlaylists = await StatePersistence.loadPlaylists();
     _recentSongsLimit = await StatePersistence.loadRecentSongsLimit();
     _activeTabId = await StatePersistence.loadActiveTab() ?? _activeTabId;
+
+    try {
+      await Future.wait([
+        _player.setSpeed(_playbackSpeed),
+        _player.setPitch(pow(2.0, _playbackPitchSemitones / 12.0).toDouble()),
+      ]);
+    } catch (e) {
+      debugPrint('Error restoring playback speed/pitch: $e');
+    }
 
     // Load enabled tabs preference
     try {
@@ -1194,6 +1216,55 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     ]);
     await _sendToneControls();
     notifyListeners();
+  }
+
+  Future<void> setLibrarySortMode(String tabId, String mode) async {
+    if (_librarySortModes[tabId] == mode) return;
+    _librarySortModes = Map<String, String>.from(_librarySortModes)
+      ..[tabId] = mode;
+    notifyListeners();
+    await StatePersistence.saveLibrarySortModes(_librarySortModes);
+  }
+
+  Future<void> setPlaybackSpeed(double speed) async {
+    final normalized = speed.clamp(0.5, 2.0).toDouble();
+    if ((_playbackSpeed - normalized).abs() < 0.001) return;
+    _playbackSpeed = normalized;
+    notifyListeners();
+    await _player.setSpeed(normalized);
+    _schedulePlaybackRateSave();
+  }
+
+  Future<void> setPlaybackPitchSemitones(double semitones) async {
+    final normalized = semitones.clamp(-12.0, 12.0).toDouble();
+    if ((_playbackPitchSemitones - normalized).abs() < 0.001) return;
+    _playbackPitchSemitones = normalized;
+    notifyListeners();
+    await _player.setPitch(pow(2.0, normalized / 12.0).toDouble());
+    _schedulePlaybackRateSave();
+  }
+
+  void _schedulePlaybackRateSave() {
+    _playbackRateSaveDebounce?.cancel();
+    _playbackRateSaveDebounce = Timer(
+      const Duration(milliseconds: 250),
+      () => StatePersistence.savePlaybackRate(
+        speed: _playbackSpeed,
+        pitchSemitones: _playbackPitchSemitones,
+      ),
+    );
+  }
+
+  Future<void> resetPlaybackRate() async {
+    _playbackRateSaveDebounce?.cancel();
+    _playbackSpeed = 1.0;
+    _playbackPitchSemitones = 0.0;
+    notifyListeners();
+    await Future.wait([
+      _player.setSpeed(1.0),
+      _player.setPitch(1.0),
+      StatePersistence.savePlaybackRate(speed: 1.0, pitchSemitones: 0.0),
+    ]);
   }
 
   Future<void> _sendToneControls() async {
@@ -2891,6 +2962,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _libraryRefreshDebounce?.cancel();
     _saveDebounce?.cancel();
     _positionSaveTimer?.cancel();
+    _playbackRateSaveDebounce?.cancel();
     super.dispose();
   }
 }

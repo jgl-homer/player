@@ -4,6 +4,16 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../widgets/song_list_tile.dart';
 import '../../widgets/count_banner.dart';
+import '../../widgets/library_sort_menu.dart';
+import '../../utils/title_utils.dart';
+
+const _favoriteSortOptions = <LibrarySortOption>[
+  LibrarySortOption('title_asc', 'Título A–Z', Icons.sort_by_alpha_rounded),
+  LibrarySortOption('title_desc', 'Título Z–A', Icons.sort_by_alpha_rounded),
+  LibrarySortOption('artist_asc', 'Artista A–Z', Icons.person_outline_rounded),
+  LibrarySortOption('newest', 'Más recientes', Icons.schedule_rounded),
+  LibrarySortOption('oldest', 'Más antiguas', Icons.history_rounded),
+];
 
 class FavoritesTab extends StatelessWidget {
   const FavoritesTab({super.key});
@@ -51,17 +61,40 @@ class FavoritesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
+    final sortMode = audioProvider.librarySortMode('favorites', 'title_asc');
     final favoriteSongs = audioProvider.allSongs
         .where((s) => audioProvider.isFavorite(s.id))
-        .toList();
+        .toList()
+      ..sort((a, b) {
+        int compareText(String first, String second) =>
+            first.toLowerCase().compareTo(second.toLowerCase());
+        return switch (sortMode) {
+          'title_desc' => compareText(
+              TitleUtils.getDisplayTitle(b), TitleUtils.getDisplayTitle(a)),
+          'artist_asc' => compareText(TitleUtils.getDisplayArtist(a.artist),
+              TitleUtils.getDisplayArtist(b.artist)),
+          'newest' => (b.dateModified ?? 0).compareTo(a.dateModified ?? 0),
+          'oldest' => (a.dateModified ?? 0).compareTo(b.dateModified ?? 0),
+          _ => compareText(
+              TitleUtils.getDisplayTitle(a), TitleUtils.getDisplayTitle(b)),
+        };
+      });
 
     return Column(
       children: [
         Row(
           children: [
             Expanded(
-              child:
-                  CountBanner(count: favoriteSongs.length, label: 'Favoritos'),
+              child: CountBanner(
+                count: favoriteSongs.length,
+                label: 'Favoritos',
+                trailing: LibrarySortMenu(
+                  value: sortMode,
+                  options: _favoriteSortOptions,
+                  onSelected: (value) =>
+                      audioProvider.setLibrarySortMode('favorites', value),
+                ),
+              ),
             ),
             IconButton(
               tooltip: 'Importar favoritos desde M3U/M3U8',

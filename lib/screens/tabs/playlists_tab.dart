@@ -4,6 +4,16 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../playlist_detail_screen.dart';
 import '../../widgets/count_banner.dart';
+import '../../widgets/library_sort_menu.dart';
+
+const _playlistSortOptions = <LibrarySortOption>[
+  LibrarySortOption('name_asc', 'Nombre A–Z', Icons.sort_by_alpha_rounded),
+  LibrarySortOption('name_desc', 'Nombre Z–A', Icons.sort_by_alpha_rounded),
+  LibrarySortOption(
+      'songs_desc', 'Más canciones', Icons.format_list_numbered_rounded),
+  LibrarySortOption(
+      'songs_asc', 'Menos canciones', Icons.format_list_numbered_rounded),
+];
 
 class PlaylistsTab extends StatelessWidget {
   const PlaylistsTab({super.key});
@@ -55,13 +65,39 @@ class PlaylistsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioProvider = context.watch<AudioProvider>();
-    final playlists = audioProvider.savedPlaylists.keys.toList();
+    final sortMode = audioProvider.librarySortMode('playlists', 'name_asc');
+    final playlists = audioProvider.savedPlaylists.keys.toList()
+      ..sort((a, b) {
+        final nameA = a.toLowerCase();
+        final nameB = b.toLowerCase();
+        return switch (sortMode) {
+          'name_desc' => nameB.compareTo(nameA),
+          'songs_desc' => audioProvider
+              .songsForPlaylist(b)
+              .length
+              .compareTo(audioProvider.songsForPlaylist(a).length),
+          'songs_asc' => audioProvider
+              .songsForPlaylist(a)
+              .length
+              .compareTo(audioProvider.songsForPlaylist(b).length),
+          _ => nameA.compareTo(nameB),
+        };
+      });
     return Column(
       children: [
         Row(
           children: [
             Expanded(
-              child: CountBanner(count: playlists.length, label: 'Playlists'),
+              child: CountBanner(
+                count: playlists.length,
+                label: 'Playlists',
+                trailing: LibrarySortMenu(
+                  value: sortMode,
+                  options: _playlistSortOptions,
+                  onSelected: (value) =>
+                      audioProvider.setLibrarySortMode('playlists', value),
+                ),
+              ),
             ),
             IconButton(
               tooltip: 'Importar playlist M3U/M3U8 desde Music',

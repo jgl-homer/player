@@ -7,6 +7,18 @@ import '../../../widgets/song_list_tile.dart';
 import '../../../utils/title_utils.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/count_banner.dart';
+import '../../../widgets/library_sort_menu.dart';
+
+const _songSortOptions = <LibrarySortOption>[
+  LibrarySortOption('title_asc', 'Título A–Z', Icons.sort_by_alpha_rounded),
+  LibrarySortOption('title_desc', 'Título Z–A', Icons.sort_by_alpha_rounded),
+  LibrarySortOption('artist_asc', 'Artista A–Z', Icons.person_outline_rounded),
+  LibrarySortOption('album_asc', 'Álbum A–Z', Icons.album_outlined),
+  LibrarySortOption('newest', 'Más recientes', Icons.schedule_rounded),
+  LibrarySortOption('oldest', 'Más antiguas', Icons.history_rounded),
+  LibrarySortOption('duration_desc', 'Mayor duración', Icons.timelapse_rounded),
+  LibrarySortOption('duration_asc', 'Menor duración', Icons.timer_outlined),
+];
 
 class SongsTab extends StatefulWidget {
   const SongsTab({super.key});
@@ -21,6 +33,7 @@ class _SongsTabState extends State<SongsTab> {
   String? _draggedLetter;
   List<SongModel>? _sortedSongs;
   List<SongModel>? _songsSource;
+  String? _sortMode;
 
   @override
   void dispose() {
@@ -92,12 +105,12 @@ class _SongsTabState extends State<SongsTab> {
     }
 
     final sourceSongs = audioProvider.allSongs;
-    if (!identical(_songsSource, sourceSongs)) {
+    final sortMode = audioProvider.librarySortMode('songs', 'title_asc');
+    if (!identical(_songsSource, sourceSongs) || _sortMode != sortMode) {
       _songsSource = sourceSongs;
+      _sortMode = sortMode;
       _sortedSongs = List<SongModel>.from(sourceSongs)
-        ..sort((a, b) => TitleUtils.getDisplayTitle(a)
-            .toLowerCase()
-            .compareTo(TitleUtils.getDisplayTitle(b).toLowerCase()));
+        ..sort((a, b) => _compareSongs(a, b, sortMode));
     }
     final songs = _sortedSongs!;
 
@@ -203,7 +216,16 @@ class _SongsTabState extends State<SongsTab> {
             ),
           )
         else
-          CountBanner(count: songs.length, label: 'Canciones'),
+          CountBanner(
+            count: songs.length,
+            label: 'Canciones',
+            trailing: LibrarySortMenu(
+              value: sortMode,
+              options: _songSortOptions,
+              onSelected: (value) =>
+                  audioProvider.setLibrarySortMode('songs', value),
+            ),
+          ),
         Expanded(
           child: LayoutBuilder(builder: (context, constraints) {
             return Stack(
@@ -265,52 +287,55 @@ class _SongsTabState extends State<SongsTab> {
                 ),
 
                 // Alphabet Sidebar
-                Positioned(
-                  right: 0,
-                  top: 20,
-                  bottom: 20,
-                  width: 30,
-                  child: GestureDetector(
-                    onVerticalDragStart: (details) => _handleScroll(
-                        details.localPosition,
-                        constraints.maxHeight - 40,
-                        songs),
-                    onVerticalDragUpdate: (details) => _handleScroll(
-                        details.localPosition,
-                        constraints.maxHeight - 40,
-                        songs),
-                    onVerticalDragEnd: (_) =>
-                        setState(() => _draggedLetter = null),
-                    onTapDown: (details) => _handleScroll(details.localPosition,
-                        constraints.maxHeight - 40, songs),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: _alphabet.map((letter) {
-                          bool isDragging = _draggedLetter == letter;
-                          return Text(
-                            letter,
-                            style: TextStyle(
-                                color: isDragging
-                                    ? AppTheme.primaryColor
-                                    : Colors.white60,
-                                fontSize: isDragging ? 13 : 9,
-                                fontWeight: isDragging
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          );
-                        }).toList(),
+                if (sortMode == 'title_asc')
+                  Positioned(
+                    right: 0,
+                    top: 20,
+                    bottom: 20,
+                    width: 30,
+                    child: GestureDetector(
+                      onVerticalDragStart: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          songs),
+                      onVerticalDragUpdate: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          songs),
+                      onVerticalDragEnd: (_) =>
+                          setState(() => _draggedLetter = null),
+                      onTapDown: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          songs),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: _alphabet.map((letter) {
+                            bool isDragging = _draggedLetter == letter;
+                            return Text(
+                              letter,
+                              style: TextStyle(
+                                  color: isDragging
+                                      ? AppTheme.primaryColor
+                                      : Colors.white60,
+                                  fontSize: isDragging ? 13 : 9,
+                                  fontWeight: isDragging
+                                      ? FontWeight.bold
+                                      : FontWeight.normal),
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                   ),
-                ),
 
                 // Letter Overlay Indicator
-                if (_draggedLetter != null)
+                if (sortMode == 'title_asc' && _draggedLetter != null)
                   Center(
                     child: Container(
                       height: 100,
@@ -337,6 +362,26 @@ class _SongsTabState extends State<SongsTab> {
         ),
       ],
     );
+  }
+
+  int _compareSongs(SongModel a, SongModel b, String mode) {
+    int compareText(String first, String second) =>
+        first.toLowerCase().compareTo(second.toLowerCase());
+
+    return switch (mode) {
+      'title_desc' => compareText(
+          TitleUtils.getDisplayTitle(b), TitleUtils.getDisplayTitle(a)),
+      'artist_asc' => compareText(TitleUtils.getDisplayArtist(a.artist),
+          TitleUtils.getDisplayArtist(b.artist)),
+      'album_asc' => compareText(
+          TitleUtils.getDisplayAlbum(a), TitleUtils.getDisplayAlbum(b)),
+      'newest' => (b.dateModified ?? 0).compareTo(a.dateModified ?? 0),
+      'oldest' => (a.dateModified ?? 0).compareTo(b.dateModified ?? 0),
+      'duration_desc' => (b.duration ?? 0).compareTo(a.duration ?? 0),
+      'duration_asc' => (a.duration ?? 0).compareTo(b.duration ?? 0),
+      _ => compareText(
+          TitleUtils.getDisplayTitle(a), TitleUtils.getDisplayTitle(b)),
+    };
   }
 
   Future<bool> _showDeleteConfirmation(

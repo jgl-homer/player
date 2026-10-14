@@ -37,6 +37,29 @@ void main() {
     expect(await StatePersistence.loadReplayGainMode(), ReplayGainMode.album);
   });
 
+  test('library sorting and playback rate persist with safe bounds', () async {
+    SharedPreferences.setMockInitialValues({});
+    expect(await StatePersistence.loadLibrarySortModes(), isEmpty);
+    expect(await StatePersistence.loadPlaybackSpeed(), 1.0);
+    expect(await StatePersistence.loadPlaybackPitchSemitones(), 0.0);
+
+    await StatePersistence.saveLibrarySortModes({
+      'songs': 'artist_asc',
+      'folders': 'songs_desc',
+    });
+    await StatePersistence.savePlaybackRate(
+      speed: 3.0,
+      pitchSemitones: -18.0,
+    );
+
+    expect(await StatePersistence.loadLibrarySortModes(), {
+      'songs': 'artist_asc',
+      'folders': 'songs_desc',
+    });
+    expect(await StatePersistence.loadPlaybackSpeed(), 2.0);
+    expect(await StatePersistence.loadPlaybackPitchSemitones(), -12.0);
+  });
+
   test('engine selection persists independently of tuning and enabled state',
       () async {
     SharedPreferences.setMockInitialValues({'epicenter_intensity': 72.0});

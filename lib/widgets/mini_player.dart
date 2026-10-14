@@ -333,6 +333,10 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                 await _toggleEpicentro(audioProvider);
                 return;
               }
+              if (value == 'velocidad_tono' && context.mounted) {
+                _showPlaybackRateSheet(context);
+                return;
+              }
               if (value == 'guardar_playlist' && context.mounted) {
                 await _saveSongToPlaylist(context, audioProvider, song);
                 return;
@@ -373,11 +377,15 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                     Icon(
                       Icons.directions_car_filled_rounded,
                       size: 20,
-                      color: audioProvider.isAutoModeEnabled ? Colors.greenAccent : Colors.white,
+                      color: audioProvider.isAutoModeEnabled
+                          ? Colors.greenAccent
+                          : Colors.white,
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      audioProvider.isAutoModeEnabled ? 'Modo Auto: ON' : 'Modo Auto: OFF',
+                      audioProvider.isAutoModeEnabled
+                          ? 'Modo Auto: ON'
+                          : 'Modo Auto: OFF',
                       style: const TextStyle(color: Colors.white),
                     ),
                   ],
@@ -390,13 +398,28 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                     Icon(
                       Icons.graphic_eq_rounded,
                       size: 20,
-                      color: audioProvider.isEpicenterEnabled ? Colors.greenAccent : Colors.white,
+                      color: audioProvider.isEpicenterEnabled
+                          ? Colors.greenAccent
+                          : Colors.white,
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      audioProvider.isEpicenterEnabled ? 'Epicentro: ON' : 'Epicentro: OFF',
+                      audioProvider.isEpicenterEnabled
+                          ? 'Epicentro: ON'
+                          : 'Epicentro: OFF',
                       style: const TextStyle(color: Colors.white),
                     ),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'velocidad_tono',
+                child: Row(
+                  children: [
+                    Icon(Icons.speed_rounded, size: 20, color: Colors.white),
+                    SizedBox(width: 10),
+                    Text('Velocidad y tono',
+                        style: TextStyle(color: Colors.white)),
                   ],
                 ),
               ),
@@ -850,6 +873,88 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     );
   }
 
+  void _showPlaybackRateSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: const Color(0xFF181818),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => Consumer<AudioProvider>(
+        builder: (context, provider, _) {
+          final pitch = provider.playbackPitchSemitones;
+          final pitchLabel = pitch == 0
+              ? 'Normal'
+              : '${pitch > 0 ? '+' : ''}${pitch.round()} semitonos';
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Velocidad y tono',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: provider.playbackSpeed == 1.0 && pitch == 0
+                          ? null
+                          : provider.resetPlaybackRate,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Normal'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _PlaybackRateSlider(
+                  icon: Icons.speed_rounded,
+                  title: 'Velocidad',
+                  valueLabel: '${provider.playbackSpeed.toStringAsFixed(2)}x',
+                  value: provider.playbackSpeed,
+                  min: 0.5,
+                  max: 2.0,
+                  divisions: 30,
+                  onChanged: provider.setPlaybackSpeed,
+                ),
+                const SizedBox(height: 8),
+                _PlaybackRateSlider(
+                  icon: Icons.music_note_rounded,
+                  title: 'Tono',
+                  valueLabel: pitchLabel,
+                  value: pitch,
+                  min: -12,
+                  max: 12,
+                  divisions: 24,
+                  onChanged: provider.setPlaybackPitchSemitones,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _timestampedLyrics(
       List<LyricsLine> lines, Stream<Duration> positionStream) {
     return _SyncedLyricsView(
@@ -872,6 +977,57 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
 
   String _resolveAlbumLabel(dynamic song) {
     return TitleUtils.getDisplayAlbum(song as SongModel);
+  }
+}
+
+class _PlaybackRateSlider extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String valueLabel;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final ValueChanged<double> onChanged;
+
+  const _PlaybackRateSlider({
+    required this.icon,
+    required this.title,
+    required this.valueLabel,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 20, color: Colors.white70),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
+            ),
+            Text(valueLabel,
+                style: const TextStyle(color: AppTheme.primaryColor)),
+          ],
+        ),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          onChanged: onChanged,
+        ),
+      ],
+    );
   }
 }
 

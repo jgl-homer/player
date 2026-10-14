@@ -40,6 +40,9 @@ class StatePersistence {
   static const String _equalizerBandsKey = 'equalizer_bands_v1';
   static const String _replayGainEnabledKey = 'replay_gain_enabled_v1';
   static const String _replayGainModeKey = 'replay_gain_mode_v1';
+  static const String _librarySortModesKey = 'library_sort_modes_v1';
+  static const String _playbackSpeedKey = 'playback_speed_v1';
+  static const String _playbackPitchKey = 'playback_pitch_semitones_v1';
 
   static Future<bool> loadAutoMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -193,6 +196,48 @@ class StatePersistence {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_replayGainEnabledKey, enabled);
     await prefs.setString(_replayGainModeKey, mode.name);
+  }
+
+  static Future<Map<String, String>> loadLibrarySortModes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_librarySortModesKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveLibrarySortModes(Map<String, String> modes) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_librarySortModesKey, jsonEncode(modes));
+  }
+
+  static Future<double> loadPlaybackSpeed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getDouble(_playbackSpeedKey) ?? 1.0).clamp(0.5, 2.0);
+  }
+
+  static Future<double> loadPlaybackPitchSemitones() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getDouble(_playbackPitchKey) ?? 0.0).clamp(-12.0, 12.0);
+  }
+
+  static Future<void> savePlaybackRate({
+    required double speed,
+    required double pitchSemitones,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_playbackSpeedKey, speed.clamp(0.5, 2.0));
+    await prefs.setDouble(
+      _playbackPitchKey,
+      pitchSemitones.clamp(-12.0, 12.0),
+    );
   }
 
   static Future<void> _migrateEpicenterDefaultsIfNeeded(
