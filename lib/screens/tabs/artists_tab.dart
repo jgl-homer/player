@@ -7,16 +7,6 @@ import '../../../utils/title_utils.dart';
 import '../artist_detail_screen.dart';
 import '../../../widgets/smart_artwork.dart';
 import '../../../widgets/count_banner.dart';
-import '../../../widgets/library_sort_menu.dart';
-
-const _artistSortOptions = <LibrarySortOption>[
-  LibrarySortOption('artist_asc', 'Artista A–Z', Icons.sort_by_alpha_rounded),
-  LibrarySortOption('artist_desc', 'Artista Z–A', Icons.sort_by_alpha_rounded),
-  LibrarySortOption(
-      'songs_desc', 'Más canciones', Icons.format_list_numbered_rounded),
-  LibrarySortOption(
-      'songs_asc', 'Menos canciones', Icons.format_list_numbered_rounded),
-];
 
 class ArtistsTab extends StatelessWidget {
   const ArtistsTab({super.key});
@@ -65,12 +55,6 @@ class ArtistsTab extends StatelessWidget {
         CountBanner(
           count: artists.length,
           label: 'Artistas',
-          trailing: LibrarySortMenu(
-            value: sortMode,
-            options: _artistSortOptions,
-            onSelected: (value) =>
-                audioProvider.setLibrarySortMode('artists', value),
-          ),
         ),
         Expanded(
           child: ListView.builder(

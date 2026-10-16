@@ -46,6 +46,9 @@ void main() {
     await StatePersistence.saveLibrarySortModes({
       'songs': 'artist_asc',
       'folders': 'songs_desc',
+      'folder_detail:/music/norteñas': 'file_name_desc',
+      'folder_detail:/music/norteñas:ignore_articles': 'true',
+      'folder_detail:/downloads/norteñas': 'date_added_desc',
     });
     await StatePersistence.savePlaybackRate(
       speed: 3.0,
@@ -55,6 +58,9 @@ void main() {
     expect(await StatePersistence.loadLibrarySortModes(), {
       'songs': 'artist_asc',
       'folders': 'songs_desc',
+      'folder_detail:/music/norteñas': 'file_name_desc',
+      'folder_detail:/music/norteñas:ignore_articles': 'true',
+      'folder_detail:/downloads/norteñas': 'date_added_desc',
     });
     expect(await StatePersistence.loadPlaybackSpeed(), 2.0);
     expect(await StatePersistence.loadPlaybackPitchSemitones(), -12.0);

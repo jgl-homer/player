@@ -166,6 +166,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   String librarySortMode(String tabId, String fallback) =>
       _librarySortModes[tabId] ?? fallback;
 
+  bool librarySortIgnoresArticles(String contextId) =>
+      _librarySortModes['$contextId:ignore_articles'] == 'true';
+
   AudioProvider(
     AudioHandler handler, {
     bool initialAutoMode = false,
@@ -1226,6 +1229,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await StatePersistence.saveLibrarySortModes(_librarySortModes);
   }
 
+  Future<void> setLibrarySortIgnoresArticles(
+    String contextId,
+    bool enabled,
+  ) async {
+    final key = '$contextId:ignore_articles';
+    if ((_librarySortModes[key] == 'true') == enabled) return;
+    _librarySortModes = Map<String, String>.from(_librarySortModes)
+      ..[key] = enabled.toString();
+    notifyListeners();
+    await StatePersistence.saveLibrarySortModes(_librarySortModes);
+  }
+
   Future<void> setPlaybackSpeed(double speed) async {
     final normalized = speed.clamp(0.5, 2.0).toDouble();
     if ((_playbackSpeed - normalized).abs() < 0.001) return;
@@ -1763,12 +1778,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> previousSmart() => _runNavigation(() async {
         final now = DateTime.now();
-        if (_lastTapTime != null &&
-            now.difference(_lastTapTime!) < const Duration(milliseconds: 700)) {
-          if (_player.hasPrevious) {
-            await _handler.skipToPreviousDirect();
-          } else if (_currentIndex > 0) {
+        final isNearStart = _player.position <= const Duration(seconds: 5);
+        final isDoubleTap = _lastTapTime != null &&
+            now.difference(_lastTapTime!) < const Duration(milliseconds: 700);
+
+        if (isNearStart || isDoubleTap) {
+          if (_currentIndex > 0) {
             await skipToIndex(_currentIndex - 1);
+          } else if (_player.hasPrevious) {
+            // Fallback for a temporarily out-of-sync external queue. The local
+            // index is preferred because seekToPrevious() has its own restart
+            // threshold and would override our five-second behavior.
+            await _handler.skipToPreviousDirect();
           } else {
             // At first track: context-aware cross-boundary navigation
             switch (_playbackMode) {

@@ -6,12 +6,14 @@ class CountBanner extends StatelessWidget {
   final int count;
   final String label;
   final Widget? trailing;
+  final Color backgroundColor;
 
   const CountBanner({
     super.key,
     required this.count,
     required this.label,
     this.trailing,
+    this.backgroundColor = Colors.transparent,
   });
 
   @override
@@ -19,7 +21,7 @@ class CountBanner extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: const Color(0xFF181818),
+      color: backgroundColor,
       child: Row(
         children: [
           Expanded(

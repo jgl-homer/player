@@ -7,17 +7,7 @@ import '../../../services/state_persistence.dart';
 import '../../../widgets/folder_list_tile.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/count_banner.dart';
-import '../../../widgets/library_sort_menu.dart';
 import '../folder_detail_screen.dart';
-
-const _folderSortOptions = <LibrarySortOption>[
-  LibrarySortOption('name_asc', 'Nombre A–Z', Icons.sort_by_alpha_rounded),
-  LibrarySortOption('name_desc', 'Nombre Z–A', Icons.sort_by_alpha_rounded),
-  LibrarySortOption(
-      'songs_desc', 'Más canciones', Icons.format_list_numbered_rounded),
-  LibrarySortOption(
-      'songs_asc', 'Menos canciones', Icons.format_list_numbered_rounded),
-];
 
 class FoldersTab extends StatefulWidget {
   const FoldersTab({super.key});
@@ -171,12 +161,7 @@ class _FoldersTabState extends State<FoldersTab> {
         CountBanner(
           count: folderPaths.length,
           label: 'Carpetas',
-          trailing: LibrarySortMenu(
-            value: sortMode,
-            options: _folderSortOptions,
-            onSelected: (value) =>
-                audioProvider.setLibrarySortMode('folders', value),
-          ),
+          backgroundColor: Colors.transparent,
         ),
         Expanded(
           child: LayoutBuilder(builder: (context, constraints) {

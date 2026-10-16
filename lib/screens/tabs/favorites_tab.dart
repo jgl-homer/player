@@ -4,16 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../widgets/song_list_tile.dart';
 import '../../widgets/count_banner.dart';
-import '../../widgets/library_sort_menu.dart';
 import '../../utils/title_utils.dart';
-
-const _favoriteSortOptions = <LibrarySortOption>[
-  LibrarySortOption('title_asc', 'Título A–Z', Icons.sort_by_alpha_rounded),
-  LibrarySortOption('title_desc', 'Título Z–A', Icons.sort_by_alpha_rounded),
-  LibrarySortOption('artist_asc', 'Artista A–Z', Icons.person_outline_rounded),
-  LibrarySortOption('newest', 'Más recientes', Icons.schedule_rounded),
-  LibrarySortOption('oldest', 'Más antiguas', Icons.history_rounded),
-];
 
 class FavoritesTab extends StatelessWidget {
   const FavoritesTab({super.key});
@@ -88,12 +79,6 @@ class FavoritesTab extends StatelessWidget {
               child: CountBanner(
                 count: favoriteSongs.length,
                 label: 'Favoritos',
-                trailing: LibrarySortMenu(
-                  value: sortMode,
-                  options: _favoriteSortOptions,
-                  onSelected: (value) =>
-                      audioProvider.setLibrarySortMode('favorites', value),
-                ),
               ),
             ),
             IconButton(

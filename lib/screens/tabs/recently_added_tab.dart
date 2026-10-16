@@ -5,15 +5,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../../../providers/audio_provider.dart';
 import '../../../widgets/song_list_tile.dart';
 import '../../../widgets/count_banner.dart';
-import '../../../widgets/library_sort_menu.dart';
 import '../../../utils/title_utils.dart';
-
-const _recentSortOptions = <LibrarySortOption>[
-  LibrarySortOption('newest', 'Más recientes', Icons.schedule_rounded),
-  LibrarySortOption('oldest', 'Más antiguas', Icons.history_rounded),
-  LibrarySortOption('title_asc', 'Título A–Z', Icons.sort_by_alpha_rounded),
-  LibrarySortOption('artist_asc', 'Artista A–Z', Icons.person_outline_rounded),
-];
 
 class RecentlyAddedTab extends StatelessWidget {
   const RecentlyAddedTab({super.key});
@@ -65,12 +57,6 @@ class RecentlyAddedTab extends StatelessWidget {
         CountBanner(
           count: recent.length,
           label: 'Añadidas Recientemente',
-          trailing: LibrarySortMenu(
-            value: sortMode,
-            options: _recentSortOptions,
-            onSelected: (value) =>
-                audioProvider.setLibrarySortMode('recently_added', value),
-          ),
         ),
         Expanded(
           child: ListView.builder(

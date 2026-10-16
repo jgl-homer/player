@@ -10,7 +10,38 @@ import '../../widgets/mini_player.dart';
 import '../../widgets/song_list_tile.dart';
 import '../../widgets/smart_artwork.dart';
 import '../../services/state_persistence.dart';
+import '../../utils/song_sorting.dart';
+import '../../widgets/library_sort_menu.dart';
 import 'search_screen.dart';
+
+const _folderSongSortOptions = <LibrarySortOption>[
+  LibrarySortOption(
+      'file_name_asc', 'Nombre del archivo', Icons.description_outlined,
+      reverseValue: 'file_name_desc'),
+  LibrarySortOption('title_asc', 'Título', Icons.title_rounded,
+      reverseValue: 'title_desc'),
+  LibrarySortOption('artist_asc', 'Artista', Icons.person_outline_rounded,
+      reverseValue: 'artist_desc'),
+  LibrarySortOption('album_asc', 'Álbum', Icons.album_outlined,
+      reverseValue: 'album_desc'),
+  LibrarySortOption(
+      'album_artist_asc', 'Artista del álbum', Icons.group_outlined,
+      reverseValue: 'album_artist_desc'),
+  LibrarySortOption('composer_asc', 'Compositor', Icons.edit_note_rounded,
+      reverseValue: 'composer_desc'),
+  LibrarySortOption('size_asc', 'Tamaño', Icons.sd_storage_outlined,
+      reverseValue: 'size_desc'),
+  LibrarySortOption('year_asc', 'Año', Icons.calendar_today_outlined,
+      reverseValue: 'year_desc'),
+  LibrarySortOption('duration_asc', 'Duración', Icons.timer_outlined,
+      reverseValue: 'duration_desc'),
+  LibrarySortOption(
+      'date_added_asc', 'Fecha añadida', Icons.playlist_add_rounded,
+      reverseValue: 'date_added_desc'),
+  LibrarySortOption(
+      'date_modified_asc', 'Fecha modificada', Icons.update_rounded,
+      reverseValue: 'date_modified_desc'),
+];
 
 class FolderDetailScreen extends StatelessWidget {
   final String folderName;
@@ -47,11 +78,11 @@ class FolderDetailScreen extends StatelessWidget {
     final audioProvider = Provider.of<AudioProvider>(context);
 
     // Filter the songs to ensure they still exist in the provider's list
-    final currentFolderSongs = audioProvider.allSongs
+    final matchingSongs = audioProvider.allSongs
         .where((s) => songs.any((original) => original.id == s.id))
         .toList();
 
-    if (currentFolderSongs.isEmpty && songs.isNotEmpty) {
+    if (matchingSongs.isEmpty && songs.isNotEmpty) {
       // If all songs were deleted or the folder is gone, we might want to pop or show empty state
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (Navigator.canPop(context)) Navigator.pop(context);
@@ -59,18 +90,31 @@ class FolderDetailScreen extends StatelessWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    final String resolvedFolderPath = folderPath ??
+        (matchingSongs.isNotEmpty
+            ? matchingSongs.first.data
+                .replaceAll(matchingSongs.first.displayName, "")
+            : "Directorio desconocido");
+    final sortContext = 'folder_detail:$resolvedFolderPath';
+    final sortMode = normalizeSongSortMode(
+      audioProvider.librarySortMode(sortContext, 'file_name_asc'),
+    );
+    final ignoreArticles =
+        audioProvider.librarySortIgnoresArticles(sortContext);
+    final currentFolderSongs = List<SongModel>.from(matchingSongs)
+      ..sort((a, b) => compareSongs(
+            a,
+            b,
+            sortMode,
+            ignoreArticles: ignoreArticles,
+          ));
+
     // Get the first available album art from the folder
     final firstSongWithArt = currentFolderSongs.firstWhere(
         (song) => song.albumId != null,
         orElse: () => currentFolderSongs.isNotEmpty
             ? currentFolderSongs.first
             : songs.first);
-    final String resolvedFolderPath = folderPath ??
-        (currentFolderSongs.isNotEmpty
-            ? currentFolderSongs.first.data
-                .replaceAll(currentFolderSongs.first.displayName, "")
-            : "Directorio desconocido");
-
     return PopScope(
       child: Scaffold(
         appBar: AppBar(
@@ -79,6 +123,16 @@ class FolderDetailScreen extends StatelessWidget {
             onPressed: () => Navigator.pop(context),
           ),
           actions: [
+            LibrarySortMenu(
+              value: sortMode,
+              options: _folderSongSortOptions,
+              showIgnoreArticles: true,
+              ignoreArticles: ignoreArticles,
+              onIgnoreArticlesChanged: (enabled) => audioProvider
+                  .setLibrarySortIgnoresArticles(sortContext, enabled),
+              onSelected: (value) =>
+                  audioProvider.setLibrarySortMode(sortContext, value),
+            ),
             IconButton(
               icon: const Icon(Icons.search),
               onPressed: () {

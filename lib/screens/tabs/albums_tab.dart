@@ -7,17 +7,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/title_utils.dart';
 import '../../../widgets/count_banner.dart';
 import '../../../widgets/smart_artwork.dart';
-import '../../../widgets/library_sort_menu.dart';
 import '../album_detail_screen.dart';
-
-const _albumSortOptions = <LibrarySortOption>[
-  LibrarySortOption('album_asc', 'Álbum A–Z', Icons.sort_by_alpha_rounded),
-  LibrarySortOption('album_desc', 'Álbum Z–A', Icons.sort_by_alpha_rounded),
-  LibrarySortOption('artist_asc', 'Artista A–Z', Icons.person_outline_rounded),
-  LibrarySortOption(
-      'songs_desc', 'Más canciones', Icons.format_list_numbered_rounded),
-  LibrarySortOption('newest', 'Más recientes', Icons.schedule_rounded),
-];
 
 class AlbumsTab extends StatelessWidget {
   const AlbumsTab({super.key});
@@ -67,12 +57,6 @@ class AlbumsTab extends StatelessWidget {
         CountBanner(
           count: albums.length,
           label: 'Álbumes',
-          trailing: LibrarySortMenu(
-            value: sortMode,
-            options: _albumSortOptions,
-            onSelected: (value) =>
-                audioProvider.setLibrarySortMode('albums', value),
-          ),
         ),
         Expanded(
           child: ListView.builder(

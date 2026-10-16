@@ -4,16 +4,6 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../playlist_detail_screen.dart';
 import '../../widgets/count_banner.dart';
-import '../../widgets/library_sort_menu.dart';
-
-const _playlistSortOptions = <LibrarySortOption>[
-  LibrarySortOption('name_asc', 'Nombre A–Z', Icons.sort_by_alpha_rounded),
-  LibrarySortOption('name_desc', 'Nombre Z–A', Icons.sort_by_alpha_rounded),
-  LibrarySortOption(
-      'songs_desc', 'Más canciones', Icons.format_list_numbered_rounded),
-  LibrarySortOption(
-      'songs_asc', 'Menos canciones', Icons.format_list_numbered_rounded),
-];
 
 class PlaylistsTab extends StatelessWidget {
   const PlaylistsTab({super.key});
@@ -91,12 +81,6 @@ class PlaylistsTab extends StatelessWidget {
               child: CountBanner(
                 count: playlists.length,
                 label: 'Playlists',
-                trailing: LibrarySortMenu(
-                  value: sortMode,
-                  options: _playlistSortOptions,
-                  onSelected: (value) =>
-                      audioProvider.setLibrarySortMode('playlists', value),
-                ),
               ),
             ),
             IconButton(
