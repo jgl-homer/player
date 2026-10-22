@@ -678,7 +678,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<SongModel?> _songWithNativeWmaMetadata(SongModel song) async {
     try {
       final metadata = await _nativeAudio.extractMetadata(song.data);
-      if (metadata == null || metadata.isEmpty) return null;
+      if (metadata.isEmpty) return null;
 
       final fileName = song.data.replaceAll('\\', '/').split('/').last;
       final map = Map<String, dynamic>.from(song.getMap);
