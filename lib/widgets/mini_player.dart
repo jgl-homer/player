@@ -1250,8 +1250,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
               child: Slider(
                 value: progress.inMilliseconds.toDouble().clamp(0, maxMs),
                 max: maxMs,
-                onChanged: (value) => audioProvider.player
-                    .seek(Duration(milliseconds: value.round())),
+                onChanged: (value) =>
+                    audioProvider.seek(Duration(milliseconds: value.round())),
               ),
             ),
             Padding(
