@@ -171,10 +171,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     )..addListener(notifyListeners);
     _init();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_nativeAudio.attachCallbacks(
+    _nativeAudio.attachCallbacks(
       onMediaChanged: _scheduleLibraryRefresh,
       onBluetoothConnected: _onBluetoothConnected,
-    ));
+    );
     // Escuchar acciones del widget
     HomeWidget.widgetClicked.listen((uri) {});
     const MethodChannel('com.jglhomer.player/widget_actions')
@@ -2574,7 +2574,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _positionSaveTimer?.cancel();
     _effects.removeListener(notifyListeners);
     _effects.dispose();
-    unawaited(_nativeAudio.detachCallbacks());
+    _nativeAudio.detachCallbacks();
     super.dispose();
   }
 }
