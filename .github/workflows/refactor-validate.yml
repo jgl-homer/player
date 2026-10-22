@@ -1,3 +1,4 @@
+# Validates the refactor without relying on the repository's known full-suite baseline failures.
 name: Internal engine refactor validation
 
 on:
