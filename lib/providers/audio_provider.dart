@@ -23,13 +23,18 @@ import '../services/lyrics_service.dart';
 import '../services/storage_scanner.dart';
 import '../services/library_database.dart';
 import '../services/library_sync_service.dart';
+import '../services/native_audio_bridge.dart';
+import '../services/playback_queue_policy.dart';
+import '../services/replay_gain_repository.dart';
 import '../utils/title_utils.dart';
 
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
   late final AudioPlayer _player;
-  static const _mediaChannel = MethodChannel('com.jglhomer.player/media_utils');
+  late final NativeAudioBridge _nativeAudio;
+  late final ReplayGainRepository _replayGainRepository;
+  final PlaybackQueuePolicy _queuePolicy = const PlaybackQueuePolicy();
   static const String _cachedSongsKey = 'cached_library_songs_v1';
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
   static const String _fallbackArtworkAsset =
@@ -62,8 +67,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double _playbackPitchSemitones = 0.0;
   Map<String, String> _librarySortModes = {};
   int _replayGainRequestSerial = 0;
-  final Map<String, _ReplayGainData> _replayGainCache = {};
-  final Map<String, Future<_ReplayGainData>> _replayGainLoads = {};
 
   List<SongModel> _allSongs = [];
   final Map<String, int> _songIndexByPath = {};
@@ -174,16 +177,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     bool initialAutoMode = false,
   })  : _handler = handler as MyAudioHandler,
         _isAutoModeEnabled = initialAutoMode {
+    _nativeAudio = NativeAudioBridge();
+    _replayGainRepository = ReplayGainRepository(_nativeAudio);
     _player = _handler.player;
     _init();
     WidgetsBinding.instance.addObserver(this);
-    _mediaChannel.setMethodCallHandler((call) async {
-      if (call.method == 'media_changed') {
-        _scheduleLibraryRefresh();
-      } else if (call.method == 'bluetooth_connected') {
-        await _onBluetoothConnected();
-      }
-    });
+    unawaited(_nativeAudio.attachCallbacks(
+      onMediaChanged: _scheduleLibraryRefresh,
+      onBluetoothConnected: _onBluetoothConnected,
+    ));
     // Escuchar acciones del widget
     HomeWidget.widgetClicked.listen((uri) {});
     const MethodChannel('com.jglhomer.player/widget_actions')
@@ -415,9 +417,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     _player.androidAudioSessionIdStream.listen((sessionId) async {
       if (sessionId != null && sessionId != 0) {
-        await _mediaChannel.invokeMethod('toggle_epicenter', {
-          'enabled': _isEpicenterEnabled,
-        });
+        await _nativeAudio.setEpicenterEnabled(_isEpicenterEnabled);
         // Apply persisted epicenter params when audio session becomes ready
         try {
           await setEpicenterParams(
@@ -736,10 +736,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<SongModel?> _songWithNativeWmaMetadata(SongModel song) async {
     try {
-      final metadata = await _mediaChannel.invokeMapMethod<String, String>(
-        'extract_metadata',
-        {'path': song.data},
-      );
+      final metadata = await _nativeAudio.extractMetadata(song.data);
       if (metadata == null || metadata.isEmpty) return null;
 
       final fileName = song.data.replaceAll('\\', '/').split('/').last;
@@ -1017,9 +1014,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await StatePersistence.saveEpicenterEnabled(_isEpicenterEnabled);
 
     try {
-      await _mediaChannel.invokeMethod('toggle_epicenter', {
-        'enabled': _isEpicenterEnabled,
-      });
+      await _nativeAudio.setEpicenterEnabled(_isEpicenterEnabled);
       if (_isEpicenterEnabled) {
         await setEpicenterParams(
           sweepFreq: _epicenterSweepFreq,
@@ -1045,15 +1040,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     double? volume,
     bool? peakProtectionEnabled,
   }) async {
-    await _mediaChannel.invokeMethod('set_epicenter_params', {
-      'engine': (engine ?? _epicenterEngine).name,
-      if (sweepFreq != null) 'sweepFreq': sweepFreq,
-      if (width != null) 'width': width,
-      if (intensity != null) 'intensity': intensity,
-      if (volume != null) 'volume': volume,
-      if (peakProtectionEnabled != null)
-        'peakProtectionEnabled': peakProtectionEnabled,
-    });
+    await _nativeAudio.setEpicenterParams(
+      engine: engine ?? _epicenterEngine,
+      sweepFreq: sweepFreq,
+      width: width,
+      intensity: intensity,
+      volume: volume,
+      peakProtectionEnabled: peakProtectionEnabled,
+    );
   }
 
   /// Confirm the native selection before reflecting it in the UI.
@@ -1283,13 +1277,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _sendToneControls() async {
-    await _mediaChannel.invokeMethod('set_tone_controls', {
-      'equalizerEnabled': _equalizerEnabled,
-      'bandGainsDb': _equalizerBandGains,
-      'replayGainEnabled': _replayGainEnabled,
-      'replayGainDb': _activeReplayGainDb,
-      'replayPeak': _activeReplayPeak,
-    });
+    await _nativeAudio.setToneControls(
+      equalizerEnabled: _equalizerEnabled,
+      bandGainsDb: _equalizerBandGains,
+      replayGainEnabled: _replayGainEnabled,
+      replayGainDb: _activeReplayGainDb,
+      replayPeak: _activeReplayPeak,
+    );
   }
 
   Future<void> _applyReplayGainForSong(SongModel song) async {
@@ -1329,57 +1323,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<_ReplayGainData> _readReplayGain(String path) {
-    final cached = _replayGainCache[path];
-    if (cached != null) return Future.value(cached);
-    final inFlight = _replayGainLoads[path];
-    if (inFlight != null) return inFlight;
+  Future<ReplayGainData> _readReplayGain(String path) =>
+      _replayGainRepository.read(path);
 
-    final load = _loadReplayGain(path);
-    _replayGainLoads[path] = load;
-    return load.whenComplete(() => _replayGainLoads.remove(path));
-  }
-
-  Future<Map<String, double?>> getReplayGainInfo(String path) async {
-    final metadata = await _readReplayGain(path);
-    return Map<String, double?>.unmodifiable({
-      'trackGainDb': metadata.trackGainDb,
-      'trackPeak': metadata.trackPeak,
-      'albumGainDb': metadata.albumGainDb,
-      'albumPeak': metadata.albumPeak,
-    });
-  }
-
-  Future<_ReplayGainData> _loadReplayGain(String path) async {
-    try {
-      final stored = await LibraryDatabase.instance.getReplayGain(path);
-      if (stored != null) {
-        final metadata = _ReplayGainData.fromMap(stored);
-        _replayGainCache[path] = metadata;
-        return metadata;
-      }
-
-      final extracted = await _mediaChannel.invokeMapMethod<String, dynamic>(
-        'extract_replay_gain',
-        {'filePath': path},
-      );
-      final metadata = _ReplayGainData.fromMap(extracted ?? const {});
-      _replayGainCache[path] = metadata;
-      await LibraryDatabase.instance.saveReplayGain(
-        path,
-        trackGainDb: metadata.trackGainDb,
-        trackPeak: metadata.trackPeak,
-        albumGainDb: metadata.albumGainDb,
-        albumPeak: metadata.albumPeak,
-      );
-      return metadata;
-    } catch (error) {
-      debugPrint('No se pudo leer ReplayGain de $path: $error');
-      const metadata = _ReplayGainData();
-      _replayGainCache[path] = metadata;
-      return metadata;
-    }
-  }
+  Future<Map<String, double?>> getReplayGainInfo(String path) =>
+      _replayGainRepository.info(path);
 
   // Enabled tabs setter
   Future<void> setEnabledTabs(List<String> tabs) async {
@@ -1588,19 +1536,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await playArtistSongs(nextSongs, startIndex, artistName: nextEntry.key);
   }
 
-  bool _matchesCurrentGlobalOrder(List<SongModel> songs) {
-    if (songs.length != _allSongs.length) return false;
-    for (var i = 0; i < songs.length; i++) {
-      if (songs[i].id != _allSongs[i].id) return false;
-    }
-    return true;
-  }
+  bool _matchesCurrentGlobalOrder(List<SongModel> songs) =>
+      _queuePolicy.matchesLibraryOrder(songs, _allSongs);
 
-  bool _containsWholeLibrary(List<SongModel> songs) {
-    if (songs.length != _allSongs.length) return false;
-    final libraryIds = _allSongs.map((song) => song.id).toSet();
-    return songs.every((song) => libraryIds.contains(song.id));
-  }
+  bool _containsWholeLibrary(List<SongModel> songs) =>
+      _queuePolicy.containsWholeLibrary(songs, _allSongs);
 
   Future<void> playPlaylistShuffled(List<SongModel> songs) async {
     if (songs.isEmpty) return;
@@ -1645,13 +1585,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await _loadCurrentPlaylistFromScratch();
   }
 
-  bool _hasSameSongOrder(List<SongModel> first, List<SongModel> second) {
-    if (first.length != second.length) return false;
-    for (var i = 0; i < first.length; i++) {
-      if (first[i].id != second[i].id) return false;
-    }
-    return true;
-  }
+  bool _hasSameSongOrder(List<SongModel> first, List<SongModel> second) =>
+      _queuePolicy.hasSameSongOrder(first, second);
 
   Future<void> _loadCurrentPlaylistFromScratch() async {
     // Ruta rápida para listas grandes: no bloquear el inicio de reproducción
@@ -1898,55 +1833,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<SongModel> _buildSmartShuffleQueue(
     List<SongModel> songs,
     int startIndex,
-  ) {
-    final safeIndex = startIndex.clamp(0, songs.length - 1);
-    final current = songs[safeIndex];
-    final remaining = <SongModel>[
-      for (var i = 0; i < songs.length; i++)
-        if (i != safeIndex) songs[i]
-    ];
-
-    final random = Random();
-    for (var i = remaining.length - 1; i > 0; i--) {
-      final swapIndex = random.nextInt(i + 1);
-      final temp = remaining[i];
-      remaining[i] = remaining[swapIndex];
-      remaining[swapIndex] = temp;
-    }
-
-    _spreadAdjacentArtists(remaining, current.artist);
-    return [current, ...remaining];
-  }
-
-  void _spreadAdjacentArtists(List<SongModel> songs, String? previousArtist) {
-    var lastArtist = previousArtist;
-    for (var i = 0; i < songs.length - 1; i++) {
-      if (!_isSameKnownArtist(lastArtist, songs[i].artist)) {
-        lastArtist = songs[i].artist;
-        continue;
-      }
-
-      final swapIndex = songs.indexWhere(
-        (song) => !_isSameKnownArtist(lastArtist, song.artist),
-        i + 1,
-      );
-      if (swapIndex == -1) {
-        lastArtist = songs[i].artist;
-        continue;
-      }
-
-      final temp = songs[i];
-      songs[i] = songs[swapIndex];
-      songs[swapIndex] = temp;
-      lastArtist = songs[i].artist;
-    }
-  }
-
-  bool _isSameKnownArtist(String? first, String? second) {
-    if (first == null || second == null) return false;
-    if (first == '<unknown>' || second == '<unknown>') return false;
-    return first.trim().toLowerCase() == second.trim().toLowerCase();
-  }
+  ) =>
+      _queuePolicy.buildSmartShuffleQueue(songs, startIndex);
 
   List<SongModel> _orderedQueueForCurrentMode() {
     if (_unshuffledPlaylist.isNotEmpty) {
@@ -2451,9 +2339,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> deleteSong(SongModel song) async {
     try {
       _ignoreMediaChangesUntil = DateTime.now().add(const Duration(seconds: 5));
-      final bool? success =
-          await _mediaChannel.invokeMethod('delete_media', {'id': song.id});
-      if (success == true) {
+      final success = await _nativeAudio.deleteMedia(song.id);
+      if (success) {
         final wasPlaying = _player.playing;
         final wasCurrentSong = _currentSong?.id == song.id;
         final removedIndex = _currentPlaylist
@@ -2535,10 +2422,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
       if (tag == null || tag.title == null || tag.title!.trim().isEmpty) {
         try {
-          wmaMeta = await _mediaChannel.invokeMapMethod<String, String>(
-            'extract_metadata',
-            {'path': song.data},
-          );
+          wmaMeta = await _nativeAudio.extractMetadata(song.data);
         } catch (e) {
           debugPrint('Error extrayendo metadata WMA vía nativa: $e');
         }
@@ -2607,13 +2491,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           await _fallbackArtworkBytes();
       if (bytes.isEmpty) return null;
 
-      final uriString = await _mediaChannel.invokeMethod<String>(
-        'cacheNotificationArtwork',
-        {'songId': song.id, 'bytes': bytes},
+      final artUri = await _nativeAudio.cacheNotificationArtwork(
+        songId: song.id,
+        bytes: bytes,
       );
-      if (uriString == null || uriString.isEmpty) return null;
-
-      final artUri = Uri.parse(uriString);
+      if (artUri == null) return null;
       _systemArtworkUriCache[song.id] = artUri;
       return artUri;
     } catch (e) {
@@ -2626,10 +2508,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     Uint8List? bytes;
 
     try {
-      bytes = await _mediaChannel.invokeMethod<Uint8List>(
-        'extractEmbeddedArtwork',
-        {'filePath': song.data},
-      );
+      bytes = await _nativeAudio.extractEmbeddedArtwork(song.data);
     } catch (_) {}
 
     if (bytes != null && bytes.isNotEmpty) return bytes;
@@ -2984,38 +2863,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _saveDebounce?.cancel();
     _positionSaveTimer?.cancel();
     _playbackRateSaveDebounce?.cancel();
+    unawaited(_nativeAudio.detachCallbacks());
     super.dispose();
   }
 }
 
-class _ReplayGainData {
-  final double? trackGainDb;
-  final double? trackPeak;
-  final double? albumGainDb;
-  final double? albumPeak;
-
-  const _ReplayGainData({
-    this.trackGainDb,
-    this.trackPeak,
-    this.albumGainDb,
-    this.albumPeak,
-  });
-
-  bool get hasGain => trackGainDb != null || albumGainDb != null;
-
-  factory _ReplayGainData.fromMap(Map<String, dynamic> values) {
-    double? value(String key) {
-      final raw = values[key];
-      if (raw is! num) return null;
-      final parsed = raw.toDouble();
-      return parsed.isFinite ? parsed : null;
-    }
-
-    return _ReplayGainData(
-      trackGainDb: value('trackGainDb'),
-      trackPeak: value('trackPeak'),
-      albumGainDb: value('albumGainDb'),
-      albumPeak: value('albumPeak'),
-    );
-  }
-}
