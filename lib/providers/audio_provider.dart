@@ -18,6 +18,7 @@ import '../services/artwork_cache_service.dart';
 
 import '../models/duration_state.dart';
 import '../services/audio_handler.dart';
+import '../services/audio_effects_controller.dart';
 import '../services/state_persistence.dart';
 import '../services/lyrics_service.dart';
 import '../services/storage_scanner.dart';
@@ -33,7 +34,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final MyAudioHandler _handler;
   late final AudioPlayer _player;
   late final NativeAudioBridge _nativeAudio;
-  late final ReplayGainRepository _replayGainRepository;
+  late final AudioEffectsController _effects;
   final PlaybackQueuePolicy _queuePolicy = const PlaybackQueuePolicy();
   static const String _cachedSongsKey = 'cached_library_songs_v1';
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
@@ -44,29 +45,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   String?
       _activeContextId; // stable ID for album/artist/playlist/favorites context
 
-  bool _isEpicenterEnabled = false;
-  EpicenterEngineMode _epicenterEngine = EpicenterEngineMode.hybrid;
-  // Epicenter parameters (defaults mirror native defaults)
-  double _epicenterSweepFreq =
-      StatePersistence.defaultEpicenterSweepFreq; // Hz (27-63)
-  double _epicenterWidth = StatePersistence.defaultEpicenterWidth; // 0-100
-  double _epicenterIntensity =
-      StatePersistence.defaultEpicenterIntensity; // 0-100
-  double _epicenterVolume = StatePersistence.defaultEpicenterVolume; // 0-100
-  bool _epicenterPeakProtectionEnabled =
-      StatePersistence.defaultEpicenterPeakProtectionEnabled;
-  bool _equalizerEnabled = false;
-  List<double> _equalizerBandGains =
-      List<double>.from(StatePersistence.defaultEqualizerBandGains);
-  bool _replayGainEnabled = false;
-  ReplayGainMode _replayGainMode = ReplayGainMode.track;
-  double _activeReplayGainDb = 0;
-  double _activeReplayPeak = 0;
-  bool _currentReplayGainAvailable = false;
-  double _playbackSpeed = 1.0;
-  double _playbackPitchSemitones = 0.0;
   Map<String, String> _librarySortModes = {};
-  int _replayGainRequestSerial = 0;
 
   List<SongModel> _allSongs = [];
   final Map<String, int> _songIndexByPath = {};
@@ -95,7 +74,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _libraryRefreshDebounce;
   Timer? _saveDebounce; // Bug #3: debounce para _savePlaybackState
   Timer? _positionSaveTimer; // Guardado periódico de posición (cada 5s)
-  Timer? _playbackRateSaveDebounce;
   bool _isRefreshingLibrary = false;
   bool _isSyncing = false;
   int _recentSongsLimit = 100;
@@ -151,23 +129,23 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   // Legacy compat getter
   int get tabCount => _enabledTabs.length.clamp(1, 8);
 
-  bool get isEpicenterEnabled => _isEpicenterEnabled;
-  EpicenterEngineMode get epicenterEngine => _epicenterEngine;
+  bool get isEpicenterEnabled => _effects.isEpicenterEnabled;
+  EpicenterEngineMode get epicenterEngine => _effects.epicenterEngine;
 
   // Epicenter params
-  double get epicenterSweepFreq => _epicenterSweepFreq;
-  double get epicenterWidth => _epicenterWidth;
-  double get epicenterIntensity => _epicenterIntensity;
-  double get epicenterVolume => _epicenterVolume;
-  bool get epicenterPeakProtectionEnabled => _epicenterPeakProtectionEnabled;
-  bool get equalizerEnabled => _equalizerEnabled;
-  List<double> get equalizerBandGains =>
-      List<double>.unmodifiable(_equalizerBandGains);
-  bool get replayGainEnabled => _replayGainEnabled;
-  ReplayGainMode get replayGainMode => _replayGainMode;
-  bool get currentReplayGainAvailable => _currentReplayGainAvailable;
-  double get playbackSpeed => _playbackSpeed;
-  double get playbackPitchSemitones => _playbackPitchSemitones;
+  double get epicenterSweepFreq => _effects.epicenterSweepFreq;
+  double get epicenterWidth => _effects.epicenterWidth;
+  double get epicenterIntensity => _effects.epicenterIntensity;
+  double get epicenterVolume => _effects.epicenterVolume;
+  bool get epicenterPeakProtectionEnabled =>
+      _effects.epicenterPeakProtectionEnabled;
+  bool get equalizerEnabled => _effects.equalizerEnabled;
+  List<double> get equalizerBandGains => _effects.equalizerBandGains;
+  bool get replayGainEnabled => _effects.replayGainEnabled;
+  ReplayGainMode get replayGainMode => _effects.replayGainMode;
+  bool get currentReplayGainAvailable => _effects.currentReplayGainAvailable;
+  double get playbackSpeed => _effects.playbackSpeed;
+  double get playbackPitchSemitones => _effects.playbackPitchSemitones;
 
   String librarySortMode(String tabId, String fallback) =>
       _librarySortModes[tabId] ?? fallback;
@@ -181,8 +159,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   })  : _handler = handler as MyAudioHandler,
         _isAutoModeEnabled = initialAutoMode {
     _nativeAudio = NativeAudioBridge();
-    _replayGainRepository = ReplayGainRepository(_nativeAudio);
     _player = _handler.player;
+    _effects = AudioEffectsController(
+      player: _player,
+      nativeAudio: _nativeAudio,
+      replayGainRepository: ReplayGainRepository(_nativeAudio),
+      currentSongPath: () => _currentSong?.data,
+      nextSong: () {
+        final nextIndex = _currentIndex + 1;
+        if (nextIndex < 0 || nextIndex >= _currentPlaylist.length) return null;
+        return _currentPlaylist[nextIndex];
+      },
+    )..addListener(notifyListeners);
     _init();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_nativeAudio.attachCallbacks(
@@ -231,30 +219,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _init() async {
     await _requestInitialPermissions();
     await ArtworkCacheService.init();
-    _isEpicenterEnabled = await StatePersistence.loadEpicenterEnabled();
-    _epicenterEngine = await StatePersistence.loadEpicenterEngine();
-    _epicenterPeakProtectionEnabled =
-        await StatePersistence.loadEpicenterPeakProtectionEnabled();
-    _equalizerEnabled = await StatePersistence.loadEqualizerEnabled();
-    _equalizerBandGains = await StatePersistence.loadEqualizerBandGains();
-    _replayGainEnabled = await StatePersistence.loadReplayGainEnabled();
-    _replayGainMode = await StatePersistence.loadReplayGainMode();
-    _playbackSpeed = await StatePersistence.loadPlaybackSpeed();
-    _playbackPitchSemitones =
-        await StatePersistence.loadPlaybackPitchSemitones();
+    await _effects.initialize();
     _librarySortModes = await StatePersistence.loadLibrarySortModes();
     _savedPlaylists = await StatePersistence.loadPlaylists();
     _recentSongsLimit = await StatePersistence.loadRecentSongsLimit();
     _activeTabId = await StatePersistence.loadActiveTab() ?? _activeTabId;
-
-    try {
-      await Future.wait([
-        _player.setSpeed(_playbackSpeed),
-        _player.setPitch(pow(2.0, _playbackPitchSemitones / 12.0).toDouble()),
-      ]);
-    } catch (e) {
-      debugPrint('Error restoring playback speed/pitch: $e');
-    }
 
     // Load enabled tabs preference
     try {
@@ -262,17 +231,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('Error loading enabled tabs: $e');
       _enabledTabs = List.from(StatePersistence.defaultEnabledTabs);
-    }
-
-    // Load persisted epicenter params (apply defaults if missing)
-    try {
-      final params = await StatePersistence.loadEpicenterParams();
-      _epicenterSweepFreq = params['sweepFreq'] ?? _epicenterSweepFreq;
-      _epicenterWidth = params['width'] ?? _epicenterWidth;
-      _epicenterIntensity = params['intensity'] ?? _epicenterIntensity;
-      _epicenterVolume = params['volume'] ?? _epicenterVolume;
-    } catch (e) {
-      debugPrint('Error loading epicenter params: $e');
     }
 
     _hasFinishedStartup = true;
@@ -420,26 +378,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     _player.androidAudioSessionIdStream.listen((sessionId) async {
       if (sessionId != null && sessionId != 0) {
-        await _nativeAudio.setEpicenterEnabled(_isEpicenterEnabled);
-        // Apply persisted epicenter params when audio session becomes ready
         try {
-          await setEpicenterParams(
-            sweepFreq: _epicenterSweepFreq,
-            width: _epicenterWidth,
-            intensity: _epicenterIntensity,
-            volume: _epicenterVolume,
-            peakProtectionEnabled: _epicenterPeakProtectionEnabled,
-          );
-        } catch (e) {
-          debugPrint('Error applying epicenter params to native: $e');
-        }
-        try {
-          await _sendToneControls();
-          if (_currentSong != null && _replayGainEnabled) {
-            unawaited(_applyReplayGainForSong(_currentSong!));
+          await _effects.onAudioSessionReady();
+          if (_currentSong != null && _effects.replayGainEnabled) {
+            unawaited(_effects.applyReplayGainForSong(_currentSong!));
           }
         } catch (e) {
-          debugPrint('Error applying tone controls to native: $e');
+          debugPrint('Error restoring native audio controls: $e');
         }
       }
     });
@@ -1011,29 +956,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // --- FX Methods ---
 
-  Future<void> toggleEpicenter() async {
-    _isEpicenterEnabled = !_isEpicenterEnabled;
-    notifyListeners();
-    await StatePersistence.saveEpicenterEnabled(_isEpicenterEnabled);
-
-    try {
-      await _nativeAudio.setEpicenterEnabled(_isEpicenterEnabled);
-      if (_isEpicenterEnabled) {
-        await setEpicenterParams(
-          sweepFreq: _epicenterSweepFreq,
-          width: _epicenterWidth,
-          intensity: _epicenterIntensity,
-          volume: _epicenterVolume,
-          peakProtectionEnabled: _epicenterPeakProtectionEnabled,
-        );
-      }
-    } catch (e) {
-      debugPrint('Epicenter error: $e');
-      _isEpicenterEnabled = false;
-      await StatePersistence.saveEpicenterEnabled(false);
-      notifyListeners();
-    }
-  }
+  Future<void> toggleEpicenter() => _effects.toggleEpicenter();
 
   Future<void> setEpicenterParams({
     EpicenterEngineMode? engine,
@@ -1042,181 +965,53 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     double? intensity,
     double? volume,
     bool? peakProtectionEnabled,
-  }) async {
-    await _nativeAudio.setEpicenterParams(
-      engine: engine ?? _epicenterEngine,
-      sweepFreq: sweepFreq,
-      width: width,
-      intensity: intensity,
-      volume: volume,
-      peakProtectionEnabled: peakProtectionEnabled,
-    );
-  }
+  }) =>
+      _effects.setEpicenterParams(
+        engine: engine,
+        sweepFreq: sweepFreq,
+        width: width,
+        intensity: intensity,
+        volume: volume,
+        peakProtectionEnabled: peakProtectionEnabled,
+      );
 
-  /// Confirm the native selection before reflecting it in the UI.
-  Future<void> setEpicenterEngine(EpicenterEngineMode engine) async {
-    await setEpicenterParams(engine: engine);
-    _epicenterEngine = engine;
-    notifyListeners();
-    await StatePersistence.saveEpicenterEngine(engine);
-  }
+  Future<void> setEpicenterEngine(EpicenterEngineMode engine) =>
+      _effects.setEpicenterEngine(engine);
 
-  /// Update local epicenter settings, persist them and apply to native DSP.
   Future<void> updateEpicenterSettings({
     double? sweepFreq,
     double? width,
     double? intensity,
     double? volume,
     bool? peakProtectionEnabled,
-  }) async {
-    if (sweepFreq != null) _epicenterSweepFreq = sweepFreq;
-    if (width != null) _epicenterWidth = width;
-    if (intensity != null) _epicenterIntensity = intensity;
-    if (volume != null) _epicenterVolume = volume;
-    if (peakProtectionEnabled != null) {
-      _epicenterPeakProtectionEnabled = peakProtectionEnabled;
-    }
-
-    notifyListeners();
-
-    // Persist all values
-    try {
-      await StatePersistence.saveEpicenterParams(
-        sweepFreq: _epicenterSweepFreq,
-        width: _epicenterWidth,
-        intensity: _epicenterIntensity,
-        volume: _epicenterVolume,
+  }) =>
+      _effects.updateEpicenterSettings(
+        sweepFreq: sweepFreq,
+        width: width,
+        intensity: intensity,
+        volume: volume,
+        peakProtectionEnabled: peakProtectionEnabled,
       );
-      await StatePersistence.saveEpicenterPeakProtectionEnabled(
-        _epicenterPeakProtectionEnabled,
-      );
-    } catch (e) {
-      debugPrint('Error saving epicenter params: $e');
-    }
 
-    // Apply to native DSP
-    try {
-      await setEpicenterParams(
-        sweepFreq: _epicenterSweepFreq,
-        width: _epicenterWidth,
-        intensity: _epicenterIntensity,
-        volume: _epicenterVolume,
-        peakProtectionEnabled: _epicenterPeakProtectionEnabled,
-      );
-    } catch (e) {
-      debugPrint('Error applying epicenter params to native: $e');
-    }
-  }
+  Future<void> resetEpicenterSettingsToDefault() =>
+      _effects.resetEpicenterSettingsToDefault();
 
-  Future<void> resetEpicenterSettingsToDefault() async {
-    await updateEpicenterSettings(
-      sweepFreq: StatePersistence.defaultEpicenterSweepFreq,
-      width: StatePersistence.defaultEpicenterWidth,
-      intensity: StatePersistence.defaultEpicenterIntensity,
-      volume: StatePersistence.defaultEpicenterVolume,
-      peakProtectionEnabled:
-          StatePersistence.defaultEpicenterPeakProtectionEnabled,
-    );
-  }
+  Future<void> setEqualizerEnabled(bool enabled) =>
+      _effects.setEqualizerEnabled(enabled);
 
-  Future<void> setEqualizerEnabled(bool enabled) async {
-    if (_equalizerEnabled == enabled) return;
-    _equalizerEnabled = enabled;
-    notifyListeners();
-    await StatePersistence.saveEqualizerSettings(
-      enabled: enabled,
-      bandGains: _equalizerBandGains,
-    );
-    await _sendToneControls();
-  }
+  Future<void> setEqualizerBandGain(int index, double gainDb) =>
+      _effects.setEqualizerBandGain(index, gainDb);
 
-  Future<void> setEqualizerBandGain(int index, double gainDb) async {
-    if (index < 0 || index >= _equalizerBandGains.length) return;
-    final normalized = gainDb.clamp(-6.0, 6.0);
-    if ((_equalizerBandGains[index] - normalized).abs() < 0.001) return;
-    final updated = List<double>.from(_equalizerBandGains);
-    updated[index] = normalized;
-    _equalizerBandGains = updated;
-    notifyListeners();
-    await StatePersistence.saveEqualizerSettings(
-      enabled: _equalizerEnabled,
-      bandGains: updated,
-    );
-    await _sendToneControls();
-  }
+  Future<void> setEqualizerPreset(List<double> bandGains) =>
+      _effects.setEqualizerPreset(bandGains);
 
-  Future<void> setEqualizerPreset(List<double> bandGains) async {
-    _equalizerBandGains = List<double>.generate(
-      StatePersistence.defaultEqualizerBandGains.length,
-      (index) => index < bandGains.length && bandGains[index].isFinite
-          ? bandGains[index].clamp(-6.0, 6.0)
-          : 0.0,
-      growable: false,
-    );
-    notifyListeners();
-    await StatePersistence.saveEqualizerSettings(
-      enabled: _equalizerEnabled,
-      bandGains: _equalizerBandGains,
-    );
-    await _sendToneControls();
-  }
+  Future<void> setReplayGainEnabled(bool enabled) =>
+      _effects.setReplayGainEnabled(enabled, _currentSong);
 
-  Future<void> setReplayGainEnabled(bool enabled) async {
-    if (_replayGainEnabled == enabled) return;
-    _replayGainEnabled = enabled;
-    await StatePersistence.saveReplayGainSettings(
-      enabled: enabled,
-      mode: _replayGainMode,
-    );
-    if (!enabled || _currentSong == null) {
-      _replayGainRequestSerial++;
-      _activeReplayGainDb = 0;
-      _activeReplayPeak = 0;
-      _currentReplayGainAvailable = false;
-      await _sendToneControls();
-      notifyListeners();
-      return;
-    }
-    notifyListeners();
-    await _applyReplayGainForSong(_currentSong!);
-  }
+  Future<void> setReplayGainMode(ReplayGainMode mode) =>
+      _effects.setReplayGainMode(mode, _currentSong);
 
-  Future<void> setReplayGainMode(ReplayGainMode mode) async {
-    if (_replayGainMode == mode) return;
-    _replayGainMode = mode;
-    await StatePersistence.saveReplayGainSettings(
-      enabled: _replayGainEnabled,
-      mode: mode,
-    );
-    notifyListeners();
-    if (_replayGainEnabled && _currentSong != null) {
-      await _applyReplayGainForSong(_currentSong!);
-    }
-  }
-
-  Future<void> resetToneControls() async {
-    _equalizerEnabled = false;
-    _equalizerBandGains =
-        List<double>.from(StatePersistence.defaultEqualizerBandGains);
-    _replayGainEnabled = false;
-    _replayGainMode = ReplayGainMode.track;
-    _activeReplayGainDb = 0;
-    _activeReplayPeak = 0;
-    _currentReplayGainAvailable = false;
-    _replayGainRequestSerial++;
-    await Future.wait([
-      StatePersistence.saveEqualizerSettings(
-        enabled: false,
-        bandGains: _equalizerBandGains,
-      ),
-      StatePersistence.saveReplayGainSettings(
-        enabled: false,
-        mode: ReplayGainMode.track,
-      ),
-    ]);
-    await _sendToneControls();
-    notifyListeners();
-  }
+  Future<void> resetToneControls() => _effects.resetToneControls();
 
   Future<void> setLibrarySortMode(String tabId, String mode) async {
     if (_librarySortModes[tabId] == mode) return;
@@ -1238,99 +1033,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await StatePersistence.saveLibrarySortModes(_librarySortModes);
   }
 
-  Future<void> setPlaybackSpeed(double speed) async {
-    final normalized = speed.clamp(0.5, 2.0).toDouble();
-    if ((_playbackSpeed - normalized).abs() < 0.001) return;
-    _playbackSpeed = normalized;
-    notifyListeners();
-    await _player.setSpeed(normalized);
-    _schedulePlaybackRateSave();
-  }
+  Future<void> setPlaybackSpeed(double speed) =>
+      _effects.setPlaybackSpeed(speed);
 
-  Future<void> setPlaybackPitchSemitones(double semitones) async {
-    final normalized = semitones.clamp(-12.0, 12.0).toDouble();
-    if ((_playbackPitchSemitones - normalized).abs() < 0.001) return;
-    _playbackPitchSemitones = normalized;
-    notifyListeners();
-    await _player.setPitch(pow(2.0, normalized / 12.0).toDouble());
-    _schedulePlaybackRateSave();
-  }
+  Future<void> setPlaybackPitchSemitones(double semitones) =>
+      _effects.setPlaybackPitchSemitones(semitones);
 
-  void _schedulePlaybackRateSave() {
-    _playbackRateSaveDebounce?.cancel();
-    _playbackRateSaveDebounce = Timer(
-      const Duration(milliseconds: 250),
-      () => StatePersistence.savePlaybackRate(
-        speed: _playbackSpeed,
-        pitchSemitones: _playbackPitchSemitones,
-      ),
-    );
-  }
+  Future<void> resetPlaybackRate() => _effects.resetPlaybackRate();
 
-  Future<void> resetPlaybackRate() async {
-    _playbackRateSaveDebounce?.cancel();
-    _playbackSpeed = 1.0;
-    _playbackPitchSemitones = 0.0;
-    notifyListeners();
-    await Future.wait([
-      _player.setSpeed(1.0),
-      _player.setPitch(1.0),
-      StatePersistence.savePlaybackRate(speed: 1.0, pitchSemitones: 0.0),
-    ]);
-  }
-
-  Future<void> _sendToneControls() async {
-    await _nativeAudio.setToneControls(
-      equalizerEnabled: _equalizerEnabled,
-      bandGainsDb: _equalizerBandGains,
-      replayGainEnabled: _replayGainEnabled,
-      replayGainDb: _activeReplayGainDb,
-      replayPeak: _activeReplayPeak,
-    );
-  }
-
-  Future<void> _applyReplayGainForSong(SongModel song) async {
-    final serial = ++_replayGainRequestSerial;
-    if (!_replayGainEnabled) return;
-
-    _activeReplayGainDb = 0;
-    _activeReplayPeak = 0;
-    _currentReplayGainAvailable = false;
-    await _sendToneControls();
-
-    final metadata = await _readReplayGain(song.data);
-    if (serial != _replayGainRequestSerial ||
-        !_replayGainEnabled ||
-        _currentSong?.data != song.data) {
-      return;
-    }
-
-    if (_replayGainMode == ReplayGainMode.album) {
-      _activeReplayGainDb = metadata.albumGainDb ?? metadata.trackGainDb ?? 0;
-      _activeReplayPeak = metadata.albumGainDb != null
-          ? metadata.albumPeak ?? metadata.trackPeak ?? 0
-          : metadata.trackPeak ?? metadata.albumPeak ?? 0;
-    } else {
-      _activeReplayGainDb = metadata.trackGainDb ?? metadata.albumGainDb ?? 0;
-      _activeReplayPeak = metadata.trackGainDb != null
-          ? metadata.trackPeak ?? metadata.albumPeak ?? 0
-          : metadata.albumPeak ?? metadata.trackPeak ?? 0;
-    }
-    _currentReplayGainAvailable = metadata.hasGain;
-    await _sendToneControls();
-    notifyListeners();
-
-    final nextIndex = _currentIndex + 1;
-    if (nextIndex < _currentPlaylist.length) {
-      unawaited(_readReplayGain(_currentPlaylist[nextIndex].data));
-    }
-  }
-
-  Future<ReplayGainData> _readReplayGain(String path) =>
-      _replayGainRepository.read(path);
+  Future<void> _applyReplayGainForSong(SongModel song) =>
+      _effects.applyReplayGainForSong(song);
 
   Future<Map<String, double?>> getReplayGainInfo(String path) =>
-      _replayGainRepository.info(path);
+      _effects.getReplayGainInfo(path);
 
   // Enabled tabs setter
   Future<void> setEnabledTabs(List<String> tabs) async {
@@ -1576,7 +1291,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await _syncPlayerLoopMode();
     notifyListeners();
 
-    if (_replayGainEnabled) {
+    if (_effects.replayGainEnabled) {
       await _applyReplayGainForSong(_currentSong!);
     }
 
@@ -2802,7 +2517,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
       // Cargar en estado PAUSADO con seek a la posición guardada
-      if (_replayGainEnabled) {
+      if (_effects.replayGainEnabled) {
         await _applyReplayGainForSong(_currentSong!);
       }
       await _handler.loadPlaylist(
@@ -2867,7 +2582,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _libraryRefreshDebounce?.cancel();
     _saveDebounce?.cancel();
     _positionSaveTimer?.cancel();
-    _playbackRateSaveDebounce?.cancel();
+    _effects.removeListener(notifyListeners);
+    _effects.dispose();
     unawaited(_nativeAudio.detachCallbacks());
     super.dispose();
   }
