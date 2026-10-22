@@ -1,0 +1,65 @@
+name: Internal engine refactor validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "lib/**"
+      - "plugins/just_audio_epicenter/**"
+      - "test/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - ".github/workflows/refactor-validate.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze refactored playback boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            lib/providers/audio_provider.dart
+            lib/services/audio_effects_controller.dart
+            lib/services/native_audio_bridge.dart
+            lib/services/playback_engine.dart
+            lib/services/playback_queue_policy.dart
+            lib/services/replay_gain_repository.dart
+            lib/widgets/wide_card.dart
+            lib/widgets/mini_player_pill.dart
+            lib/widgets/album_card.dart
+            lib/widgets/mini_player.dart
+            lib/screens/car_mode_screen.dart
+          )
+          for file in "${files[@]}"; do
+            echo "::group::flutter analyze $file"
+            flutter analyze --no-pub "$file"
+            echo "::endgroup::"
+          done
+
+      - name: Run focused regression tests
+        run: |
+          flutter test --no-pub \
+            test/services/playback_queue_policy_test.dart \
+            test/architecture/playback_boundary_test.dart \
+            test/services/epicenter_persistence_test.dart \
+            test/widgets/epicenter_engine_selector_test.dart
+
+      - name: Build Android debug APK
+        run: flutter build apk --debug --no-pub
