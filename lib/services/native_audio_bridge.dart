@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 
 import 'state_persistence.dart';
@@ -14,11 +12,11 @@ class NativeAudioBridge {
   static const MethodChannel _channel =
       MethodChannel('com.jglhomer.player/media_utils');
 
-  Future<void> attachCallbacks({
+  void attachCallbacks({
     required FutureOr<void> Function() onMediaChanged,
     required FutureOr<void> Function() onBluetoothConnected,
-  }) async {
-    await _channel.setMethodCallHandler((call) async {
+  }) {
+    _channel.setMethodCallHandler((call) async {
       switch (call.method) {
         case 'media_changed':
           await onMediaChanged();
@@ -32,7 +30,7 @@ class NativeAudioBridge {
     });
   }
 
-  Future<void> detachCallbacks() => _channel.setMethodCallHandler(null);
+  void detachCallbacks() => _channel.setMethodCallHandler(null);
 
   Future<void> setEpicenterEnabled(bool enabled) {
     return _channel.invokeMethod<void>(
