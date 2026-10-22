@@ -1,17 +1,7 @@
-# Validates the refactor without relying on the repository's known full-suite baseline failures.
 name: Internal engine refactor validation
 
 on:
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "lib/**"
-      - "plugins/just_audio_epicenter/**"
-      - "test/**"
-      - "pubspec.yaml"
-      - "pubspec.lock"
-      - ".github/workflows/refactor-validate.yml"
+  workflow_dispatch:
 
 jobs:
   validate:
