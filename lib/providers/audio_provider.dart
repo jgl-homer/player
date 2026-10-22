@@ -127,7 +127,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isShuffle => _shuffle;
   LoopMode get loopMode => _loopMode;
   PlaybackMode get playbackMode => _playbackMode;
-  AudioPlayer get player => _player;
+  bool get isPlaying => _player.playing;
+  Duration get currentPosition => _player.position;
+  Stream<bool> get playingStream => _player.playingStream;
+  Stream<Duration> get positionStream => _player.positionStream;
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
   Map<String, List<String>> get savedPlaylists =>
@@ -1645,6 +1648,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _loadCurrentPlaylistFromScratch();
     }
   }
+
+  Future<void> seek(Duration position) => _player.seek(position);
 
   Future<void> togglePlayPause() async {
     if (_player.playing) {
