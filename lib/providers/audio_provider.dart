@@ -17,7 +17,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/artwork_cache_service.dart';
 
 import '../models/duration_state.dart';
-import '../services/audio_handler.dart';
 import '../services/audio_effects_controller.dart';
 import '../services/state_persistence.dart';
 import '../services/lyrics_service.dart';
@@ -25,14 +24,14 @@ import '../services/storage_scanner.dart';
 import '../services/library_database.dart';
 import '../services/library_sync_service.dart';
 import '../services/native_audio_bridge.dart';
+import '../services/playback_engine.dart';
 import '../services/playback_queue_policy.dart';
 import '../services/replay_gain_repository.dart';
 import '../utils/title_utils.dart';
 
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
-  final MyAudioHandler _handler;
-  late final AudioPlayer _player;
+  late final PlaybackEngine _playback;
   late final NativeAudioBridge _nativeAudio;
   late final AudioEffectsController _effects;
   final PlaybackQueuePolicy _queuePolicy = const PlaybackQueuePolicy();
@@ -105,10 +104,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isShuffle => _shuffle;
   LoopMode get loopMode => _loopMode;
   PlaybackMode get playbackMode => _playbackMode;
-  bool get isPlaying => _player.playing;
-  Duration get currentPosition => _player.position;
-  Stream<bool> get playingStream => _player.playingStream;
-  Stream<Duration> get positionStream => _player.positionStream;
+  bool get isPlaying => _playback.playing;
+  Duration get currentPosition => _playback.position;
+  Stream<bool> get playingStream => _playback.playingStream;
+  Stream<Duration> get positionStream => _playback.positionStream;
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
   Map<String, List<String>> get savedPlaylists =>
@@ -156,12 +155,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   AudioProvider(
     AudioHandler handler, {
     bool initialAutoMode = false,
-  })  : _handler = handler as MyAudioHandler,
-        _isAutoModeEnabled = initialAutoMode {
+  }) : _isAutoModeEnabled = initialAutoMode {
     _nativeAudio = NativeAudioBridge();
-    _player = _handler.player;
+    _playback = PlaybackEngine(handler);
     _effects = AudioEffectsController(
-      player: _player,
+      player: _playback.player,
       nativeAudio: _nativeAudio,
       replayGainRepository: ReplayGainRepository(_nativeAudio),
       currentSongPath: () => _currentSong?.data,
@@ -292,9 +290,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _listenToPlayer() {
-    _player.currentIndexStream.listen((index) async {
+    _playback.currentIndexStream.listen((index) async {
       if (index != null && index < _currentPlaylist.length) {
-        final currentTag = _player.sequenceState.currentSource?.tag;
+        final currentTag = _playback.currentSourceTag;
         if (currentTag is MediaItem) {
           final foundIndex =
               _currentPlaylist.indexWhere((s) => s.data == currentTag.id);
@@ -362,21 +360,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         // Cargar portada de forma diferida solo para la canción actual (evita OutOfMemoryError)
         if (_currentSong != null) {
           final artUri = await _systemArtworkUriForSong(_currentSong!);
-          final queueItems = _handler.queue.value;
+          final queueItems = _playback.queue;
           if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
             final currentItem = queueItems[_currentIndex];
             if (currentItem.id != _currentSong!.data) return;
             final updatedItem = currentItem.copyWith(artUri: artUri);
-            _handler.mediaItem.add(updatedItem);
-            final updatedQueue = List<MediaItem>.from(queueItems);
-            updatedQueue[_currentIndex] = updatedItem;
-            _handler.queue.add(updatedQueue);
+            _playback.updateQueueMetadata(_currentIndex, updatedItem);
           }
         }
       }
     });
 
-    _player.androidAudioSessionIdStream.listen((sessionId) async {
+    _playback.androidAudioSessionIdStream.listen((sessionId) async {
       if (sessionId != null && sessionId != 0) {
         try {
           await _effects.onAudioSessionReady();
@@ -389,41 +384,39 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     });
 
-    _handler.onToggleFavorite = () {
-      if (_currentSong != null) toggleFavorite(_currentSong!);
-    };
-
-    _handler.onPlayPauseRequested = togglePlayPause;
-    _handler.onStopRequested = stop;
-    _handler.onPreviousRequested = previousSmart;
-    _handler.onNextRequested = next;
-
-    _handler.onTrackCompleted = () {
-      switch (_playbackMode) {
-        case PlaybackMode.folder:
-          unawaited(playNextFolder());
-          break;
-        case PlaybackMode.album:
-          unawaited(playNextAlbum());
-          break;
-        case PlaybackMode.artist:
-          unawaited(playNextArtist());
-          break;
-        case PlaybackMode.playlist:
-        case PlaybackMode.favorites:
-          // Stop at end — do not bleed into another context
-          unawaited(stop());
-          break;
-        case PlaybackMode.global:
-          // just_audio handles LoopMode.all natively; nothing extra needed
-          break;
-      }
-    };
+    _playback.configureCallbacks(
+      onToggleFavorite: () {
+        if (_currentSong != null) toggleFavorite(_currentSong!);
+      },
+      onPlayPauseRequested: togglePlayPause,
+      onStopRequested: stop,
+      onPreviousRequested: previousSmart,
+      onNextRequested: next,
+      onTrackCompleted: () {
+        switch (_playbackMode) {
+          case PlaybackMode.folder:
+            unawaited(playNextFolder());
+            break;
+          case PlaybackMode.album:
+            unawaited(playNextAlbum());
+            break;
+          case PlaybackMode.artist:
+            unawaited(playNextArtist());
+            break;
+          case PlaybackMode.playlist:
+          case PlaybackMode.favorites:
+            unawaited(stop());
+            break;
+          case PlaybackMode.global:
+            break;
+        }
+      },
+    );
 
     // Guardado continuo de posición cada 2 segundos mientras se reproduce directamente,
     // para que al cerrar la app (sin pausa) se recupere el segundo exacto.
     _positionSaveTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      if (_player.playing && _currentSong != null) {
+      if (_playback.playing && _currentSong != null) {
         savePlaybackStateImmediate();
       }
     });
@@ -757,7 +750,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     List<SongModel> freshSongs,
     List<AlbumModel> freshAlbums,
   ) async {
-    final wasPlaying = _player.playing;
+    final wasPlaying = _playback.playing;
     final previousSongId = _currentSong?.id;
     final freshIds = freshSongs.map((song) => song.id).toSet();
     _allSongs = freshSongs;
@@ -804,7 +797,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _currentSong = _currentPlaylist[_currentIndex];
     }
     await _replacePlaybackQueue(
-      position: _player.position,
+      position: _playback.position,
       shouldPlay: wasPlaying,
     );
   }
@@ -819,7 +812,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     await _syncPlayerLoopMode();
-    await _handler.replacePlaylist(
+    await _playback.replacePlaylist(
       await _songsToMediaItems(_currentPlaylist, fast: true),
       _currentIndex,
       position,
@@ -841,16 +834,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (artUri == null) return;
       // Verificar que la canción actual no cambió mientras esperábamos
       if (_currentSong?.id != song.id) return;
-      final queueItems = _handler.queue.value;
-      if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
-        final currentItem = queueItems[_currentIndex];
-        if (currentItem.id != song.data) return;
-        final updatedItem = currentItem.copyWith(artUri: artUri);
-        _handler.mediaItem.add(updatedItem);
-        final updatedQueue = List<MediaItem>.from(queueItems);
-        updatedQueue[_currentIndex] = updatedItem;
-        _handler.queue.add(updatedQueue);
-      }
+      final queueItems = _playback.queue;
+          if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
+            final currentItem = queueItems[_currentIndex];
+            if (currentItem.id != song.data) return;
+            final updatedItem = currentItem.copyWith(artUri: artUri);
+            _playback.updateQueueMetadata(_currentIndex, updatedItem);
+          }
     } catch (e) {
       debugPrint(
           '[AudioProvider] Error actualizando artwork en MediaSession: $e');
@@ -1263,7 +1253,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> playPlaylistShuffled(List<SongModel> songs) async {
     if (songs.isEmpty) return;
     _shuffle = true;
-    await _player.setShuffleModeEnabled(false);
+    await _playback.setShuffleModeEnabled(false);
     final startIndex = songs.length == 1 ? 0 : Random().nextInt(songs.length);
     await _playInternal(songs, startIndex);
     notifyListeners();
@@ -1316,7 +1306,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       await _syncPlayerLoopMode();
-      await _handler.loadPlaylist(
+      await _playback.loadPlaylist(
         mediaItems,
         _currentIndex,
       );
@@ -1340,7 +1330,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _jumpWithinCurrentPlaylist() async {
     try {
-      final playerQueue = _handler.queue.value;
+      final playerQueue = _playback.queue;
       final queueMissingTarget = _currentIndex >= playerQueue.length ||
           playerQueue[_currentIndex].id != _currentSong?.data;
       if (queueMissingTarget) {
@@ -1349,8 +1339,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           shouldPlay: true,
         );
       } else {
-        await _handler.skipToQueueItem(_currentIndex);
-        await _handler.playDirect();
+        await _playback.skipToQueueItem(_currentIndex);
+        await _playback.play();
       }
       _savePlaybackState();
       await _updateHomeWidget();
@@ -1364,31 +1354,31 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) => _playback.seek(position);
 
   Future<void> togglePlayPause() async {
-    if (_player.playing) {
-      await _handler.pauseDirect();
+    if (_playback.playing) {
+      await _playback.pause();
       await savePlaybackStateImmediate();
     } else {
-      await _handler.playDirect();
+      await _playback.play();
     }
     await _updateHomeWidget();
   }
 
   Future<void> stop() async {
     // Guardar la pista activa y la posición actual antes de detener el reproductor
-    final pos = _player.position.inMilliseconds;
+    final pos = _playback.position.inMilliseconds;
     await savePlaybackStateImmediate(customPositionMs: pos);
-    await _handler.stopDirect();
+    await _playback.stop();
     await _updateHomeWidget();
     notifyListeners();
   }
 
   Future<void> next() => _runNavigation(() async {
         try {
-          if (_player.hasNext) {
-            await _handler.skipToNextDirect();
+          if (_playback.hasNext) {
+            await _playback.skipToNext();
             unawaited(_updateHomeWidget());
           } else {
             switch (_playbackMode) {
@@ -1418,8 +1408,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> previous() => _runNavigation(() async {
         try {
-          if (_player.hasPrevious) {
-            await _handler.skipToPreviousDirect();
+          if (_playback.hasPrevious) {
+            await _playback.skipToPrevious();
           } else {
             final previousIndex = _currentIndex - 1;
             if (previousIndex >= 0) {
@@ -1433,18 +1423,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> previousSmart() => _runNavigation(() async {
         final now = DateTime.now();
-        final isNearStart = _player.position <= const Duration(seconds: 5);
+        final isNearStart = _playback.position <= const Duration(seconds: 5);
         final isDoubleTap = _lastTapTime != null &&
             now.difference(_lastTapTime!) < const Duration(milliseconds: 700);
 
         if (isNearStart || isDoubleTap) {
           if (_currentIndex > 0) {
             await skipToIndex(_currentIndex - 1);
-          } else if (_player.hasPrevious) {
+          } else if (_playback.hasPrevious) {
             // Fallback for a temporarily out-of-sync external queue. The local
             // index is preferred because seekToPrevious() has its own restart
             // threshold and would override our five-second behavior.
-            await _handler.skipToPreviousDirect();
+            await _playback.skipToPrevious();
           } else {
             // At first track: context-aware cross-boundary navigation
             switch (_playbackMode) {
@@ -1461,12 +1451,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
               case PlaybackMode.favorites:
               case PlaybackMode.global:
                 // Stay at beginning — no cross-boundary jump
-                await _player.seek(Duration.zero);
+                await _playback.seek(Duration.zero);
                 break;
             }
           }
         } else {
-          await _player.seek(Duration.zero);
+          await _playback.seek(Duration.zero);
         }
         _lastTapTime = now;
       });
@@ -1493,14 +1483,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> toggleShuffle() async {
     _shuffle = !_shuffle;
-    await _player.setShuffleModeEnabled(false);
+    await _playback.setShuffleModeEnabled(false);
     await _rebuildQueueForShuffleState();
     notifyListeners();
   }
 
   /// Autoplay al conectar dispositivo de audio / Bluetooth: reanuda si no está reproduciendo.
   Future<void> _onBluetoothConnected() async {
-    if (_player.playing) return;
+    if (_playback.playing) return;
     if (_currentSong == null || _currentPlaylist.isEmpty) {
       if (_allSongs.isNotEmpty) {
         await _loadPlaybackState();
@@ -1509,7 +1499,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (_currentSong == null || _currentPlaylist.isEmpty) return;
     debugPrint(
         '[Audio] Dispositivo de salida conectado — reanudando reproducción');
-    await _handler.playDirect();
+    await _playback.play();
     notifyListeners();
   }
 
@@ -1544,8 +1534,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (desiredIndex == -1) return;
     _currentIndex = desiredIndex;
     await _replacePlaybackQueue(
-      position: _player.position,
-      shouldPlay: _player.playing,
+      position: _playback.position,
+      shouldPlay: _playback.playing,
     );
     notifyListeners();
   }
@@ -1587,8 +1577,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _syncPlayerLoopMode() async {
     final targetLoopMode = _effectivePlayerLoopMode();
-    if (_player.loopMode == targetLoopMode) return;
-    await _player.setLoopMode(targetLoopMode);
+    if (_playback.loopMode == targetLoopMode) return;
+    await _playback.setLoopMode(targetLoopMode);
   }
 
   // --- Folder Management ---
@@ -1697,7 +1687,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // Sincronizar cola en segundo plano sin interrumpir la música
-    await _handler.moveQueueItem(oldIndex, newIndex);
+    await _playback.moveQueueItem(oldIndex, newIndex);
     notifyListeners();
   }
 
@@ -1757,7 +1747,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _currentIndex = index;
     _currentSong = _currentPlaylist[_currentIndex];
     notifyListeners();
-    final playerQueue = _handler.queue.value;
+    final playerQueue = _playback.queue;
     final queueMissingTarget = _currentIndex >= playerQueue.length ||
         playerQueue[_currentIndex].id != _currentSong!.data;
     if (queueMissingTarget) {
@@ -1766,8 +1756,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         shouldPlay: true,
       );
     } else {
-      await _handler.skipToQueueItem(_currentIndex);
-      await _handler.playDirect();
+      await _playback.skipToQueueItem(_currentIndex);
+      await _playback.play();
     }
     _savePlaybackState();
     if (_currentSong != null) {
@@ -1790,8 +1780,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _currentIndex--;
       }
       await _replacePlaybackQueue(
-        position: removedCurrent ? Duration.zero : _player.position,
-        shouldPlay: _player.playing,
+        position: removedCurrent ? Duration.zero : _playback.position,
+        shouldPlay: _playback.playing,
       );
     }
     notifyListeners();
@@ -1801,8 +1791,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final insertIndex = _currentIndex + 1;
     _currentPlaylist.insert(insertIndex, song);
     await _replacePlaybackQueue(
-      position: _player.position,
-      shouldPlay: _player.playing,
+      position: _playback.position,
+      shouldPlay: _playback.playing,
     );
     notifyListeners();
   }
@@ -1810,8 +1800,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> addToQueue(SongModel song) async {
     _currentPlaylist.add(song);
     await _replacePlaybackQueue(
-      position: _player.position,
-      shouldPlay: _player.playing,
+      position: _playback.position,
+      shouldPlay: _playback.playing,
     );
     notifyListeners();
   }
@@ -1819,8 +1809,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> addAllToQueue(List<SongModel> songs) async {
     _currentPlaylist.addAll(songs);
     await _replacePlaybackQueue(
-      position: _player.position,
-      shouldPlay: _player.playing,
+      position: _playback.position,
+      shouldPlay: _playback.playing,
     );
     notifyListeners();
   }
@@ -2050,7 +2040,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     // 5. Actualizar MediaItem en vivo en audio_service y notificación del sistema
     final updatedMediaItem = await _songToMediaItem(updatedSong);
-    await _handler.updateMediaItem(updatedMediaItem);
+    await _playback.updateMediaItem(updatedMediaItem);
 
     // 6. Notificar a la interfaz de usuario para refresco inmediato en pantalla
     notifyListeners();
@@ -2061,7 +2051,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _ignoreMediaChangesUntil = DateTime.now().add(const Duration(seconds: 5));
       final success = await _nativeAudio.deleteMedia(song.id);
       if (success) {
-        final wasPlaying = _player.playing;
+        final wasPlaying = _playback.playing;
         final wasCurrentSong = _currentSong?.id == song.id;
         final removedIndex = _currentPlaylist
             .indexWhere((queuedSong) => queuedSong.id == song.id);
@@ -2094,7 +2084,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             _currentIndex--;
           }
           await _replacePlaybackQueue(
-            position: _player.position,
+            position: _playback.position,
             shouldPlay: wasPlaying,
           );
         }
@@ -2330,7 +2320,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final artist = TitleUtils.getDisplayArtist(_currentSong!.artist);
     await HomeWidget.saveWidgetData<String>('title', title);
     await HomeWidget.saveWidgetData<String>('artist', artist);
-    await HomeWidget.saveWidgetData<bool>('isPlaying', _player.playing);
+    await HomeWidget.saveWidgetData<bool>('isPlaying', _playback.playing);
     await HomeWidget.updateWidget(name: 'MusicWidgetProvider');
   }
 
@@ -2340,7 +2330,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _saveDebounce?.cancel();
     if (_currentSong == null) return;
     try {
-      final pos = customPositionMs ?? _player.position.inMilliseconds;
+      final pos = customPositionMs ?? _playback.position.inMilliseconds;
       await StatePersistence.savePlaybackState(
         mode: _playbackMode,
         folderPath: _activeFolderPath,
@@ -2520,7 +2510,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       if (_effects.replayGainEnabled) {
         await _applyReplayGainForSong(_currentSong!);
       }
-      await _handler.loadPlaylist(
+      await _playback.loadPlaylist(
         mediaItems,
         _currentIndex,
         Duration(milliseconds: positionMs),
@@ -2570,8 +2560,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Stream<DurationState> get durationStateStream =>
       Rx.combineLatest2<Duration, Duration?, DurationState>(
-        _player.positionStream,
-        _player.durationStream,
+        _playback.positionStream,
+        _playback.durationStream,
         (position, duration) =>
             DurationState(position, duration ?? Duration.zero),
       );
