@@ -29,11 +29,13 @@ void main() {
     );
   });
 
-  test('AudioProvider does not own raw AudioPlayer or MyAudioHandler anymore', () {
+  test('AudioProvider does not own raw AudioPlayer or MyAudioHandler anymore',
+      () {
     final source = File('lib/providers/audio_provider.dart').readAsStringSync();
 
     expect(RegExp(r'\bAudioPlayer\s+_player\b').hasMatch(source), isFalse);
     expect(RegExp(r'\bMyAudioHandler\s+_handler\b').hasMatch(source), isFalse);
-    expect(source.contains('_handler.'), isFalse);
+    expect(RegExp(r'\b_handler\s*\.').hasMatch(source), isFalse);
+    expect(source.contains('MethodChannel('), isFalse);
   });
 }

@@ -16,35 +16,38 @@ class PlaybackEngine {
   PlaybackEngine(AudioHandler handler) : _handler = handler as MyAudioHandler;
 
   /// Kept internal to the service layer for controllers that must configure
-  /// native player properties (e.g. speed/pitch). UI code must never receive it.
-  AudioPlayer get player => _handler.player;
+  /// native _player properties (e.g. speed/pitch). UI code must never receive it.
+  AudioPlayer get _player => _handler.player;
 
-  bool get playing => player.playing;
-  Duration get position => player.position;
-  bool get hasNext => player.hasNext;
-  bool get hasPrevious => player.hasPrevious;
-  LoopMode get loopMode => player.loopMode;
-  Object? get currentSourceTag => player.sequenceState.currentSource?.tag;
+  bool get playing => _player.playing;
+  Duration get position => _player.position;
+  bool get hasNext => _player.hasNext;
+  bool get hasPrevious => _player.hasPrevious;
+  LoopMode get loopMode => _player.loopMode;
+  Object? get currentSourceTag => _player.sequenceState.currentSource?.tag;
 
-  Stream<bool> get playingStream => player.playingStream;
-  Stream<Duration> get positionStream => player.positionStream;
-  Stream<Duration?> get durationStream => player.durationStream;
-  Stream<int?> get currentIndexStream => player.currentIndexStream;
+  Stream<bool> get playingStream => _player.playingStream;
+  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration?> get durationStream => _player.durationStream;
+  Stream<int?> get currentIndexStream => _player.currentIndexStream;
   Stream<int?> get androidAudioSessionIdStream =>
-      player.androidAudioSessionIdStream;
+      _player.androidAudioSessionIdStream;
 
-  List<MediaItem> get queue => List<MediaItem>.unmodifiable(_handler.queue.value);
+  List<MediaItem> get queue =>
+      List<MediaItem>.unmodifiable(_handler.queue.value);
 
   void configureCallbacks({
     required void Function() onToggleFavorite,
-    required FutureOr<void> Function() onPlayPauseRequested,
+    required FutureOr<void> Function() onPlayRequested,
+    required FutureOr<void> Function() onPauseRequested,
     required FutureOr<void> Function() onStopRequested,
     required FutureOr<void> Function() onPreviousRequested,
     required FutureOr<void> Function() onNextRequested,
-    required void Function() onTrackCompleted,
+    required FutureOr<void> Function() onTrackCompleted,
   }) {
     _handler.onToggleFavorite = onToggleFavorite;
-    _handler.onPlayPauseRequested = onPlayPauseRequested;
+    _handler.onPlayRequested = onPlayRequested;
+    _handler.onPauseRequested = onPauseRequested;
     _handler.onStopRequested = onStopRequested;
     _handler.onPreviousRequested = onPreviousRequested;
     _handler.onNextRequested = onNextRequested;
@@ -79,18 +82,31 @@ class PlaybackEngine {
     );
   }
 
+  void detachCallbacks() {
+    _handler.onToggleFavorite = null;
+    _handler.onPlayRequested = null;
+    _handler.onPauseRequested = null;
+    _handler.onStopRequested = null;
+    _handler.onPreviousRequested = null;
+    _handler.onNextRequested = null;
+    _handler.onTrackCompleted = null;
+  }
+
   Future<void> play() => _handler.playDirect();
   Future<void> pause() => _handler.pauseDirect();
   Future<void> stop() => _handler.stopDirect();
   Future<void> skipToNext() => _handler.skipToNextDirect();
   Future<void> skipToPrevious() => _handler.skipToPreviousDirect();
   Future<void> skipToQueueItem(int index) => _handler.skipToQueueItem(index);
-  Future<void> seek(Duration position) => player.seek(position);
+  Future<void> seek(Duration position) => _player.seek(position);
 
-  Future<void> setLoopMode(LoopMode mode) => player.setLoopMode(mode);
+  Future<void> setSpeed(double speed) => _player.setSpeed(speed);
+  Future<void> setPitch(double pitch) => _player.setPitch(pitch);
+
+  Future<void> setLoopMode(LoopMode mode) => _player.setLoopMode(mode);
 
   Future<void> setShuffleModeEnabled(bool enabled) =>
-      player.setShuffleModeEnabled(enabled);
+      _player.setShuffleModeEnabled(enabled);
 
   Future<void> moveQueueItem(int oldIndex, int newIndex) =>
       _handler.moveQueueItem(oldIndex, newIndex);
@@ -107,7 +123,7 @@ class PlaybackEngine {
     currentQueue[index] = item;
     _handler.queue.add(currentQueue);
 
-    final currentIndex = player.currentIndex;
+    final currentIndex = _player.currentIndex;
     if (currentIndex == index) {
       _handler.mediaItem.add(item);
     }

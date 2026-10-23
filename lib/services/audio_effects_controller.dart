@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
+import 'playback_engine.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
 import 'native_audio_bridge.dart';
@@ -15,7 +15,7 @@ import 'state_persistence.dart';
 /// native DSP contract, persisted settings and ReplayGain lifecycle. It does
 /// not know anything about folder navigation.
 class AudioEffectsController extends ChangeNotifier {
-  final AudioPlayer player;
+  final PlaybackEngine playback;
   final NativeAudioBridge nativeAudio;
   final ReplayGainRepository replayGainRepository;
   final String? Function() currentSongPath;
@@ -44,9 +44,10 @@ class AudioEffectsController extends ChangeNotifier {
   double _playbackSpeed = 1.0;
   double _playbackPitchSemitones = 0.0;
   Timer? _playbackRateSaveDebounce;
+  bool _disposed = false;
 
   AudioEffectsController({
-    required this.player,
+    required this.playback,
     required this.nativeAudio,
     required this.replayGainRepository,
     required this.currentSongPath,
@@ -97,8 +98,8 @@ class AudioEffectsController extends ChangeNotifier {
 
     try {
       await Future.wait([
-        player.setSpeed(_playbackSpeed),
-        player.setPitch(
+        playback.setSpeed(_playbackSpeed),
+        playback.setPitch(
           pow(2.0, _playbackPitchSemitones / 12.0).toDouble(),
         ),
       ]);
@@ -270,7 +271,8 @@ class AudioEffectsController extends ChangeNotifier {
     await _sendToneControls();
   }
 
-  Future<void> setReplayGainEnabled(bool enabled, SongModel? currentSong) async {
+  Future<void> setReplayGainEnabled(
+      bool enabled, SongModel? currentSong) async {
     if (_replayGainEnabled == enabled) return;
     _replayGainEnabled = enabled;
     await StatePersistence.saveReplayGainSettings(
@@ -339,7 +341,7 @@ class AudioEffectsController extends ChangeNotifier {
     if ((_playbackSpeed - normalized).abs() < 0.001) return;
     _playbackSpeed = normalized;
     notifyListeners();
-    await player.setSpeed(normalized);
+    await playback.setSpeed(normalized);
     _schedulePlaybackRateSave();
   }
 
@@ -348,7 +350,7 @@ class AudioEffectsController extends ChangeNotifier {
     if ((_playbackPitchSemitones - normalized).abs() < 0.001) return;
     _playbackPitchSemitones = normalized;
     notifyListeners();
-    await player.setPitch(pow(2.0, normalized / 12.0).toDouble());
+    await playback.setPitch(pow(2.0, normalized / 12.0).toDouble());
     _schedulePlaybackRateSave();
   }
 
@@ -370,8 +372,8 @@ class AudioEffectsController extends ChangeNotifier {
     notifyListeners();
 
     await Future.wait([
-      player.setSpeed(1.0),
-      player.setPitch(1.0),
+      playback.setSpeed(1.0),
+      playback.setPitch(1.0),
       StatePersistence.savePlaybackRate(speed: 1.0, pitchSemitones: 0.0),
     ]);
   }
@@ -386,7 +388,8 @@ class AudioEffectsController extends ChangeNotifier {
     await _sendToneControls();
 
     final metadata = await replayGainRepository.read(song.data);
-    if (serial != _replayGainRequestSerial ||
+    if (_disposed ||
+        serial != _replayGainRequestSerial ||
         !_replayGainEnabled ||
         currentSongPath() != song.data) {
       return;
@@ -428,7 +431,14 @@ class AudioEffectsController extends ChangeNotifier {
   }
 
   @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
   void dispose() {
+    _disposed = true;
+    _replayGainRequestSerial++;
     _playbackRateSaveDebounce?.cancel();
     super.dispose();
   }

@@ -80,6 +80,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
   final Map<int, Uri> _systemArtworkUriCache = {};
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  bool _disposed = false;
   bool _navigationBusy = false;
   Future<void> Function()? _pendingNavigationAction;
 
@@ -159,7 +161,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _nativeAudio = NativeAudioBridge();
     _playback = PlaybackEngine(handler);
     _effects = AudioEffectsController(
-      player: _playback.player,
+      playback: _playback,
       nativeAudio: _nativeAudio,
       replayGainRepository: ReplayGainRepository(_nativeAudio),
       currentSongPath: () => _currentSong?.data,
@@ -175,22 +177,17 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       onMediaChanged: _scheduleLibraryRefresh,
       onBluetoothConnected: _onBluetoothConnected,
     );
-    // Escuchar acciones del widget
-    HomeWidget.widgetClicked.listen((uri) {});
-    const MethodChannel('com.jglhomer.player/widget_actions')
-        .setMethodCallHandler((call) async {
-      if (call.method == 'widget_action') {
-        switch (call.arguments as String) {
-          case 'previous':
-            previousSmart();
-            break;
-          case 'play_pause':
-            togglePlayPause();
-            break;
-          case 'next':
-            next();
-            break;
-        }
+    _nativeAudio.attachWidgetActions((action) async {
+      switch (action) {
+        case 'previous':
+          await previousSmart();
+          break;
+        case 'play_pause':
+          await togglePlayPause();
+          break;
+        case 'next':
+          await next();
+          break;
       }
     });
   }
@@ -286,16 +283,16 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    _listenToPlayer();
+    if (!_disposed) _listenToPlayer();
   }
 
   void _listenToPlayer() {
-    _playback.currentIndexStream.listen((index) async {
+    _subscriptions.add(_playback.currentIndexStream.listen((index) async {
       if (index != null && index < _currentPlaylist.length) {
         final currentTag = _playback.currentSourceTag;
         if (currentTag is MediaItem) {
-          final foundIndex =
-              _currentPlaylist.indexWhere((s) => s.data == currentTag.id);
+          final foundIndex = _queuePolicy.resolveIndex(
+              _currentPlaylist, index, currentTag.id);
           if (foundIndex != -1) {
             _currentIndex = foundIndex;
             _currentSong = _currentPlaylist[_currentIndex];
@@ -359,7 +356,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
         // Cargar portada de forma diferida solo para la canción actual (evita OutOfMemoryError)
         if (_currentSong != null) {
-          final artUri = await _systemArtworkUriForSong(_currentSong!);
+          final artworkSong = _currentSong!;
+          final artUri = await _systemArtworkUriForSong(artworkSong);
+          if (_disposed || _currentSong?.data != artworkSong.data) return;
           final queueItems = _playback.queue;
           if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
             final currentItem = queueItems[_currentIndex];
@@ -369,9 +368,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           }
         }
       }
-    });
+    }));
 
-    _playback.androidAudioSessionIdStream.listen((sessionId) async {
+    _subscriptions.add(_playback.androidAudioSessionIdStream.listen((sessionId) async {
       if (sessionId != null && sessionId != 0) {
         try {
           await _effects.onAudioSessionReady();
@@ -382,30 +381,38 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           debugPrint('Error restoring native audio controls: $e');
         }
       }
-    });
+    }));
 
     _playback.configureCallbacks(
       onToggleFavorite: () {
         if (_currentSong != null) toggleFavorite(_currentSong!);
       },
-      onPlayPauseRequested: togglePlayPause,
+      onPlayRequested: () async {
+        await _playback.play();
+        await _updateHomeWidget();
+      },
+      onPauseRequested: () async {
+        await _playback.pause();
+        await savePlaybackStateImmediate();
+        await _updateHomeWidget();
+      },
       onStopRequested: stop,
       onPreviousRequested: previousSmart,
       onNextRequested: next,
-      onTrackCompleted: () {
+      onTrackCompleted: () async {
         switch (_playbackMode) {
           case PlaybackMode.folder:
-            unawaited(playNextFolder());
+            await playNextFolder();
             break;
           case PlaybackMode.album:
-            unawaited(playNextAlbum());
+            await playNextAlbum();
             break;
           case PlaybackMode.artist:
-            unawaited(playNextArtist());
+            await playNextArtist();
             break;
           case PlaybackMode.playlist:
           case PlaybackMode.favorites:
-            unawaited(stop());
+            await stop();
             break;
           case PlaybackMode.global:
             break;
@@ -508,6 +515,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     // ── 2. SQLite: solo operaciones necesarias ───────────────────────────
     // Usamos deleteByPaths (diff ya calculado) — sin segunda consulta SELECT.
+    if (diff.hasChanges) _effects.replayGainRepository.clear();
+
     if (diff.toDelete.isNotEmpty) {
       await LibraryDatabase.instance.deleteByPaths(diff.toDelete);
     }
@@ -541,6 +550,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
     }
+
+    if (diff.hasChanges) _effects.replayGainRepository.clear();
 
     if (diff.toDelete.isNotEmpty) {
       structureChanged = true;
@@ -774,6 +785,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await stop();
       _currentIndex = 0;
       _currentSong = null;
+      await _playback.replacePlaylist([], 0, Duration.zero, shouldPlay: false);
+      await StatePersistence.clearPlaybackState();
       return;
     }
 
@@ -1314,10 +1327,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       await _updateHomeWidget();
     } catch (e) {
       debugPrint("Error loading playlist: $e");
-      if (_currentPlaylist.length > 1) {
-        await Future.delayed(const Duration(seconds: 1));
-        await next();
-      }
+      // AudioHandler alone owns decode-error recovery.
     }
 
     // Cargar la carátula real de la canción actual en segundo plano,
@@ -1766,12 +1776,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> removeFromQueue(int index) async {
+    if (index < 0 || index >= _currentPlaylist.length) return;
     final removedCurrent = index == _currentIndex;
     _currentPlaylist.removeAt(index);
     if (_currentPlaylist.isEmpty) {
       await stop();
       _currentIndex = 0;
       _currentSong = null;
+      await _playback.replacePlaylist([], 0, Duration.zero, shouldPlay: false);
+      await StatePersistence.clearPlaybackState();
     } else {
       if (removedCurrent) {
         _currentIndex = index.clamp(0, _currentPlaylist.length - 1);
@@ -1788,7 +1801,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> insertNextInQueue(SongModel song) async {
-    final insertIndex = _currentIndex + 1;
+    final insertIndex = (_currentIndex + 1).clamp(0, _currentPlaylist.length);
     _currentPlaylist.insert(insertIndex, song);
     await _replacePlaybackQueue(
       position: _playback.position,
@@ -2066,6 +2079,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           await stop();
           _currentIndex = 0;
           _currentSong = null;
+          await _playback.replacePlaylist([], 0, Duration.zero, shouldPlay: false);
+          await StatePersistence.clearPlaybackState();
           // Bug #2 fix: notificar inmediatamente cuando la lista queda vacía
           notifyListeners();
         } else if (wasCurrentSong) {
@@ -2567,7 +2582,17 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       );
 
   @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
   void dispose() {
+    _disposed = true;
+    for (final subscription in _subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _playback.detachCallbacks();
     WidgetsBinding.instance.removeObserver(this);
     _libraryRefreshDebounce?.cancel();
     _saveDebounce?.cancel();

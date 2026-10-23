@@ -10,6 +10,15 @@ import 'package:on_audio_query/on_audio_query.dart';
 class PlaybackQueuePolicy {
   const PlaybackQueuePolicy();
 
+  int resolveIndex(List<SongModel> songs, int nativeIndex, String path) {
+    if (nativeIndex >= 0 &&
+        nativeIndex < songs.length &&
+        songs[nativeIndex].data == path) {
+      return nativeIndex;
+    }
+    return songs.indexWhere((song) => song.data == path);
+  }
+
   bool hasSameSongOrder(List<SongModel> first, List<SongModel> second) {
     if (first.length != second.length) return false;
     for (var i = 0; i < first.length; i++) {
@@ -30,8 +39,16 @@ class PlaybackQueuePolicy {
     List<SongModel> library,
   ) {
     if (songs.length != library.length) return false;
-    final libraryIds = library.map((song) => song.id).toSet();
-    return songs.every((song) => libraryIds.contains(song.id));
+    final counts = <int, int>{};
+    for (final song in library) {
+      counts.update(song.id, (count) => count + 1, ifAbsent: () => 1);
+    }
+    for (final song in songs) {
+      final count = counts[song.id] ?? 0;
+      if (count == 0) return false;
+      counts[song.id] = count - 1;
+    }
+    return true;
   }
 
   List<SongModel> buildSmartShuffleQueue(

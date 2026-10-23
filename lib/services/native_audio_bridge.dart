@@ -30,7 +30,21 @@ class NativeAudioBridge {
     });
   }
 
-  void detachCallbacks() => _channel.setMethodCallHandler(null);
+  static const _widgetChannel =
+      MethodChannel('com.jglhomer.player/widget_actions');
+
+  void attachWidgetActions(Future<void> Function(String) onAction) {
+    _widgetChannel.setMethodCallHandler((call) async {
+      if (call.method == 'widget_action' && call.arguments is String) {
+        await onAction(call.arguments as String);
+      }
+    });
+  }
+
+  void detachCallbacks() {
+    _channel.setMethodCallHandler(null);
+    _widgetChannel.setMethodCallHandler(null);
+  }
 
   Future<void> setEpicenterEnabled(bool enabled) {
     return _channel.invokeMethod<void>(

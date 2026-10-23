@@ -29,6 +29,14 @@ void main() {
 
   const policy = PlaybackQueuePolicy();
 
+  test('native index distinguishes repeated occurrences of the same song', () {
+    final a = song(1, 'A');
+    final b = song(2, 'B');
+    expect(policy.resolveIndex([a, b, a], 2, a.data), 2);
+    expect(policy.resolveIndex([a, b], 0, b.data), 1);
+    expect(policy.resolveIndex([a, b], 9, '/missing'), -1);
+  });
+
   test('same order requires the same IDs in the same positions', () {
     final a = [song(1, 'A'), song(2, 'B'), song(3, 'C')];
     final b = [song(1, 'A'), song(2, 'B'), song(3, 'C')];
@@ -40,6 +48,10 @@ void main() {
 
   test('whole-library detection ignores incoming order but not membership', () {
     final library = [song(1, 'A'), song(2, 'B'), song(3, 'C')];
+    expect(
+        policy.containsWholeLibrary(
+            [library[0], library[0], library[1]], library),
+        isFalse);
 
     expect(
       policy.containsWholeLibrary(
@@ -54,7 +66,8 @@ void main() {
     );
   });
 
-  test('smart shuffle keeps the selected song first and preserves every song', () {
+  test('smart shuffle keeps the selected song first and preserves every song',
+      () {
     final songs = [
       song(1, 'A'),
       song(2, 'A'),
@@ -74,7 +87,9 @@ void main() {
     expect(shuffled.length, songs.length);
   });
 
-  test('smart shuffle avoids repeating the current artist when alternatives exist', () {
+  test(
+      'smart shuffle avoids repeating the current artist when alternatives exist',
+      () {
     final songs = [
       song(1, 'A'),
       song(2, 'A'),
