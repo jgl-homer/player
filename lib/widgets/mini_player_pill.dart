@@ -40,7 +40,7 @@ class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProvid
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final isCurrentSong = audioProvider.currentSong?.id == widget.song.id;
-    final isPlaying = isCurrentSong && audioProvider.player.playing;
+    final isPlaying = isCurrentSong && audioProvider.isPlaying;
 
     return GestureDetector(
       onTapDown: (_) => _controller.forward(),

@@ -300,6 +300,9 @@ class StatePersistence {
         intensity >= 95.0;
   }
 
+  static const _playbackSnapshotKey = 'playback_snapshot_v2';
+  static Future<void> _playbackSave = Future.value();
+
   static Future<void> savePlaybackState({
     required PlaybackMode mode,
     String? folderPath,
@@ -310,40 +313,103 @@ class StatePersistence {
     required int positionMs,
     bool isShuffle = false,
     String loopMode = 'off',
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_modeKey, mode.toString());
+  }) {
+    final paths =
+        playlistPaths == null ? null : List<String>.from(playlistPaths);
+    final write = _playbackSave.then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_modeKey, mode.toString());
 
-    if (folderPath != null) {
-      await prefs.setString(_folderPathKey, folderPath);
-    } else {
-      await prefs.remove(_folderPathKey);
-    }
+      if (folderPath != null) {
+        await prefs.setString(_folderPathKey, folderPath);
+      } else {
+        await prefs.remove(_folderPathKey);
+      }
 
-    if (contextId != null) {
-      await prefs.setString(_contextIdKey, contextId);
-    } else {
-      await prefs.remove(_contextIdKey);
-    }
+      if (contextId != null) {
+        await prefs.setString(_contextIdKey, contextId);
+      } else {
+        await prefs.remove(_contextIdKey);
+      }
 
-    await prefs.setString(_songPathKey, songPath);
-    if (trackId != null) {
-      await prefs.setInt(_trackIdKey, trackId);
-    } else {
-      await prefs.remove(_trackIdKey);
-    }
-    if (playlistPaths != null) {
-      await prefs.setStringList(_playlistKey, playlistPaths);
-    } else {
-      await prefs.remove(_playlistKey);
-    }
-    await prefs.setInt(_positionKey, positionMs);
-    await prefs.setBool(_shuffleKey, isShuffle);
-    await prefs.setString(_loopModeKey, loopMode);
+      await prefs.setString(_songPathKey, songPath);
+      if (trackId != null) {
+        await prefs.setInt(_trackIdKey, trackId);
+      } else {
+        await prefs.remove(_trackIdKey);
+      }
+      if (playlistPaths != null) {
+        await prefs.setStringList(_playlistKey, paths!);
+      } else {
+        await prefs.remove(_playlistKey);
+      }
+      await prefs.setInt(_positionKey, positionMs);
+      await prefs.setBool(_shuffleKey, isShuffle);
+      await prefs.setString(_loopModeKey, loopMode);
+      // One complete snapshot prevents mixed track/position/context after a kill.
+      await prefs.setString(
+          _playbackSnapshotKey,
+          jsonEncode({
+            'mode': mode.toString(),
+            'folderPath': folderPath,
+            'contextId': contextId,
+            'songPath': songPath,
+            'trackId': trackId,
+            'playlistPaths': paths ?? <String>[],
+            'positionMs': positionMs,
+            'isShuffle': isShuffle,
+            'loopMode': loopMode,
+          }));
+    });
+    _playbackSave = write.catchError((_) {});
+    return write;
+  }
+
+  static Future<void> clearPlaybackState() {
+    final write = _playbackSave.then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _playbackSnapshotKey,
+          jsonEncode({
+            'mode': PlaybackMode.global.toString(),
+            'songPath': null,
+            'trackId': null,
+            'folderPath': null,
+            'contextId': null,
+            'playlistPaths': <String>[],
+            'positionMs': 0,
+            'isShuffle': false,
+            'loopMode': 'off',
+          }));
+      for (final key in [
+        _songPathKey,
+        _trackIdKey,
+        _playlistKey,
+        _positionKey,
+        _folderPathKey,
+        _contextIdKey
+      ]) {
+        await prefs.remove(key);
+      }
+    });
+    _playbackSave = write.catchError((_) {});
+    return write;
   }
 
   static Future<Map<String, dynamic>> loadPlaybackState() async {
     final prefs = await SharedPreferences.getInstance();
+    final snapshot = prefs.getString(_playbackSnapshotKey);
+    if (snapshot != null) {
+      try {
+        final saved = Map<String, dynamic>.from(jsonDecode(snapshot) as Map);
+        saved['mode'] = PlaybackMode.values.firstWhere(
+            (mode) => mode.toString() == saved['mode'],
+            orElse: () => PlaybackMode.global);
+        return saved;
+      } catch (_) {
+        // Keep backward compatibility with legacy state or an unreadable snapshot.
+      }
+    }
     final modeStr = prefs.getString(_modeKey);
     PlaybackMode mode = PlaybackMode.global;
     for (final m in PlaybackMode.values) {

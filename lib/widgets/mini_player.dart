@@ -98,7 +98,7 @@ class MiniPlayer extends StatelessWidget {
                       onPressed: () => audioProvider.toggleFavorite(song),
                     ),
                     StreamBuilder<bool>(
-                      stream: audioProvider.player.playingStream,
+                      stream: audioProvider.playingStream,
                       builder: (context, snapshot) {
                         final isPlaying = snapshot.data ?? false;
                         return IconButton(
@@ -1250,8 +1250,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
               child: Slider(
                 value: progress.inMilliseconds.toDouble().clamp(0, maxMs),
                 max: maxMs,
-                onChanged: (value) => audioProvider.player
-                    .seek(Duration(milliseconds: value.round())),
+                onChanged: (value) =>
+                    audioProvider.seek(Duration(milliseconds: value.round())),
               ),
             ),
             Padding(
@@ -1285,8 +1285,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
         IconButton(
           tooltip: 'Retroceder 10 segundos',
           onPressed: () {
-            final current = audioProvider.player.position;
-            audioProvider.player.seek(current - const Duration(seconds: 10));
+            final current = audioProvider.currentPosition;
+            audioProvider.seek(current - const Duration(seconds: 10));
           },
           icon: Icon(Icons.replay_10_rounded,
               color: Colors.white, size: sideSize),
@@ -1298,7 +1298,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
               color: Colors.white, size: compact ? 38 : 52),
         ),
         StreamBuilder<bool>(
-          stream: audioProvider.player.playingStream,
+          stream: audioProvider.playingStream,
           builder: (context, snapshot) {
             final playing = snapshot.data ?? false;
             return Container(
@@ -1329,8 +1329,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
         IconButton(
           tooltip: 'Avanzar 10 segundos',
           onPressed: () {
-            final current = audioProvider.player.position;
-            audioProvider.player.seek(current + const Duration(seconds: 10));
+            final current = audioProvider.currentPosition;
+            audioProvider.seek(current + const Duration(seconds: 10));
           },
           icon: Icon(Icons.forward_10_rounded,
               color: Colors.white, size: sideSize),
@@ -1467,7 +1467,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
           padding: const EdgeInsets.only(bottom: 6.0),
           child: _timestampedLyrics(
             result.lines,
-            audioProvider.player.positionStream,
+            audioProvider.positionStream,
           ),
         );
       },

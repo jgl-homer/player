@@ -12,86 +12,123 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   Future<void> _playlistMutation = Future.value();
 
   VoidCallback? onToggleFavorite;
-  VoidCallback? onTrackCompleted;
-  FutureOr<void> Function()? onPlayPauseRequested;
+  FutureOr<void> Function()? onTrackCompleted;
+  FutureOr<void> Function()? onPlayRequested;
+  FutureOr<void> Function()? onPauseRequested;
   FutureOr<void> Function()? onStopRequested;
   FutureOr<void> Function()? onPreviousRequested;
   FutureOr<void> Function()? onNextRequested;
-  bool _isAdvancing = false;
-  Timer? _debounceTimer;
+  final List<StreamSubscription<dynamic>> _subscriptions = [];
+  int _queueRevision = 0;
+  String? _handledCompletion;
+  bool _replacing = false;
+  int? _recoveringRevision;
+  bool get _recovering => _recoveringRevision != null;
+  bool _disposed = false;
 
-  MyAudioHandler() {
-    _player = AudioPlayer();
+  MyAudioHandler({AudioPlayer? player}) {
+    _player = player ?? AudioPlayer(maxSkipsOnError: 0);
     _init();
   }
 
-  Future<int?> getAndroidAudioSessionId() async {
-    return _player.androidAudioSessionId;
-  }
+  Future<int?> getAndroidAudioSessionId() async =>
+      _player.androidAudioSessionId;
 
-  Future<void> _init() async {
-    // 1. Propagate player state to notification
-    _player.playbackEventStream.listen(_broadcastState);
-
-    // 2. Update MediaItem when song changes
-    _player.currentIndexStream.listen((index) {
-      if (index != null && index < queue.value.length) {
-        mediaItem.add(queue.value[index]);
-      }
-    });
-
-    // 3. Fallback completion detection: Position >= Duration
-    _player.positionStream.listen((position) {
-      if (_player.loopMode != LoopMode.off) return;
-      if (!_player.playing) return;
-      final duration = _player.duration;
-      if (duration != null &&
-          position >= duration &&
-          position.inMilliseconds > 0) {
-        _triggerNextTrackSafe();
-      }
-    });
-
-    // 4. Listen to standard completed state as well
-    _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed &&
-          _player.loopMode == LoopMode.off) {
-        _triggerNextTrackSafe();
-      }
-    });
-
-    // 5. Error listener: saltar automáticamente canciones no reproducibles
-    // Esto previene el bug de "audio simulado" al cambiar carpetas cuando
-    // un archivo tiene ruta inválida o está dañado.
-    _player.playbackEventStream.listen(
-      (_) {},
-      onError: (Object e, StackTrace st) {
-        debugPrint('[AudioHandler] Error de reproducción, saltando pista: $e');
-        _triggerNextTrackSafe();
-      },
-    );
-  }
-
-  void _triggerNextTrackSafe() {
-    if (_isAdvancing) return;
-    _isAdvancing = true;
-
-    // Prevent multiple triggers within 1.5 seconds
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 1500), () {
-      _isAdvancing = false;
-    });
-
-    if (_player.hasNext) {
-      _player.seekToNext();
-    } else {
-      final onCompleted = onTrackCompleted;
-      if (onCompleted != null) {
-        onCompleted();
+  void _init() {
+    _subscriptions.add(_player.playbackEventStream.listen(_broadcastState,
+        onError: (Object error, StackTrace stack) {
+      debugPrint('[AudioHandler] Playback error: $error');
+      if (!_replacing) unawaited(_recoverFromError(_queueRevision));
+    }));
+    // just_audio 0.10 exposes decoder failures as errorStream data, not
+    // playbackEventStream onError exceptions.
+    _subscriptions.add(_player.errorStream.listen((error) {
+      if (_replacing ||
+          (error.index != null && error.index != _player.currentIndex)) {
         return;
       }
-      stop();
+      unawaited(_recoverFromError(_queueRevision));
+    }));
+    _subscriptions.add(_player.currentIndexStream.listen((index) {
+      _syncCurrentItem();
+    }));
+    // Native playlists advance between items. Only the terminal completed
+    // state requests contextual navigation; position is never a next trigger.
+    _subscriptions.add(_player.playerStateStream.listen((state) {
+      if (state.processingState != ProcessingState.completed) {
+        _handledCompletion = null;
+        return;
+      }
+      if (_replacing ||
+          _recovering ||
+          !state.playing ||
+          _player.loopMode != LoopMode.off ||
+          _player.hasNext) {
+        return;
+      }
+      final key = '$_queueRevision:${_player.currentIndex}';
+      if (_handledCompletion == key) return;
+      _handledCompletion = key;
+      unawaited(_completeQueue());
+    }));
+  }
+
+  Future<void> _completeQueue() async {
+    try {
+      final callback = onTrackCompleted;
+      if (callback != null) {
+        await callback();
+      } else {
+        await stopDirect();
+      }
+    } catch (error) {
+      debugPrint('[AudioHandler] Completion failed: $error');
+      await stopDirect();
     }
+  }
+
+  // A failed decoder is reloaded explicitly. Bound recovery to the remaining
+  // queue (even in loop mode), so an all-invalid queue cannot spin forever.
+  Future<void> _recoverFromError(int revision, {bool? shouldPlay}) async {
+    if (_recoveringRevision == revision ||
+        _disposed ||
+        revision != _queueRevision) {
+      return;
+    }
+    _recoveringRevision = revision;
+    final resume = shouldPlay ?? _player.playing;
+    var candidate = (_player.currentIndex ?? 0) + 1;
+    try {
+      await _serializePlaylistMutation(() async {
+        while (!_disposed &&
+            revision == _queueRevision &&
+            candidate < queue.value.length) {
+          try {
+            await _player.setAudioSource(_playlist,
+                initialIndex: candidate, initialPosition: Duration.zero);
+            _syncCurrentItem();
+            if (resume && revision == _queueRevision) await playDirect();
+            return;
+          } catch (error) {
+            debugPrint(
+                '[AudioHandler] Unplayable queue item $candidate: $error');
+            candidate++;
+          }
+        }
+        if (revision == _queueRevision) await stopDirect();
+      });
+    } finally {
+      if (_recoveringRevision == revision) _recoveringRevision = null;
+    }
+  }
+
+  void _syncCurrentItem() {
+    if (_replacing) return;
+    final index = _player.currentIndex;
+    mediaItem.add(index != null && index >= 0 && index < queue.value.length
+        ? queue.value[index]
+        : null);
+    _broadcastState(_player.playbackEvent);
   }
 
   void _broadcastState(PlaybackEvent event) {
@@ -104,7 +141,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           MediaControl.skipToNext,
           MediaControl.stop,
         ],
-        systemActions: const {},
+        systemActions: const {MediaAction.seek},
         androidCompactActionIndices: const [0, 1, 2],
         processingState: const {
               ProcessingState.idle: AudioProcessingState.idle,
@@ -125,7 +162,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> play() async {
-    final action = onPlayPauseRequested;
+    final action = onPlayRequested;
     if (action != null) {
       await action();
       return;
@@ -181,7 +218,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> pause() async {
-    final action = onPlayPauseRequested;
+    final action = onPauseRequested;
     if (action != null) {
       await action();
       return;
@@ -230,8 +267,10 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   }
 
   @override
-  Future<void> skipToQueueItem(int index) =>
-      _player.seek(Duration.zero, index: index);
+  Future<void> skipToQueueItem(int index) async {
+    if (index < 0 || index >= queue.value.length) return;
+    await _player.seek(Duration.zero, index: index);
+  }
 
   @override
   Future<void> updateMediaItem(MediaItem mediaItem) async {
@@ -241,6 +280,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       final updatedQueue = List<MediaItem>.from(currentQueue);
       updatedQueue[index] = mediaItem;
       queue.add(updatedQueue);
+      _syncCurrentItem();
     }
     if (this.mediaItem.value?.id == mediaItem.id) {
       this.mediaItem.add(mediaItem);
@@ -249,23 +289,26 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
   @override
   Future<void> updateQueue(List<MediaItem> queue) async {
-    this.queue.add(queue);
+    await replacePlaylist(queue, _player.currentIndex ?? 0, _player.position,
+        shouldPlay: _player.playing);
   }
 
   Future<void> insertQueueItems(int index, List<MediaItem> items) async {
     if (items.isEmpty) return;
     await _serializePlaylistMutation(() async {
       if (queue.value.isEmpty) {
-        await replacePlaylist(items, 0, Duration.zero, shouldPlay: false);
+        await _replacePlaylist(items, 0, Duration.zero,
+            shouldPlay: false, revision: ++_queueRevision);
         return;
       }
 
       final safeIndex = index.clamp(0, queue.value.length);
       final sources = items.map(_createAudioSource).toList();
-      await _player.insertAudioSources(safeIndex, sources);
+      await _playlist.insertAll(safeIndex, sources);
       final updatedQueue = List<MediaItem>.from(queue.value)
         ..insertAll(safeIndex, items);
       queue.add(updatedQueue);
+      _syncCurrentItem();
     });
   }
 
@@ -283,11 +326,13 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         await _playlist.move(oldIndex, newIndex);
       } catch (e) {
         debugPrint('[AudioHandler] moveQueueItem error: $e');
+        rethrow;
       }
       final updatedQueue = List<MediaItem>.from(queue.value);
       final moved = updatedQueue.removeAt(oldIndex);
       updatedQueue.insert(newIndex, moved);
       queue.add(updatedQueue);
+      _syncCurrentItem();
     });
   }
 
@@ -302,7 +347,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         final currentIndex =
             currentQueue.indexWhere((item) => item.id == desiredId);
         if (currentIndex == -1 || currentIndex == targetIndex) continue;
-        await _player.moveAudioSource(currentIndex, targetIndex);
+        await _playlist.move(currentIndex, targetIndex);
         final moved = currentQueue.removeAt(currentIndex);
         currentQueue.insert(targetIndex, moved);
       }
@@ -334,51 +379,43 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     Duration initialPosition, {
     required bool shouldPlay,
   }) async {
-    var hasQueue = false;
-    var sourceLoaded = false;
+    final revision = ++_queueRevision;
+    await _serializePlaylistMutation(() => _replacePlaylist(
+        newQueue, initialIndex, initialPosition,
+        shouldPlay: shouldPlay, revision: revision));
+    if (revision != _queueRevision || _disposed) return;
+  }
 
-    await _serializePlaylistMutation(() async {
-      // Safe Mode Switching: rebuild ConcatenatingAudioSource entirely to prevent caching bugs
+  Future<void> _replacePlaylist(
+      List<MediaItem> newQueue, int initialIndex, Duration initialPosition,
+      {required bool shouldPlay, required int revision}) async {
+    if (_disposed || revision != _queueRevision) return;
+    _replacing = true;
+    _handledCompletion = null;
+    var loaded = false;
+    try {
       await _player.stop();
-
+      queue.add(List<MediaItem>.unmodifiable(newQueue));
+      _playlist = ConcatenatingAudioSource(
+          children: newQueue.map(_createAudioSource).toList());
       if (newQueue.isEmpty) {
-        queue.add([]);
-        mediaItem.add(null);
+        await _player.setAudioSource(_playlist);
         return;
       }
-      hasQueue = true;
-
-      final safeIndex = initialIndex.clamp(0, newQueue.length - 1);
-      queue.add(newQueue);
-      mediaItem.add(newQueue[safeIndex]);
-
-      _playlist = ConcatenatingAudioSource(
-        children: newQueue.map(_createAudioSource).toList(),
-      );
-
-      // Explicitly set the initial index down at the native source creation!
-      try {
-        await _player.setAudioSource(
-          _playlist,
-          initialIndex: safeIndex,
-          initialPosition: initialPosition,
-        );
-        sourceLoaded = true;
-      } catch (e, st) {
-        debugPrint(
-          '[AudioHandler] Unable to load audio source, skipping track: $e',
-        );
-        debugPrint('$st');
-        _triggerNextTrackSafe();
-      }
-
-      if (!shouldPlay && sourceLoaded) {
-        _broadcastState(_player.playbackEvent);
-      }
-    });
-
-    if (shouldPlay && hasQueue && sourceLoaded) {
-      await _player.play();
+      final index = initialIndex.clamp(0, newQueue.length - 1);
+      await _player.setAudioSource(_playlist,
+          initialIndex: index, initialPosition: initialPosition);
+      loaded = true;
+    } catch (error) {
+      debugPrint('[AudioHandler] Unable to load queue: $error');
+      // Enqueue recovery after this mutation releases the serializer.
+      unawaited(_recoverFromError(revision, shouldPlay: shouldPlay));
+    } finally {
+      _replacing = false;
+      _syncCurrentItem();
+    }
+    if (loaded && shouldPlay && revision == _queueRevision && !_disposed) {
+      await playDirect();
     }
   }
 
@@ -393,11 +430,32 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
         tag: item,
       );
 
-  Future<void> playDirect() => _player.play();
+  Future<void> playDirect() async {
+    // just_audio's play future completes at pause/end, not at start.
+    // Never hold the navigation/playlist serializer for the whole track.
+    final revision = _queueRevision;
+    unawaited(_player.play().catchError((Object error, StackTrace stack) {
+      debugPrint('[AudioHandler] Play failed: $error');
+      return _recoverFromError(revision);
+    }));
+  }
 
-  Future<void> pauseDirect() => _player.pause();
+  Future<void> dispose() async {
+    _disposed = true;
+    _queueRevision++;
+    for (final subscription in _subscriptions) {
+      await subscription.cancel();
+    }
+    await _player.dispose();
+  }
+
+  Future<void> pauseDirect() async {
+    _queueRevision++;
+    await _player.pause();
+  }
 
   Future<void> stopDirect() async {
+    _queueRevision++;
     await _player.stop();
     await super.stop();
   }

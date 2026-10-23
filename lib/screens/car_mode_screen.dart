@@ -232,7 +232,7 @@ class _CarModeControls extends StatelessWidget {
                           value: value,
                           max: maxMs <= 0 ? 1.0 : maxMs,
                           onChanged: (nextValue) {
-                            audioProvider.player.seek(
+                            audioProvider.seek(
                               Duration(milliseconds: nextValue.toInt()),
                             );
                           },
@@ -274,7 +274,7 @@ class _CarModeControls extends StatelessWidget {
                     onPressed: audioProvider.previousSmart,
                   ),
                   StreamBuilder<bool>(
-                    stream: audioProvider.player.playingStream,
+                    stream: audioProvider.playingStream,
                     builder: (context, snapshot) {
                       final isPlaying = snapshot.data ?? false;
                       return _RoundControl(

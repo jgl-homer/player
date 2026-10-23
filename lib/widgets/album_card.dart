@@ -41,7 +41,7 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final isCurrentSong = audioProvider.currentSong?.id == widget.song.id;
-    final isPlaying = isCurrentSong && audioProvider.player.playing;
+    final isPlaying = isCurrentSong && audioProvider.isPlaying;
     final isFavorite = audioProvider.isFavorite(widget.song.id);
 
     return GestureDetector(
