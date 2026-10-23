@@ -120,5 +120,10 @@ Los APK debug y release compilaron correctamente. Se repitió la compilación tr
 - `lib/services/state_persistence.dart`: instantánea y serialización.
 - `plugins/just_audio_epicenter/android/src/main/java/com/ryanheise/just_audio/AudioPlayer.java`: WMA y bloqueo de offload.
 - `plugins/just_audio_epicenter/android/src/main/java/com/ryanheise/just_audio/WmaPcmPolicy.java`: política propia de precisión.
-- Tests Dart en `test/architecture` y `test/services`; tests Java/Kotlin `WmaPcmPolicyTest` y `PcmLifecycleTest`.
+- `test/architecture/playback_boundary_test.dart` y `test/architecture/folder_contract_test.dart`.
+- `test/services/audio_handler_test.dart`, `test/services/playback_state_test.dart`, `test/services/replay_gain_repository_test.dart` y `test/services/playback_queue_policy_test.dart`.
+- `plugins/just_audio_epicenter/android/src/test/java/com/ryanheise/just_audio/WmaPcmPolicyTest.java`.
+- `plugins/just_audio_epicenter/android/src/test/kotlin/com/ryanheise/just_audio/PcmLifecycleTest.kt`.
 - Este reporte. No se incluyen cambios generados por pub get en plataformas ajenas a Android.
+
+Detalle de los 36 tests Dart ejecutados: handler 11, estado persistido 3, repositorio ReplayGain 2, política de cola 5, arquitectura/carpetas 3, persistencia Epicenter 9 y selector visual de motores 3. Los dos últimos archivos existentes son `test/services/epicenter_persistence_test.dart` y `test/widgets/epicenter_engine_selector_test.dart`; se ejecutaron sin modificarlos.
