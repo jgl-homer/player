@@ -127,3 +127,9 @@ Los APK debug y release compilaron correctamente. Se repitió la compilación tr
 - Este reporte. No se incluyen cambios generados por pub get en plataformas ajenas a Android.
 
 Detalle de los 36 tests Dart ejecutados: handler 11, estado persistido 3, repositorio ReplayGain 2, política de cola 5, arquitectura/carpetas 3, persistencia Epicenter 9 y selector visual de motores 3. Los dos últimos archivos existentes son `test/services/epicenter_persistence_test.dart` y `test/widgets/epicenter_engine_selector_test.dart`; se ejecutaron sin modificarlos.
+
+## Firma release e integración autorizada — 23 de octubre de 2026
+
+Por solicitud posterior del propietario, se generó nuevamente el APK release con la clave release existente. `flutter build apk --release --no-pub` terminó correctamente y `apksigner verify --print-certs` validó la firma. El SHA-256 del certificado coincide con el del keystore release: `45d547301738d8e2e3449e58ec042c1a8fd20f7671996fdce2a7857804c10162`.
+
+La referencia a firma debug de la validación original describe el APK anterior; este nuevo APK usa la firma release. Las credenciales permanecen exclusivamente en `android/key.properties`, ignorado por Git. El propietario autorizó integrar el PR #8 en main sin reescribir historia. La compatibilidad de actualización con la app del teléfono está pendiente de prueba: ADB no detectaba un dispositivo al terminar esta compilación.
