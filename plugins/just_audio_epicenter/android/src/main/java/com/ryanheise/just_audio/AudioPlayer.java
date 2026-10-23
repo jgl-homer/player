@@ -709,29 +709,64 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
         }
     }
 
+    private static final Object WMA_CONVERSION_LOCK = new Object();
+
     private File convertWmaToWav(File input) throws IOException {
-        File output = new File(context.getCacheDir(), "just_audio_wma_"
+        synchronized (WMA_CONVERSION_LOCK) {
+            return convertWmaToWavLocked(input);
+        }
+    }
+
+    private File convertWmaToWavLocked(File input) throws IOException {
+        File output = new File(context.getCacheDir(), "just_audio_wma_v2_"
                 + cacheKey(input) + ".wav");
         if (output.isFile() && output.length() > 44) {
             Log.d(TAG, "Reusing cached WMA conversion: " + output.getAbsolutePath());
             return output;
         }
+        File partial = new File(output.getAbsolutePath() + ".partial.wav");
+        String identity = cacheKey(input);
         try {
+            String codec = probeWmaPcmCodec(input);
             String command = "-y -i " + quoteShellArgument(input.getAbsolutePath())
-                    + " -vn -acodec pcm_s16le " + quoteShellArgument(output.getAbsolutePath());
+                    + " -map 0:a:0 -vn -acodec " + codec + " "
+                    + quoteShellArgument(partial.getAbsolutePath());
             com.arthenica.ffmpegkit.Session session = FFmpegKit.execute(command);
             if (!ReturnCode.isSuccess(session.getReturnCode())) {
                 throw new IOException("FFmpeg WMA conversion failed: " + session.getFailStackTrace());
             }
 
+            if (!identity.equals(cacheKey(input)) || partial.length() <= 44) {
+                throw new IOException("Source changed or WAV is empty");
+            }
+            if (!partial.renameTo(output)) throw new IOException("Cannot publish WMA cache");
             return output;
         } catch (Exception e) {
-            if (!output.delete()) Log.w(TAG, "Unable to delete failed WMA conversion", e);
+            if (!partial.delete()) Log.w(TAG, "Unable to delete failed WMA conversion", e);
             if (e instanceof IOException) throw (IOException)e;
             throw new IOException("Unable to convert WMA", e);
         }
     }
 
+    private String probeWmaPcmCodec(File input) {
+        try {
+            com.arthenica.ffmpegkit.MediaInformation info =
+                com.arthenica.ffmpegkit.FFprobeKit.getMediaInformation(input.getAbsolutePath())
+                    .getMediaInformation();
+            if (info != null && info.getStreams() != null) {
+                for (com.arthenica.ffmpegkit.StreamInformation stream : info.getStreams()) {
+                    if (!"audio".equals(stream.getType())) continue;
+                    org.json.JSONObject properties = stream.getAllProperties();
+                    int bits = properties.optInt("bits_per_raw_sample", 0);
+                    if (bits <= 0) bits = properties.optInt("bits_per_sample", 0);
+                    return WmaPcmPolicy.codec(bits, properties.optString("sample_fmt", ""));
+                }
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "WMA precision unknown; preserve decoded float samples", error);
+        }
+        return "pcm_f32le";
+    }
     private String cacheKey(File input) throws IOException {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -890,7 +925,10 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             player.setTrackSelectionParameters(
                 player.getTrackSelectionParameters()
                     .buildUpon()
-                    .setAudioOffloadPreferences(audioOffloadPreferences)
+                    // Software processors may be enabled at any time. Offload would bypass them.
+                    .setAudioOffloadPreferences(new AudioOffloadPreferences.Builder()
+                        .setAudioOffloadMode(AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED)
+                        .build())
                     .build()
             );
             setAudioSessionId(player.getAudioSessionId());
