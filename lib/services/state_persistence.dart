@@ -533,6 +533,8 @@ class StatePersistence {
   // was browsing so the app reopens directly inside it instead of the root.
   static const String _lastBrowsedFolderKey = 'last_browsed_folder_path';
   static const String _recentSongsLimitKey = 'recent_songs_limit';
+  static const String _minimumSongDurationKey =
+      'minimum_song_duration_seconds_v1';
 
   static Future<void> saveLastBrowsedFolder(String? path) async {
     final prefs = await SharedPreferences.getInstance();
@@ -556,5 +558,15 @@ class StatePersistence {
   static Future<int> loadRecentSongsLimit() async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getInt(_recentSongsLimitKey) ?? 100).clamp(100, 10000);
+  }
+
+  static Future<void> saveMinimumSongDuration(int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_minimumSongDurationKey, seconds.clamp(0, 120));
+  }
+
+  static Future<int> loadMinimumSongDuration() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getInt(_minimumSongDurationKey) ?? 0).clamp(0, 120);
   }
 }

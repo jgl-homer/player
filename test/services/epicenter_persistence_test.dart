@@ -66,6 +66,14 @@ void main() {
     expect(await StatePersistence.loadPlaybackPitchSemitones(), -12.0);
   });
 
+  test('minimum song duration persists with safe bounds', () async {
+    await StatePersistence.saveMinimumSongDuration(45);
+    expect(await StatePersistence.loadMinimumSongDuration(), 45);
+
+    await StatePersistence.saveMinimumSongDuration(999);
+    expect(await StatePersistence.loadMinimumSongDuration(), 120);
+  });
+
   test('engine selection persists independently of tuning and enabled state',
       () async {
     SharedPreferences.setMockInitialValues({'epicenter_intensity': 72.0});

@@ -1150,7 +1150,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'AHORA SUENA',
+          audioProvider.queuePositionLabel,
           style: TextStyle(
             color: AppTheme.primaryColor,
             fontSize: landscape ? 12 : 11,
@@ -1375,7 +1375,11 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
               size: size, color: Colors.white60),
         ),
         IconButton(
-          tooltip: 'Repetición',
+          tooltip: switch (audioProvider.loopMode) {
+            LoopMode.all => 'Repetir carpeta',
+            LoopMode.one => 'Repetir una canción',
+            LoopMode.off => 'Repetición apagada',
+          },
           onPressed: audioProvider.toggleLoop,
           icon: Icon(
             audioProvider.loopMode == LoopMode.one

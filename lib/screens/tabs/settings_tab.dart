@@ -165,8 +165,63 @@ class SettingsTab extends StatelessWidget {
             storageKey: 'settings_library',
             icon: Icons.library_music_outlined,
             title: 'Biblioteca',
+            subtitle:
+                '${audioProvider.songCount} canciones · ${audioProvider.artistCount} artistas · ${audioProvider.albumCount} álbumes',
             child: Column(
               children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _LibraryStat(
+                        value: audioProvider.songCount,
+                        label: 'Canciones',
+                      ),
+                      _LibraryStat(
+                        value: audioProvider.artistCount,
+                        label: 'Artistas',
+                      ),
+                      _LibraryStat(
+                        value: audioProvider.albumCount,
+                        label: 'Álbumes',
+                      ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.timer_outlined,
+                      color: Colors.tealAccent),
+                  title: const Text(
+                    'Ignorar audios cortos',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    audioProvider.minimumSongDurationSeconds == 0
+                        ? 'Sin límite de duración mínima.'
+                        : 'Oculta audios de menos de ${audioProvider.minimumSongDurationSeconds} segundos.',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: audioProvider.minimumSongDurationSeconds,
+                    dropdownColor: const Color(0xFF252525),
+                    underline: const SizedBox.shrink(),
+                    style: const TextStyle(color: Colors.tealAccent),
+                    items: const [0, 5, 10, 15, 20, 30, 45, 60, 90, 120]
+                        .map(
+                          (seconds) => DropdownMenuItem(
+                            value: seconds,
+                            child: Text(seconds == 0 ? 'No' : '$seconds s'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (seconds) {
+                      if (seconds != null) {
+                        audioProvider.setMinimumSongDuration(seconds);
+                      }
+                    },
+                  ),
+                ),
                 SwitchListTile(
                   title: const Text('Mostrar letras',
                       style: TextStyle(color: Colors.white)),
@@ -336,6 +391,33 @@ class SettingsTab extends StatelessWidget {
         content: Text('Parámetros restablecidos'),
         behavior: SnackBarBehavior.floating,
       ),
+    );
+  }
+}
+
+class _LibraryStat extends StatelessWidget {
+  final int value;
+  final String label;
+
+  const _LibraryStat({required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '$value',
+          style: const TextStyle(
+            color: Colors.tealAccent,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
+      ],
     );
   }
 }

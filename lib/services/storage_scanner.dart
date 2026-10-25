@@ -18,7 +18,6 @@ class StorageScanProgress {
 }
 
 class StorageScanner {
-  static const int _progressBatchSize = 48;
   static const Set<String> _audioExtensions = {
     'mp3',
     'flac',
@@ -110,6 +109,32 @@ class StorageScanner {
     return true;
   }
 
+  static bool meetsMinimumDuration(
+    SongModel song,
+    int minimumDurationSeconds,
+  ) {
+    if (minimumDurationSeconds <= 0) return true;
+    final durationMs = song.duration ?? 0;
+    // MediaStore may omit duration for some formats. Keep those tracks so
+    // their metadata can be enriched later instead of hiding valid music.
+    return durationMs <= 0 || durationMs >= minimumDurationSeconds * 1000;
+  }
+
+  static bool isSongInFolder(SongModel song, String folderPath) {
+    String normalize(String value) {
+      var normalized = value.replaceAll('\\', '/');
+      while (normalized.endsWith('/')) {
+        normalized = normalized.substring(0, normalized.length - 1);
+      }
+      return normalized;
+    }
+
+    final songPath = normalize(song.data);
+    final separator = songPath.lastIndexOf('/');
+    if (separator < 0) return false;
+    return songPath.substring(0, separator) == normalize(folderPath);
+  }
+
   static int _lastProgressReportTime = 0;
 
   /// Filters songs asynchronously ensuring no UI blocking
@@ -117,6 +142,7 @@ class StorageScanner {
     List<SongModel> rawSongs, {
     void Function(StorageScanProgress progress)? onProgress,
     Set<String>? knownPaths,
+    int minimumDurationSeconds = 0,
   }) async {
     List<SongModel> validSongs = [];
     Set<String> validDirs = {};
@@ -130,7 +156,7 @@ class StorageScanner {
 
       try {
         final path = song.data;
-        if (path == null || path.isEmpty) continue;
+        if (path.isEmpty) continue;
 
         final dir = path.substring(0, path.lastIndexOf('/'));
 
@@ -164,7 +190,8 @@ class StorageScanner {
 
         final extension = _extensionFromPath(path);
         final isKnown = knownPaths?.contains(path) ?? false;
-        if (isKnown || isValidAudioFile(path, song.size, extension)) {
+        if ((isKnown || isValidAudioFile(path, song.size, extension)) &&
+            meetsMinimumDuration(song, minimumDurationSeconds)) {
           validSongs.add(song);
         }
       } catch (e) {

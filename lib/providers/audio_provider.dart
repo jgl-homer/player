@@ -76,6 +76,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _isRefreshingLibrary = false;
   bool _isSyncing = false;
   int _recentSongsLimit = 100;
+  int _minimumSongDurationSeconds = 0;
   String _activeTabId = 'songs';
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
@@ -118,6 +119,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get lyricsVisible => _lyricsVisible;
   bool get isSyncing => _isSyncing;
   int get recentSongsLimit => _recentSongsLimit;
+  int get minimumSongDurationSeconds => _minimumSongDurationSeconds;
+  int get songCount => _allSongs.length;
+  int get artistCount => _allSongs
+      .map((song) => TitleUtils.getDisplayArtist(song.artist))
+      .toSet()
+      .length;
+  int get albumCount => _allSongs.map(TitleUtils.getAlbumKey).toSet().length;
+  String get queuePositionLabel {
+    if (_currentPlaylist.isEmpty || _currentSong == null) return '0/0';
+    final safeIndex = _currentIndex.clamp(0, _currentPlaylist.length - 1);
+    return '${safeIndex + 1}/${_currentPlaylist.length}';
+  }
+
   String get activeTabId => _activeTabId;
 
   // Bug #9: Getters de selección múltiple
@@ -218,6 +232,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _librarySortModes = await StatePersistence.loadLibrarySortModes();
     _savedPlaylists = await StatePersistence.loadPlaylists();
     _recentSongsLimit = await StatePersistence.loadRecentSongsLimit();
+    _minimumSongDurationSeconds =
+        await StatePersistence.loadMinimumSongDuration();
     _activeTabId = await StatePersistence.loadActiveTab() ?? _activeTabId;
 
     // Load enabled tabs preference
@@ -462,8 +478,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         final scannedSongs = await StorageScanner.filterSongs(
           rawSongs,
           onProgress: _updateIndexingProgress,
+          minimumDurationSeconds: _minimumSongDurationSeconds,
         );
-        final freshSongs = await _enrichWmaMetadataForIndexing(scannedSongs);
+        final enrichedSongs = await _enrichWmaMetadataForIndexing(scannedSongs);
+        final freshSongs = enrichedSongs
+            .where((song) => StorageScanner.meetsMinimumDuration(
+                  song,
+                  _minimumSongDurationSeconds,
+                ))
+            .toList();
         final freshAlbums = await _audioQuery.queryAlbums();
         await _applyFreshLibrary(freshSongs, freshAlbums);
         await _indexSongsToDatabase();
@@ -478,6 +501,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         final freshSongs = await StorageScanner.filterSongs(
           rawSongs,
           knownPaths: knownPaths,
+          minimumDurationSeconds: _minimumSongDurationSeconds,
         );
         result = await _applyIncrementalSync(freshSongs);
       }
@@ -596,7 +620,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       } else if (_playbackMode == PlaybackMode.folder &&
           _activeFolderPath != null) {
         _currentPlaylist = _allSongs
-            .where((s) => s.data.startsWith(_activeFolderPath!))
+            .where((s) =>
+                StorageScanner.isSongInFolder(s, _activeFolderPath!))
             .toList();
       }
     }
@@ -775,7 +800,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     } else if (_playbackMode == PlaybackMode.folder &&
         _activeFolderPath != null) {
       _currentPlaylist = _allSongs
-          .where((song) => song.data.startsWith(_activeFolderPath!))
+          .where((song) =>
+              StorageScanner.isSongInFolder(song, _activeFolderPath!))
           .toList();
     } else {
       _currentPlaylist.removeWhere((song) => !freshIds.contains(song.id));
@@ -1562,7 +1588,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (_playbackMode == PlaybackMode.folder && _activeFolderPath != null) {
       return _allSongs
-          .where((song) => song.data.startsWith(_activeFolderPath!))
+          .where((song) =>
+              StorageScanner.isSongInFolder(song, _activeFolderPath!))
           .toList();
     }
     return List.from(_globalQueue.isNotEmpty ? _globalQueue : _allSongs);
@@ -1577,11 +1604,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   LoopMode _effectivePlayerLoopMode() {
-    if (_playbackMode == PlaybackMode.folder && _loopMode == LoopMode.all) {
-      // In folder mode, LoopMode.all means cycling across folders, not
-      // looping only the current folder playlist at just_audio layer.
-      return LoopMode.off;
-    }
     return _loopMode;
   }
 
@@ -1978,6 +2000,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _recentSongsLimit = limit.clamp(100, 10000);
     await StatePersistence.saveRecentSongsLimit(_recentSongsLimit);
     notifyListeners();
+  }
+
+  Future<void> setMinimumSongDuration(int seconds) async {
+    final nextValue = seconds.clamp(0, 120);
+    if (_minimumSongDurationSeconds == nextValue) return;
+    _minimumSongDurationSeconds = nextValue;
+    notifyListeners();
+    await StatePersistence.saveMinimumSongDuration(nextValue);
+    await refreshLibrary();
   }
 
   Future<void> setActiveTab(String tabId) async {
@@ -2603,4 +2634,3 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     super.dispose();
   }
 }
-
