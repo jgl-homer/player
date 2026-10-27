@@ -144,6 +144,18 @@ void main() {
     player.states.add(PlayerState(false, ProcessingState.completed));
     expect(completions, 0);
   });
+  test('rewind and fast forward request previous and next folders', () async {
+    var previousFolders = 0;
+    var nextFolders = 0;
+    handler.onPreviousFolderRequested = () => previousFolders++;
+    handler.onNextFolderRequested = () => nextFolders++;
+
+    await handler.rewind();
+    await handler.fastForward();
+
+    expect(previousFolders, 1);
+    expect(nextFolders, 1);
+  });
   test('failed queue is bounded even with loop all', () async {
     player.failedLoads = 10;
     player.loopMode = LoopMode.all;

@@ -18,6 +18,8 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   FutureOr<void> Function()? onStopRequested;
   FutureOr<void> Function()? onPreviousRequested;
   FutureOr<void> Function()? onNextRequested;
+  FutureOr<void> Function()? onPreviousFolderRequested;
+  FutureOr<void> Function()? onNextFolderRequested;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   int _queueRevision = 0;
   String? _handledCompletion;
@@ -137,12 +139,17 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       playbackState.value.copyWith(
         controls: [
           MediaControl.skipToPrevious,
+          MediaControl.rewind,
           playing ? MediaControl.pause : MediaControl.play,
+          MediaControl.fastForward,
           MediaControl.skipToNext,
-          MediaControl.stop,
         ],
-        systemActions: const {MediaAction.seek},
-        androidCompactActionIndices: const [0, 1, 2],
+        systemActions: const {
+          MediaAction.seek,
+          MediaAction.rewind,
+          MediaAction.fastForward,
+        },
+        androidCompactActionIndices: const [0, 2, 4],
         processingState: const {
               ProcessingState.idle: AudioProcessingState.idle,
               ProcessingState.loading: AudioProcessingState.loading,
@@ -189,13 +196,18 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
 
       if (paths.isEmpty) return;
 
-      final items = paths.map((path) {
+      final items = paths.asMap().entries.map((entry) {
+        final path = entry.value;
         final title = path.replaceAll('\\', '/').split('/').last;
         return MediaItem(
           id: path,
           title: title,
           artist: 'Desconocido',
           album: 'Player',
+          extras: {
+            'android.media.metadata.TRACK_NUMBER': entry.key + 1,
+            'android.media.metadata.NUM_TRACKS': paths.length,
+          },
         );
       }).toList();
 
@@ -264,6 +276,20 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
       return;
     }
     await skipToPreviousDirect();
+  }
+
+  /// Alpine and other AVRCP receivers commonly expose their group/folder
+  /// buttons as REWIND and FAST_FORWARD transport commands.
+  @override
+  Future<void> rewind() async {
+    final action = onPreviousFolderRequested;
+    if (action != null) await action();
+  }
+
+  @override
+  Future<void> fastForward() async {
+    final action = onNextFolderRequested;
+    if (action != null) await action();
   }
 
   @override

@@ -39,6 +39,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
   static const String _fallbackArtworkAsset =
       'assets/icon/music_note_fallback.png';
+  static const String _androidTrackNumberKey =
+      'android.media.metadata.TRACK_NUMBER';
+  static const String _androidTotalTracksKey =
+      'android.media.metadata.NUM_TRACKS';
   PlaybackMode _playbackMode = PlaybackMode.global;
   String? _activeFolderPath;
   String?
@@ -466,6 +470,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       onStopRequested: stop,
       onPreviousRequested: previousSmart,
       onNextRequested: next,
+      onPreviousFolderRequested: playPreviousFolder,
+      onNextFolderRequested: playNextFolder,
       onTrackCompleted: () async {
         switch (_playbackMode) {
           case PlaybackMode.folder:
@@ -2280,7 +2286,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_saveLibraryCache());
 
     // 5. Actualizar MediaItem en vivo en audio_service y notificación del sistema
-    final updatedMediaItem = await _songToMediaItem(updatedSong);
+    final updatedMediaItem = await _songToMediaItem(
+      updatedSong,
+      queueIndex: _currentPlaylist.indexWhere(
+        (queuedSong) => queuedSong.data == updatedSong.data,
+      ),
+      queueLength: _currentPlaylist.length,
+    );
     await _playback.updateMediaItem(updatedMediaItem);
 
     // 6. Notificar a la interfaz de usuario para refresco inmediato en pantalla
@@ -2346,18 +2358,49 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     return false;
   }
 
-  Future<MediaItem> _songToMediaItem(SongModel s, {bool fast = false}) async {
+  Future<MediaItem> _songToMediaItem(
+    SongModel s, {
+    bool fast = false,
+    int? queueIndex,
+    int? queueLength,
+  }) async {
     final Uri? artUri = fast ? null : await _systemArtworkUriForSong(s);
-    return _mediaItemFromSong(s, artUri);
+    final item = await _mediaItemFromSong(s, artUri);
+    return _withBluetoothTrackNumbers(item, queueIndex, queueLength);
   }
 
-  MediaItem _fastMediaItemFromSong(SongModel song) {
-    return MediaItem(
+  MediaItem _fastMediaItemFromSong(
+    SongModel song, {
+    int? queueIndex,
+    int? queueLength,
+  }) {
+    final item = MediaItem(
       id: song.data,
       album: TitleUtils.getDisplayAlbum(song),
       title: TitleUtils.getDisplayTitle(song),
       artist: TitleUtils.getDisplayArtist(song.artist),
       duration: Duration(milliseconds: song.duration ?? 0),
+    );
+    return _withBluetoothTrackNumbers(item, queueIndex, queueLength);
+  }
+
+  MediaItem _withBluetoothTrackNumbers(
+    MediaItem item,
+    int? queueIndex,
+    int? queueLength,
+  ) {
+    if (queueIndex == null ||
+        queueLength == null ||
+        queueIndex < 0 ||
+        queueLength <= 0) {
+      return item;
+    }
+    return item.copyWith(
+      extras: <String, dynamic>{
+        ...?item.extras,
+        _androidTrackNumberKey: queueIndex + 1,
+        _androidTotalTracksKey: queueLength,
+      },
     );
   }
 
@@ -2431,9 +2474,27 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<List<MediaItem>> _songsToMediaItems(List<SongModel> songs,
       {bool fast = false}) async {
     if (fast) {
-      return songs.map(_fastMediaItemFromSong).toList(growable: false);
+      return List<MediaItem>.generate(
+        songs.length,
+        (index) => _fastMediaItemFromSong(
+          songs[index],
+          queueIndex: index,
+          queueLength: songs.length,
+        ),
+        growable: false,
+      );
     }
-    return Future.wait(songs.map((s) => _songToMediaItem(s, fast: fast)));
+    return Future.wait(
+      List<Future<MediaItem>>.generate(
+        songs.length,
+        (index) => _songToMediaItem(
+          songs[index],
+          queueIndex: index,
+          queueLength: songs.length,
+        ),
+        growable: false,
+      ),
+    );
   }
 
   Future<Uri?> _systemArtworkUriForSong(SongModel song) async {

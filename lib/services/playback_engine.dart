@@ -44,6 +44,8 @@ class PlaybackEngine {
     required FutureOr<void> Function() onStopRequested,
     required FutureOr<void> Function() onPreviousRequested,
     required FutureOr<void> Function() onNextRequested,
+    required FutureOr<void> Function() onPreviousFolderRequested,
+    required FutureOr<void> Function() onNextFolderRequested,
     required FutureOr<void> Function() onTrackCompleted,
   }) {
     _handler.onToggleFavorite = onToggleFavorite;
@@ -52,6 +54,8 @@ class PlaybackEngine {
     _handler.onStopRequested = onStopRequested;
     _handler.onPreviousRequested = onPreviousRequested;
     _handler.onNextRequested = onNextRequested;
+    _handler.onPreviousFolderRequested = onPreviousFolderRequested;
+    _handler.onNextFolderRequested = onNextFolderRequested;
     _handler.onTrackCompleted = onTrackCompleted;
   }
 
@@ -90,6 +94,8 @@ class PlaybackEngine {
     _handler.onStopRequested = null;
     _handler.onPreviousRequested = null;
     _handler.onNextRequested = null;
+    _handler.onPreviousFolderRequested = null;
+    _handler.onNextFolderRequested = null;
     _handler.onTrackCompleted = null;
   }
 
