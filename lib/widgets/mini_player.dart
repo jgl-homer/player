@@ -553,8 +553,8 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                       const Divider(color: Colors.white12, height: 18),
                       Row(
                         children: [
-                          const Icon(Icons.graphic_eq_rounded,
-                              color: Colors.tealAccent, size: 22),
+                          Icon(Icons.graphic_eq_rounded,
+                              color: AppTheme.primaryColor, size: 22),
                           const SizedBox(width: 8),
                           const Text(
                             'Intensidad',
@@ -566,7 +566,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                               value: provider.epicenterIntensity,
                               min: 0,
                               max: 100,
-                              activeColor: Colors.tealAccent,
+                              activeColor: AppTheme.primaryColor,
                               inactiveColor: Colors.white24,
                               onChanged: (value) =>
                                   provider.updateEpicenterSettings(
@@ -606,7 +606,7 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     final color = destructive
         ? Colors.redAccent
         : active
-            ? Colors.tealAccent
+            ? AppTheme.primaryColor
             : Colors.white;
     return Material(
       color: Colors.transparent,
@@ -952,23 +952,34 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
       color: const Color(0xFF0B0D10),
       child: SafeArea(
         top: false,
-        child: OrientationBuilder(
-          builder: (context, orientation) {
-            if (orientation == Orientation.landscape) {
-              return _buildLandscapePlayer(
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragEnd: (details) {
+            final velocity = details.primaryVelocity ?? 0;
+            if (velocity <= -250) {
+              audioProvider.next();
+            } else if (velocity >= 250) {
+              audioProvider.previousSmart();
+            }
+          },
+          child: OrientationBuilder(
+            builder: (context, orientation) {
+              if (orientation == Orientation.landscape) {
+                return _buildLandscapePlayer(
+                  context,
+                  audioProvider,
+                  song,
+                  artist,
+                );
+              }
+              return _buildPortraitPlayer(
                 context,
                 audioProvider,
                 song,
                 artist,
               );
-            }
-            return _buildPortraitPlayer(
-              context,
-              audioProvider,
-              song,
-              artist,
-            );
-          },
+            },
+          ),
         ),
       ),
     );
@@ -1620,8 +1631,7 @@ class _PlaybackRateSlider extends StatelessWidget {
                   style: const TextStyle(
                       color: Colors.white, fontWeight: FontWeight.w600)),
             ),
-            Text(valueLabel,
-                style: const TextStyle(color: AppTheme.primaryColor)),
+            Text(valueLabel, style: TextStyle(color: AppTheme.primaryColor)),
           ],
         ),
         Slider(

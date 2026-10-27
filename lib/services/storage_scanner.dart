@@ -135,6 +135,29 @@ class StorageScanner {
     return songPath.substring(0, separator) == normalize(folderPath);
   }
 
+  static bool isPathHidden(
+    String path, {
+    required Set<String> hiddenSongs,
+    required Set<String> hiddenFolders,
+  }) {
+    String normalize(String value) {
+      var normalized = value.replaceAll('\\', '/');
+      while (normalized.endsWith('/')) {
+        normalized = normalized.substring(0, normalized.length - 1);
+      }
+      return normalized.toLowerCase();
+    }
+
+    final normalizedPath = normalize(path);
+    if (hiddenSongs.any((item) => normalize(item) == normalizedPath)) {
+      return true;
+    }
+    return hiddenFolders.any((folder) {
+      final normalizedFolder = normalize(folder);
+      return normalizedPath.startsWith('$normalizedFolder/');
+    });
+  }
+
   static int _lastProgressReportTime = 0;
 
   /// Filters songs asynchronously ensuring no UI blocking

@@ -74,6 +74,21 @@ void main() {
     expect(await StatePersistence.loadMinimumSongDuration(), 120);
   });
 
+  test('library personalization persists play counts and hidden paths',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await StatePersistence.savePlayCounts({'/music/a.mp3': 7});
+    await StatePersistence.saveHiddenSongPaths({'/music/private.mp3'});
+    await StatePersistence.saveHiddenFolderPaths({'/music/hidden'});
+    await StatePersistence.saveCrossfadeSeconds(30);
+
+    expect(await StatePersistence.loadPlayCounts(), {'/music/a.mp3': 7});
+    expect(
+        await StatePersistence.loadHiddenSongPaths(), {'/music/private.mp3'});
+    expect(await StatePersistence.loadHiddenFolderPaths(), {'/music/hidden'});
+    expect(await StatePersistence.loadCrossfadeSeconds(), 12);
+  });
+
   test('engine selection persists independently of tuning and enabled state',
       () async {
     SharedPreferences.setMockInitialValues({'epicenter_intensity': 72.0});

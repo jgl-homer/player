@@ -156,6 +156,31 @@ class MainActivity : AudioServiceActivity() {
                         }
                     }
                 }
+                "share_media" -> {
+                    val path = call.argument<String>("path")
+                    val file = path?.let(::File)
+                    if (file == null || !file.exists()) {
+                        result.success(false)
+                    } else {
+                        try {
+                            val uri = FileProvider.getUriForFile(
+                                this,
+                                "${applicationContext.packageName}.fileprovider",
+                                file
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "audio/*"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            startActivity(Intent.createChooser(shareIntent, "Compartir canción"))
+                            result.success(true)
+                        } catch (error: Exception) {
+                            Log.w(TAG, "No se pudo compartir: $path", error)
+                            result.success(false)
+                        }
+                    }
+                }
                 "toggle_epicenter" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
                     com.ryanheise.just_audio.EpicenterProcessorController.setEpicenterEnabled(enabled)

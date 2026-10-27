@@ -21,6 +21,7 @@ class PlaybackEngine {
 
   bool get playing => _player.playing;
   Duration get position => _player.position;
+  Duration? get duration => _player.duration;
   bool get hasNext => _player.hasNext;
   bool get hasPrevious => _player.hasPrevious;
   LoopMode get loopMode => _player.loopMode;
@@ -102,6 +103,8 @@ class PlaybackEngine {
 
   Future<void> setSpeed(double speed) => _player.setSpeed(speed);
   Future<void> setPitch(double pitch) => _player.setPitch(pitch);
+  Future<void> setVolume(double volume) =>
+      _player.setVolume(volume.clamp(0.0, 1.0));
 
   Future<void> setLoopMode(LoopMode mode) => _player.setLoopMode(mode);
 

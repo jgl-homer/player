@@ -268,7 +268,7 @@ class FolderDetailScreen extends StatelessWidget {
                           return SongListTile(
                             song: song,
                             isSelected: isSelected,
-                            showTrailing: false,
+                            showTrailing: true,
                             onTap: () {
                               audioProvider.playFolderSongs(resolvedFolderPath,
                                   currentFolderSongs, index);
@@ -308,7 +308,7 @@ class FolderDetailScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('CANCELAR',
+            child: Text('CANCELAR',
                 style: TextStyle(color: AppTheme.primaryColor)),
           ),
           TextButton(

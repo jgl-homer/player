@@ -59,4 +59,23 @@ void main() {
       isFalse,
     );
   });
+
+  test('hidden folders apply recursively without matching similar names', () {
+    expect(
+      StorageScanner.isPathHidden(
+        '/music/private/live/song.mp3',
+        hiddenSongs: const {},
+        hiddenFolders: const {'/music/private'},
+      ),
+      isTrue,
+    );
+    expect(
+      StorageScanner.isPathHidden(
+        '/music/private-2/song.mp3',
+        hiddenSongs: const {},
+        hiddenFolders: const {'/music/private'},
+      ),
+      isFalse,
+    );
+  });
 }

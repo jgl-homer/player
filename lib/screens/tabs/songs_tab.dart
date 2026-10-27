@@ -164,8 +164,7 @@ class _SongsTabState extends State<SongsTab> {
                   },
                 ),
                 IconButton(
-                  icon: const Icon(Icons.play_arrow,
-                      color: AppTheme.primaryColor),
+                  icon: Icon(Icons.play_arrow, color: AppTheme.primaryColor),
                   tooltip: 'Reproducir selección',
                   onPressed: selectedCount > 0
                       ? () => audioProvider.playSelected(songs)
@@ -196,8 +195,9 @@ class _SongsTabState extends State<SongsTab> {
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text("CANCELAR",
-                                      style: TextStyle(color: Colors.teal)),
+                                  child: Text("CANCELAR",
+                                      style: TextStyle(
+                                          color: AppTheme.primaryColor)),
                                 ),
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, true),
@@ -374,7 +374,8 @@ class _SongsTabState extends State<SongsTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text("CANCELAR", style: TextStyle(color: Colors.teal)),
+            child: Text("CANCELAR",
+                style: TextStyle(color: AppTheme.primaryColor)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),

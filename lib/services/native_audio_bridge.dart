@@ -109,6 +109,15 @@ class NativeAudioBridge {
         false;
   }
 
+  Future<bool> openUrl(String url) async {
+    return await _channel.invokeMethod<bool>('open_url', {'url': url}) ?? false;
+  }
+
+  Future<bool> shareMedia(String path) async {
+    return await _channel.invokeMethod<bool>('share_media', {'path': path}) ??
+        false;
+  }
+
   Future<Uri?> cacheNotificationArtwork({
     required int songId,
     required Uint8List bytes,

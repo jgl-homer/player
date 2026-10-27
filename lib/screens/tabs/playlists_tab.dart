@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../playlist_detail_screen.dart';
 import '../../widgets/count_banner.dart';
+import '../../theme/app_theme.dart';
 
 class PlaylistsTab extends StatelessWidget {
   const PlaylistsTab({super.key});
@@ -85,13 +86,13 @@ class PlaylistsTab extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Importar playlist M3U/M3U8 desde Music',
-              icon: const Icon(Icons.file_open_outlined,
-                  color: Colors.tealAccent),
+              icon:
+                  Icon(Icons.file_open_outlined, color: AppTheme.primaryColor),
               onPressed: () => _importPlaylist(context, audioProvider),
             ),
             IconButton(
               tooltip: 'Guardar cola actual',
-              icon: const Icon(Icons.add, color: Colors.tealAccent),
+              icon: Icon(Icons.add, color: AppTheme.primaryColor),
               onPressed: audioProvider.currentPlaylist.isEmpty
                   ? null
                   : () async {
@@ -118,8 +119,8 @@ class PlaylistsTab extends StatelessWidget {
                             ),
                             IconButton(
                               tooltip: 'Importar M3U8 desde Music',
-                              icon: const Icon(Icons.file_open_outlined,
-                                  color: Colors.tealAccent),
+                              icon: Icon(Icons.file_open_outlined,
+                                  color: AppTheme.primaryColor),
                               onPressed: () async {
                                 final directory =
                                     Directory('/storage/emulated/0/Music');
@@ -207,8 +208,8 @@ class PlaylistsTab extends StatelessWidget {
                     final name = playlists[index];
                     final songs = audioProvider.songsForPlaylist(name);
                     return ListTile(
-                      leading: const Icon(Icons.queue_music,
-                          color: Colors.tealAccent),
+                      leading:
+                          Icon(Icons.queue_music, color: AppTheme.primaryColor),
                       title: Text(name),
                       subtitle: Text('${songs.length} canciones'),
                       onTap: () {

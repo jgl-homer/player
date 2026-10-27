@@ -77,6 +77,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _isSyncing = false;
   int _recentSongsLimit = 100;
   int _minimumSongDurationSeconds = 0;
+  int _crossfadeSeconds = 0;
+  Map<String, int> _playCounts = {};
+  Set<String> _hiddenSongPaths = {};
+  Set<String> _hiddenFolderPaths = {};
+  String? _countedPlaybackPath;
+  String? _crossfadeTriggeredPath;
+  bool _crossfadeFadingOut = false;
+  int _fadeGeneration = 0;
   String _activeTabId = 'songs';
   bool _hasFinishedStartup = false;
   DateTime? _ignoreMediaChangesUntil;
@@ -120,6 +128,24 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get isSyncing => _isSyncing;
   int get recentSongsLimit => _recentSongsLimit;
   int get minimumSongDurationSeconds => _minimumSongDurationSeconds;
+  int get crossfadeSeconds => _crossfadeSeconds;
+  Map<String, int> get playCounts => Map.unmodifiable(_playCounts);
+  Set<String> get hiddenSongPaths => Set.unmodifiable(_hiddenSongPaths);
+  Set<String> get hiddenFolderPaths => Set.unmodifiable(_hiddenFolderPaths);
+  int playCountFor(SongModel song) => _playCounts[song.data] ?? 0;
+  List<SongModel> get mostPlayedSongs {
+    final songs = _allSongs.where((song) => playCountFor(song) > 0).toList();
+    songs.sort((a, b) {
+      final byCount = playCountFor(b).compareTo(playCountFor(a));
+      return byCount != 0
+          ? byCount
+          : TitleUtils.getDisplayTitle(a)
+              .toLowerCase()
+              .compareTo(TitleUtils.getDisplayTitle(b).toLowerCase());
+    });
+    return songs;
+  }
+
   int get songCount => _allSongs.length;
   int get artistCount => _allSongs
       .map((song) => TitleUtils.getDisplayArtist(song.artist))
@@ -234,8 +260,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _recentSongsLimit = await StatePersistence.loadRecentSongsLimit();
     _minimumSongDurationSeconds =
         await StatePersistence.loadMinimumSongDuration();
+    _crossfadeSeconds = await StatePersistence.loadCrossfadeSeconds();
+    _playCounts = await StatePersistence.loadPlayCounts();
+    _hiddenSongPaths = await StatePersistence.loadHiddenSongPaths();
+    _hiddenFolderPaths = await StatePersistence.loadHiddenFolderPaths();
     _activeTabId = await StatePersistence.loadActiveTab() ?? _activeTabId;
-
     // Load enabled tabs preference
     try {
       _enabledTabs = await StatePersistence.loadEnabledTabs();
@@ -305,10 +334,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   void _listenToPlayer() {
     _subscriptions.add(_playback.currentIndexStream.listen((index) async {
       if (index != null && index < _currentPlaylist.length) {
+        final previousPath = _currentSong?.data;
         final currentTag = _playback.currentSourceTag;
         if (currentTag is MediaItem) {
-          final foundIndex = _queuePolicy.resolveIndex(
-              _currentPlaylist, index, currentTag.id);
+          final foundIndex =
+              _queuePolicy.resolveIndex(_currentPlaylist, index, currentTag.id);
           if (foundIndex != -1) {
             _currentIndex = foundIndex;
             _currentSong = _currentPlaylist[_currentIndex];
@@ -366,6 +396,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
         if (_currentSong != null) {
           unawaited(_applyReplayGainForSong(_currentSong!));
+          if (previousPath != _currentSong!.data) {
+            _countedPlaybackPath = null;
+            _crossfadeTriggeredPath = null;
+            if (_crossfadeFadingOut) {
+              unawaited(_fadeInCurrentTrack());
+            } else {
+              unawaited(_playback.setVolume(1));
+            }
+          }
         }
         await savePlaybackStateImmediate();
         notifyListeners();
@@ -386,7 +425,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     }));
 
-    _subscriptions.add(_playback.androidAudioSessionIdStream.listen((sessionId) async {
+    _subscriptions.add(_playback.positionStream.listen((position) {
+      _maybeRecordPlay(position);
+      _maybeStartCrossfade(position);
+    }));
+
+    _subscriptions.add(_playback.playingStream.listen((playing) {
+      if (!playing && _crossfadeFadingOut) {
+        _cancelCrossfade();
+      }
+    }));
+
+    _subscriptions
+        .add(_playback.androidAudioSessionIdStream.listen((sessionId) async {
       if (sessionId != null && sessionId != 0) {
         try {
           await _effects.onAudioSessionReady();
@@ -460,11 +511,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     SyncResult? result;
     try {
       // Una sola consulta a MediaStore
-      final rawSongs = await _audioQuery.querySongs(
+      final queriedSongs = await _audioQuery.querySongs(
         sortType: SongSortType.DISPLAY_NAME,
         orderType: OrderType.ASC_OR_SMALLER,
         uriType: UriType.EXTERNAL,
       );
+      final rawSongs = queriedSongs.where(_isSongVisible).toList();
 
       // Escaneo completo sólo si no hay índice en absoluto
       if (_allSongs.isEmpty || !await LibraryDatabase.instance.hasIndexedData) {
@@ -620,8 +672,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       } else if (_playbackMode == PlaybackMode.folder &&
           _activeFolderPath != null) {
         _currentPlaylist = _allSongs
-            .where((s) =>
-                StorageScanner.isSongInFolder(s, _activeFolderPath!))
+            .where((s) => StorageScanner.isSongInFolder(s, _activeFolderPath!))
             .toList();
       }
     }
@@ -800,8 +851,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     } else if (_playbackMode == PlaybackMode.folder &&
         _activeFolderPath != null) {
       _currentPlaylist = _allSongs
-          .where((song) =>
-              StorageScanner.isSongInFolder(song, _activeFolderPath!))
+          .where(
+              (song) => StorageScanner.isSongInFolder(song, _activeFolderPath!))
           .toList();
     } else {
       _currentPlaylist.removeWhere((song) => !freshIds.contains(song.id));
@@ -874,12 +925,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Verificar que la canción actual no cambió mientras esperábamos
       if (_currentSong?.id != song.id) return;
       final queueItems = _playback.queue;
-          if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
-            final currentItem = queueItems[_currentIndex];
-            if (currentItem.id != song.data) return;
-            final updatedItem = currentItem.copyWith(artUri: artUri);
-            _playback.updateQueueMetadata(_currentIndex, updatedItem);
-          }
+      if (_currentIndex >= 0 && _currentIndex < queueItems.length) {
+        final currentItem = queueItems[_currentIndex];
+        if (currentItem.id != song.data) return;
+        final updatedItem = currentItem.copyWith(artUri: artUri);
+        _playback.updateQueueMetadata(_currentIndex, updatedItem);
+      }
     } catch (e) {
       debugPrint(
           '[AudioProvider] Error actualizando artwork en MediaSession: $e');
@@ -915,7 +966,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       final songMaps = await LibraryDatabase.instance.getAllAsSongModelMaps();
       if (songMaps.isEmpty) return false;
 
-      _allSongs = songMaps.map((songMap) => SongModel(songMap)).toList();
+      _allSongs = songMaps
+          .map((songMap) => SongModel(songMap))
+          .where(_isSongVisible)
+          .toList();
       _rebuildSongIndex();
       _globalQueue = List.from(_allSongs);
       _currentPlaylist = _globalQueue;
@@ -947,7 +1001,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           .toList();
       if (songMaps.isEmpty) return false;
 
-      _allSongs = songMaps.map((songMap) => SongModel(songMap)).toList();
+      _allSongs = songMaps
+          .map((songMap) => SongModel(songMap))
+          .where(_isSongVisible)
+          .toList();
       _rebuildSongIndex();
       _globalQueue = List.from(_allSongs);
       _currentPlaylist = _globalQueue;
@@ -1317,6 +1374,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _currentPlaylist = nextPlaylist;
     _currentIndex = nextIndex;
     _currentSong = _currentPlaylist[_currentIndex];
+    _countedPlaybackPath = null;
+    _crossfadeTriggeredPath = null;
+    _cancelCrossfade(restoreVolume: true);
     await _syncPlayerLoopMode();
     notifyListeners();
 
@@ -1588,8 +1648,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (_playbackMode == PlaybackMode.folder && _activeFolderPath != null) {
       return _allSongs
-          .where((song) =>
-              StorageScanner.isSongInFolder(song, _activeFolderPath!))
+          .where(
+              (song) => StorageScanner.isSongInFolder(song, _activeFolderPath!))
           .toList();
     }
     return List.from(_globalQueue.isNotEmpty ? _globalQueue : _allSongs);
@@ -2011,6 +2071,143 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await refreshLibrary();
   }
 
+  Future<void> setCrossfadeSeconds(int seconds) async {
+    final nextValue = seconds.clamp(0, 12);
+    if (_crossfadeSeconds == nextValue) return;
+    _crossfadeSeconds = nextValue;
+    _crossfadeTriggeredPath = null;
+    if (nextValue == 0) _cancelCrossfade(restoreVolume: true);
+    await StatePersistence.saveCrossfadeSeconds(nextValue);
+    notifyListeners();
+  }
+
+  Future<void> clearPlayCounts() async {
+    _playCounts.clear();
+    _countedPlaybackPath = null;
+    await StatePersistence.savePlayCounts(_playCounts);
+    notifyListeners();
+  }
+
+  bool _isSongVisible(SongModel song) {
+    return !StorageScanner.isPathHidden(
+      song.data,
+      hiddenSongs: _hiddenSongPaths,
+      hiddenFolders: _hiddenFolderPaths,
+    );
+  }
+
+  Future<void> hideSong(SongModel song) async {
+    _hiddenSongPaths.add(song.data);
+    await StatePersistence.saveHiddenSongPaths(_hiddenSongPaths);
+    await refreshLibrary();
+  }
+
+  Future<void> restoreHiddenSong(String songPath) async {
+    _hiddenSongPaths.remove(songPath);
+    await StatePersistence.saveHiddenSongPaths(_hiddenSongPaths);
+    await refreshLibrary();
+  }
+
+  Future<void> hideFolder(String folderPath) async {
+    _hiddenFolderPaths.add(folderPath);
+    await StatePersistence.saveHiddenFolderPaths(_hiddenFolderPaths);
+    await refreshLibrary();
+  }
+
+  Future<void> restoreHiddenFolder(String folderPath) async {
+    _hiddenFolderPaths.remove(folderPath);
+    await StatePersistence.saveHiddenFolderPaths(_hiddenFolderPaths);
+    await refreshLibrary();
+  }
+
+  Future<bool> openSongOnYouTube(SongModel song) {
+    final query = Uri.encodeQueryComponent(
+      '${TitleUtils.getDisplayArtist(song.artist)} ${TitleUtils.getDisplayTitle(song)}',
+    );
+    return _nativeAudio
+        .openUrl('https://www.youtube.com/results?search_query=$query');
+  }
+
+  Future<bool> shareSong(SongModel song) => _nativeAudio.shareMedia(song.data);
+
+  void _maybeRecordPlay(Duration position) {
+    final song = _currentSong;
+    if (song == null ||
+        !_playback.playing ||
+        _countedPlaybackPath == song.data) {
+      return;
+    }
+    final durationMs = song.duration ?? _playback.duration?.inMilliseconds ?? 0;
+    final halfDuration = durationMs > 0 ? durationMs ~/ 2 : 30000;
+    final thresholdMs = min(30000, max(5000, halfDuration));
+    if (position.inMilliseconds < thresholdMs) return;
+    _countedPlaybackPath = song.data;
+    _playCounts[song.data] = (_playCounts[song.data] ?? 0) + 1;
+    unawaited(StatePersistence.savePlayCounts(_playCounts));
+    notifyListeners();
+  }
+
+  void _maybeStartCrossfade(Duration position) {
+    if (_crossfadeSeconds <= 0 || !_playback.playing || _currentSong == null) {
+      return;
+    }
+    final duration = _playback.duration;
+    if (duration == null || duration <= Duration(seconds: _crossfadeSeconds)) {
+      return;
+    }
+    final path = _currentSong!.data;
+    final remaining = duration - position;
+    if (remaining > Duration(seconds: _crossfadeSeconds) ||
+        remaining <= Duration.zero ||
+        _crossfadeTriggeredPath == path) {
+      return;
+    }
+    _crossfadeTriggeredPath = path;
+    unawaited(_fadeOutCurrentTrack(path));
+  }
+
+  Future<void> _fadeOutCurrentTrack(String songPath) async {
+    _crossfadeFadingOut = true;
+    final generation = ++_fadeGeneration;
+    final steps = max(10, _crossfadeSeconds * 10);
+    final stepDuration =
+        Duration(milliseconds: (_crossfadeSeconds * 1000 ~/ steps));
+    for (var step = 1; step <= steps; step++) {
+      if (generation != _fadeGeneration ||
+          !_playback.playing ||
+          _currentSong?.data != songPath) {
+        return;
+      }
+      await _playback.setVolume(1 - (step / steps));
+      await Future<void>.delayed(stepDuration);
+    }
+  }
+
+  Future<void> _fadeInCurrentTrack() async {
+    final generation = ++_fadeGeneration;
+    _crossfadeFadingOut = false;
+    final seconds = _crossfadeSeconds;
+    if (seconds <= 0) {
+      await _playback.setVolume(1);
+      return;
+    }
+    final steps = max(10, seconds * 10);
+    final stepDuration = Duration(milliseconds: (seconds * 1000 ~/ steps));
+    await _playback.setVolume(0);
+    for (var step = 1; step <= steps; step++) {
+      if (generation != _fadeGeneration || !_playback.playing) return;
+      await _playback.setVolume(step / steps);
+      await Future<void>.delayed(stepDuration);
+    }
+    await _playback.setVolume(1);
+  }
+
+  void _cancelCrossfade({bool restoreVolume = true}) {
+    _fadeGeneration++;
+    _crossfadeFadingOut = false;
+    if (restoreVolume) unawaited(_playback.setVolume(1));
+  }
+
   Future<void> setActiveTab(String tabId) async {
     if (_activeTabId == tabId) return;
     _activeTabId = tabId;
@@ -2110,7 +2307,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           await stop();
           _currentIndex = 0;
           _currentSong = null;
-          await _playback.replacePlaylist([], 0, Duration.zero, shouldPlay: false);
+          await _playback
+              .replacePlaylist([], 0, Duration.zero, shouldPlay: false);
           await StatePersistence.clearPlaybackState();
           // Bug #2 fix: notificar inmediatamente cuando la lista queda vacía
           notifyListeners();
@@ -2364,9 +2562,16 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (_currentSong == null) return;
     final title = TitleUtils.getDisplayTitle(_currentSong!);
     final artist = TitleUtils.getDisplayArtist(_currentSong!.artist);
+    final artwork = await _systemArtworkBytesForSong(_currentSong!);
     await HomeWidget.saveWidgetData<String>('title', title);
     await HomeWidget.saveWidgetData<String>('artist', artist);
     await HomeWidget.saveWidgetData<bool>('isPlaying', _playback.playing);
+    if (artwork != null && artwork.isNotEmpty) {
+      final directory = await getApplicationSupportDirectory();
+      final file = File('${directory.path}/widget_artwork.jpg');
+      await file.writeAsBytes(artwork, flush: true);
+      await HomeWidget.saveWidgetData<String>('artPath', file.path);
+    }
     await HomeWidget.updateWidget(name: 'MusicWidgetProvider');
   }
 

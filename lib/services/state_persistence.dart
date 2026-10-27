@@ -43,6 +43,13 @@ class StatePersistence {
   static const String _librarySortModesKey = 'library_sort_modes_v1';
   static const String _playbackSpeedKey = 'playback_speed_v1';
   static const String _playbackPitchKey = 'playback_pitch_semitones_v1';
+  static const String _playCountsKey = 'song_play_counts_v1';
+  static const String _hiddenSongsKey = 'hidden_song_paths_v1';
+  static const String _hiddenFoldersKey = 'hidden_folder_paths_v1';
+  static const String _crossfadeSecondsKey = 'crossfade_seconds_v1';
+  static const String _themeModeKey = 'theme_mode_v1';
+  static const String _accentColorKey = 'accent_color_v1';
+  static const String _languageCodeKey = 'language_code_v1';
 
   static Future<bool> loadAutoMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -491,10 +498,13 @@ class StatePersistence {
   // Enabled tabs persistence (ordered list of tab IDs)
   static const String _enabledTabsKey = 'enabled_tabs_v2';
   static const String _activeTabKey = 'active_tab_id';
+  static const String _mostPlayedTabIntroducedKey =
+      'most_played_tab_introduced_v1';
   static const List<String> defaultEnabledTabs = [
     'folders',
     'songs',
     'favorites',
+    'most_played',
   ];
   static const List<String> allAvailableTabs = [
     'folders',
@@ -504,6 +514,7 @@ class StatePersistence {
     'artists',
     'playlists',
     'recently_added',
+    'most_played',
   ];
 
   static Future<List<String>> loadEnabledTabs() async {
@@ -511,7 +522,15 @@ class StatePersistence {
     final saved = prefs.getStringList(_enabledTabsKey);
     if (saved == null || saved.isEmpty) return defaultEnabledTabs;
     // Filter out any stale IDs not in allAvailableTabs
-    return saved.where((id) => allAvailableTabs.contains(id)).toList();
+    final enabled = saved.where((id) => allAvailableTabs.contains(id)).toList();
+    if (!(prefs.getBool(_mostPlayedTabIntroducedKey) ?? false)) {
+      await prefs.setBool(_mostPlayedTabIntroducedKey, true);
+      if (!enabled.contains('most_played')) {
+        enabled.add('most_played');
+        await prefs.setStringList(_enabledTabsKey, enabled);
+      }
+    }
+    return enabled;
   }
 
   static Future<void> saveEnabledTabs(List<String> tabs) async {
@@ -568,5 +587,85 @@ class StatePersistence {
   static Future<int> loadMinimumSongDuration() async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getInt(_minimumSongDurationKey) ?? 0).clamp(0, 120);
+  }
+
+  static Future<Map<String, int>> loadPlayCounts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_playCountsKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> savePlayCounts(Map<String, int> counts) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_playCountsKey, jsonEncode(counts));
+  }
+
+  static Future<Set<String>> loadHiddenSongPaths() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_hiddenSongsKey) ?? const <String>[]).toSet();
+  }
+
+  static Future<void> saveHiddenSongPaths(Set<String> paths) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenSongsKey, paths.toList()..sort());
+  }
+
+  static Future<Set<String>> loadHiddenFolderPaths() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_hiddenFoldersKey) ?? const <String>[]).toSet();
+  }
+
+  static Future<void> saveHiddenFolderPaths(Set<String> paths) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenFoldersKey, paths.toList()..sort());
+  }
+
+  static Future<int> loadCrossfadeSeconds() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getInt(_crossfadeSecondsKey) ?? 0).clamp(0, 12);
+  }
+
+  static Future<void> saveCrossfadeSeconds(int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_crossfadeSecondsKey, seconds.clamp(0, 12));
+  }
+
+  static Future<String> loadThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_themeModeKey) ?? 'dark';
+  }
+
+  static Future<void> saveThemeMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themeModeKey, mode);
+  }
+
+  static Future<int> loadAccentColor() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_accentColorKey) ?? 0xFFFFD500;
+  }
+
+  static Future<void> saveAccentColor(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_accentColorKey, value);
+  }
+
+  static Future<String> loadLanguageCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_languageCodeKey) ?? 'es';
+  }
+
+  static Future<void> saveLanguageCode(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_languageCodeKey, code);
   }
 }

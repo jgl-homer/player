@@ -13,51 +13,49 @@ import 'tabs/albums_tab.dart';
 import 'tabs/playlists_tab.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/recently_added_tab.dart';
+import 'tabs/most_played_tab.dart';
 import '../theme/app_theme.dart';
+import '../l10n/app_strings.dart';
 
 // ─── Metadata de cada tab ────────────────────────────────────────────────────
 class _TabDef {
   final String id;
-  final String Function(AudioProvider p) label;
   final Widget widget;
-  const _TabDef({required this.id, required this.label, required this.widget});
+  const _TabDef({required this.id, required this.widget});
 }
 
 final _allTabDefs = <_TabDef>[
   _TabDef(
     id: 'folders',
-    label: (_) => 'Carpetas',
     widget: const FoldersTab(),
   ),
   _TabDef(
     id: 'songs',
-    label: (_) => 'Canciones',
     widget: const SongsTab(),
   ),
   _TabDef(
     id: 'favorites',
-    label: (_) => 'Favoritos',
     widget: const FavoritesTab(),
   ),
   _TabDef(
     id: 'albums',
-    label: (_) => 'Álbumes',
     widget: const AlbumsTab(),
   ),
   _TabDef(
     id: 'artists',
-    label: (_) => 'Artistas',
     widget: const ArtistsTab(),
   ),
   _TabDef(
     id: 'playlists',
-    label: (_) => 'Playlists',
     widget: const PlaylistsTab(),
   ),
   _TabDef(
     id: 'recently_added',
-    label: (_) => 'Recientes',
     widget: const RecentlyAddedTab(),
+  ),
+  _TabDef(
+    id: 'most_played',
+    widget: const MostPlayedTab(),
   ),
 ];
 
@@ -161,6 +159,13 @@ const _librarySortConfigs = <String, _LibrarySortConfig>{
           reverseValue: 'oldest'),
       LibrarySortOption('title_asc', 'Título', Icons.title_rounded),
       LibrarySortOption('artist_asc', 'Artista', Icons.person_outline_rounded),
+    ],
+  ),
+  'most_played': _LibrarySortConfig(
+    defaultMode: 'plays_desc',
+    options: [
+      LibrarySortOption(
+          'plays_desc', 'Reproducciones', Icons.bar_chart_rounded),
     ],
   ),
 };
@@ -277,11 +282,11 @@ class HomeScreen extends StatelessWidget {
                         PopupMenuItem<String>(
                           value: 'refresh_library',
                           enabled: !state.isIndexing && !state.isSyncing,
-                          child: const Text('Refrescar carpetas/elementos'),
+                          child: Text(context.tr('refresh_library')),
                         ),
-                        const PopupMenuItem<String>(
+                        PopupMenuItem<String>(
                           value: 'settings',
-                          child: Text('Configuración'),
+                          child: Text(context.tr('settings')),
                         ),
                       ],
                     );
@@ -314,9 +319,8 @@ class HomeScreen extends StatelessWidget {
                           audioProvider.setActiveTab(defs[index].id);
                         }
                       },
-                      tabs: defs
-                          .map((d) => Tab(text: d.label(audioProvider)))
-                          .toList(),
+                      tabs:
+                          defs.map((d) => Tab(text: context.tr(d.id))).toList(),
                     );
                   },
                 ),

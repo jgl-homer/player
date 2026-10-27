@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/state_persistence.dart';
+import '../theme/app_theme.dart';
 
 class EpicenterEngineSelector extends StatefulWidget {
   final EpicenterEngineMode value;
@@ -52,7 +53,7 @@ class _EpicenterEngineSelectorState extends State<EpicenterEngineSelector> {
           style: SegmentedButton.styleFrom(
             foregroundColor: Colors.white70,
             selectedForegroundColor: Colors.black,
-            selectedBackgroundColor: Colors.tealAccent,
+            selectedBackgroundColor: AppTheme.primaryColor,
           ),
           segments: const [
             ButtonSegment(
@@ -100,9 +101,9 @@ class _EngineDescription extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
+        Padding(
           padding: EdgeInsets.only(top: 3),
-          child: Icon(Icons.circle, size: 6, color: Colors.tealAccent),
+          child: Icon(Icons.circle, size: 6, color: AppTheme.primaryColor),
         ),
         const SizedBox(width: 8),
         Expanded(

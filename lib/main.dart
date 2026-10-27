@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:device_preview/device_preview.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'services/audio_handler.dart';
 import 'services/state_persistence.dart';
 
 import 'providers/audio_provider.dart';
+import 'providers/app_settings_provider.dart';
 import 'screens/car_mode_screen.dart';
 import 'screens/home_screen.dart';
 import 'theme/app_theme.dart';
@@ -14,6 +16,7 @@ import 'package:flutter/services.dart';
 
 late AudioHandler _audioHandler;
 late bool _initialAutoMode;
+late AppSettingsProvider _appSettings;
 const bool _devicePreviewEnabled = bool.fromEnvironment('DEVICE_PREVIEW');
 
 Future<void> main() async {
@@ -29,6 +32,7 @@ Future<void> main() async {
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   _initialAutoMode = await StatePersistence.loadAutoMode();
+  _appSettings = await AppSettingsProvider.load();
   await SystemChrome.setPreferredOrientations(
     _initialAutoMode
         ? const [
@@ -74,22 +78,38 @@ class MyApp extends StatelessWidget {
             initialAutoMode: _initialAutoMode,
           ),
         ),
+        ChangeNotifierProvider.value(value: _appSettings),
       ],
-      child: MaterialApp(
-        locale: _devicePreviewEnabled ? DevicePreview.locale(context) : null,
-        builder: (context, child) {
-          final viewport = _AppViewport(
-            normalNavigator: child ?? const SizedBox.shrink(),
-          );
-          return _devicePreviewEnabled
-              ? DevicePreview.appBuilder(context, viewport)
-              : viewport;
-        },
-        debugShowCheckedModeBanner: false,
-        themeMode: ThemeMode.dark,
-        theme: AppTheme.darkTheme,
-        home: const HomeScreen(),
-      ),
+      child: Consumer<AppSettingsProvider>(builder: (context, settings, _) {
+        return MaterialApp(
+          locale: _devicePreviewEnabled
+              ? DevicePreview.locale(context)
+              : settings.locale,
+          supportedLocales: const [
+            Locale('es'),
+            Locale('en'),
+            Locale('pt'),
+          ],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          builder: (context, child) {
+            final viewport = _AppViewport(
+              normalNavigator: child ?? const SizedBox.shrink(),
+            );
+            return _devicePreviewEnabled
+                ? DevicePreview.appBuilder(context, viewport)
+                : viewport;
+          },
+          debugShowCheckedModeBanner: false,
+          themeMode: settings.themeMode,
+          theme: AppTheme.lightThemeFor(settings.accentColor),
+          darkTheme: AppTheme.darkThemeFor(settings.accentColor),
+          home: const HomeScreen(),
+        );
+      }),
     );
   }
 }

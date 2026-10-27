@@ -7,18 +7,29 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../providers/audio_provider.dart';
 import '../services/state_persistence.dart';
 import '../utils/title_utils.dart';
+import '../utils/duration_utils.dart';
+import '../screens/album_detail_screen.dart';
+import '../screens/artist_detail_screen.dart';
+import '../l10n/app_strings.dart';
+import '../theme/app_theme.dart';
 import 'song_info_modal.dart';
 import 'epicenter_engine_selector.dart';
+import 'smart_artwork.dart';
 
-void showOptionsMenu(BuildContext context, AudioProvider audioProvider, {SongModel? song}) {
+void showOptionsMenu(BuildContext context, AudioProvider audioProvider,
+    {SongModel? song}) {
   showModalBottomSheet(
     context: context,
-    backgroundColor: const Color(0xFF222222),
+    isScrollControlled: true,
+    backgroundColor: Theme.of(context).colorScheme.surface,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
     builder: (context) {
-      return _OptionsMenuContent(audioProvider: audioProvider, song: song);
+      return FractionallySizedBox(
+        heightFactor: 0.9,
+        child: _OptionsMenuContent(audioProvider: audioProvider, song: song),
+      );
     },
   );
 }
@@ -34,118 +45,412 @@ class _OptionsMenuContent extends StatelessWidget {
     if (targetSong == null) return const SizedBox.shrink();
 
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 10),
-          Container(
-              height: 4,
-              width: 40,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(
+                height: 4,
+                width: 40,
+                decoration: BoxDecoration(
+                    color: Colors.grey[600],
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                  color: Colors.grey[600],
-                  borderRadius: BorderRadius.circular(2))),
-          const SizedBox(height: 20),
-          ListTile(
-            leading: const Icon(Icons.info_outline_rounded,
-                color: Colors.white, size: 28),
-            title: const Text("Información de archivo",
-                style: TextStyle(color: Colors.white, fontSize: 18)),
-            onTap: () {
-              Navigator.pop(context);
-              showSongInfo(context, targetSong);
-            },
-          ),
-          ListTile(
-            leading:
-                const Icon(Icons.edit_outlined, color: Colors.white, size: 28),
-            title: const Text("Editor de etiquetas",
-                style: TextStyle(color: Colors.white, fontSize: 18)),
-            onTap: () {
-              Navigator.pop(context);
-              showEditTagDialog(context, audioProvider, song: targetSong);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.graphic_eq_rounded,
-                color: Colors.white, size: 28),
-            title: const Text("Ajustes de Epicentro",
-                style: TextStyle(color: Colors.white, fontSize: 18)),
-            onTap: () {
-              Navigator.pop(context);
-              showModalBottomSheet(
-                context: context,
-                backgroundColor: const Color(0xFF222222),
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                color: Theme.of(context)
+                    .colorScheme
+                    .primary
+                    .withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'JGL CUSTOMS  •  TRACK CONTROL',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.1,
                 ),
-                builder: (context) => _EpicenterSettingsSheet(
-                  audioProvider: audioProvider,
-                ),
-              );
-            },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  SmartArtwork(
+                    albumId: targetSong.id,
+                    songPath: targetSong.data,
+                    type: ArtworkType.AUDIO,
+                    size: 58,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          TitleUtils.getDisplayTitle(targetSong),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${TitleUtils.getDisplayArtist(targetSong.artist)} • ${DurationUtils.formatMilliseconds(targetSong.duration)} • ${audioProvider.playCountFor(targetSong)} reproducciones',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white60),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Favorito',
+                    onPressed: () => audioProvider.toggleFavorite(targetSong),
+                    icon: Icon(
+                      audioProvider.isFavorite(targetSong.id)
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _sectionLabel(context, 'REPRODUCCIÓN'),
+            _action(
+              context,
+              icon: Icons.redo_rounded,
+              label: context.tr('play_next'),
+              onTap: () async {
+                Navigator.pop(context);
+                await audioProvider.insertNextInQueue(targetSong);
+              },
+            ),
+            _action(
+              context,
+              icon: Icons.playlist_add_rounded,
+              label: context.tr('add_queue'),
+              onTap: () async {
+                Navigator.pop(context);
+                await audioProvider.addToQueue(targetSong);
+              },
+            ),
+            _action(
+              context,
+              icon: Icons.add_circle_outline_rounded,
+              label: context.tr('add_playlist'),
+              onTap: () => _addToPlaylist(context, targetSong),
+            ),
+            _sectionLabel(context, 'EXPLORAR'),
+            _action(
+              context,
+              icon: Icons.album_outlined,
+              label: context.tr('go_album'),
+              onTap: () => _openAlbum(context, targetSong),
+            ),
+            _action(
+              context,
+              icon: Icons.person_outline_rounded,
+              label: context.tr('go_artist'),
+              onTap: () => _openArtist(context, targetSong),
+            ),
+            _action(
+              context,
+              icon: Icons.smart_display_outlined,
+              label: context.tr('youtube'),
+              onTap: () async {
+                Navigator.pop(context);
+                await audioProvider.openSongOnYouTube(targetSong);
+              },
+            ),
+            _sectionLabel(context, 'HERRAMIENTAS'),
+            _action(
+              context,
+              icon: Icons.info_outline_rounded,
+              label: context.tr('details'),
+              onTap: () {
+                Navigator.pop(context);
+                showSongInfo(context, targetSong);
+              },
+            ),
+            _action(
+              context,
+              icon: Icons.edit_outlined,
+              label: context.tr('tag_editor'),
+              onTap: () {
+                Navigator.pop(context);
+                showEditTagDialog(context, audioProvider, song: targetSong);
+              },
+            ),
+            _action(
+              context,
+              icon: Icons.graphic_eq_rounded,
+              label: 'Ajustes de Epicentro',
+              onTap: () {
+                Navigator.pop(context);
+                showModalBottomSheet(
+                  context: context,
+                  backgroundColor: const Color(0xFF222222),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(20)),
+                  ),
+                  builder: (context) => _EpicenterSettingsSheet(
+                    audioProvider: audioProvider,
+                  ),
+                );
+              },
+            ),
+            _action(
+              context,
+              icon: Icons.visibility_off_outlined,
+              label: context.tr('hide_library'),
+              onTap: () async {
+                Navigator.pop(context);
+                await audioProvider.hideSong(targetSong);
+              },
+            ),
+            _action(
+              context,
+              icon: Icons.share_outlined,
+              label: context.tr('share'),
+              onTap: () async {
+                Navigator.pop(context);
+                await audioProvider.shareSong(targetSong);
+              },
+            ),
+            _sectionLabel(context, 'ARCHIVO'),
+            _action(
+              context,
+              icon: Icons.delete_outline,
+              label: context.tr('delete_device'),
+              color: Colors.redAccent,
+              onTap: () {
+                Navigator.pop(context);
+                _showDeleteDialog(context, audioProvider, targetSong);
+              },
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionLabel(BuildContext context, String label) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+      child: Row(
+        children: [
+          Container(width: 20, height: 3, color: colors.primary),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: colors.primary,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.2,
+            ),
           ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline,
-                color: Colors.redAccent, size: 28),
-            title: const Text("Eliminar del dispositivo",
-                style: TextStyle(color: Colors.redAccent, fontSize: 18)),
-            onTap: () {
-              Navigator.pop(context);
-              _showDeleteDialog(context, audioProvider, targetSong);
-            },
-          ),
-          const SizedBox(height: 10),
         ],
       ),
     );
   }
 
-  void _showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
+  Widget _action(
+    BuildContext context, {
+    IconData? icon,
+    Widget? leading,
+    required String label,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final itemColor = color ?? colors.onSurface;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      child: ListTile(
+        dense: true,
+        tileColor: colors.primary.withValues(alpha: 0.045),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        leading: leading ??
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: (color ?? colors.primary).withValues(alpha: 0.13),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, color: color ?? colors.primary, size: 22),
+            ),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: itemColor,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        trailing: Icon(Icons.chevron_right_rounded,
+            color: colors.onSurface.withValues(alpha: 0.30), size: 20),
+        onTap: onTap,
+      ),
+    );
+  }
+
+  Future<void> _addToPlaylist(
+      BuildContext context, SongModel targetSong) async {
+    final names = audioProvider.savedPlaylists.keys.toList()..sort();
+    final selection = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Añadir a playlist'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, '__new__'),
+            child: const Row(
+              children: [
+                Icon(Icons.add_rounded),
+                SizedBox(width: 12),
+                Text('Nueva playlist'),
+              ],
+            ),
+          ),
+          ...names.map(
+            (name) => SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, name),
+              child: Text(name),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (selection == null || !context.mounted) return;
+    if (selection == '__new__') {
+      final controller = TextEditingController();
+      final name = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Nueva playlist'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Nombre'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, controller.text),
+              child: const Text('Crear'),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (name != null && name.trim().isNotEmpty) {
+        await audioProvider.createPlaylist(name, [targetSong]);
+      }
+    } else {
+      await audioProvider.addSongToPlaylist(selection, targetSong);
+    }
+    if (context.mounted) Navigator.pop(context);
+  }
+
+  void _openAlbum(BuildContext context, SongModel targetSong) {
+    final songs = audioProvider.allSongs
+        .where((song) =>
+            TitleUtils.getAlbumKey(song) == TitleUtils.getAlbumKey(targetSong))
+        .toList();
+    Navigator.pop(context);
+    if (songs.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AlbumDetailScreen(
+          albumName: TitleUtils.getDisplayAlbum(targetSong),
+          albumId: targetSong.albumId ?? 0,
+          songs: songs,
+        ),
+      ),
+    );
+  }
+
+  void _openArtist(BuildContext context, SongModel targetSong) {
+    final artist = TitleUtils.getDisplayArtist(targetSong.artist);
+    final songs = audioProvider.allSongs
+        .where((song) => TitleUtils.getDisplayArtist(song.artist) == artist)
+        .toList();
+    Navigator.pop(context);
+    if (songs.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ArtistDetailScreen(artistName: artist, songs: songs),
+      ),
+    );
+  }
+
+  void _showDeleteDialog(
+      BuildContext context, AudioProvider provider, SongModel song) {
     showDeleteDialog(context, provider, song);
   }
 }
 
-void showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF222222),
-        title: const Text("Confirmar eliminación",
-            style: TextStyle(color: Colors.white)),
-        content: Text(
-            "¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?",
-            style: const TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child:
-                  const Text("Cancelar", style: TextStyle(color: Colors.grey))),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final success = await provider.deleteSong(song);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success
-                          ? "Archivo eliminado correctamente."
-                          : "Error al eliminar. Verifica los permisos.",
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    backgroundColor: success ? Colors.black87 : Colors.red,
+void showDeleteDialog(
+    BuildContext context, AudioProvider provider, SongModel song) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF222222),
+      title: const Text("Confirmar eliminación",
+          style: TextStyle(color: Colors.white)),
+      content: Text(
+          "¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?",
+          style: const TextStyle(color: Colors.white70)),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:
+                const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(ctx);
+            final success = await provider.deleteSong(song);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? "Archivo eliminado correctamente."
+                        : "Error al eliminar. Verifica los permisos.",
+                    style: const TextStyle(color: Colors.white),
                   ),
-                );
-              }
-            },
-            child: const Text("Eliminar",
-                style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-  }
+                  backgroundColor: success ? Colors.black87 : Colors.red,
+                ),
+              );
+            }
+          },
+          child:
+              const Text("Eliminar", style: TextStyle(color: Colors.redAccent)),
+        ),
+      ],
+    ),
+  );
+}
 
 class _EpicenterSettingsSheet extends StatefulWidget {
   final AudioProvider audioProvider;
@@ -216,7 +521,7 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
                         style: TextStyle(color: Colors.white)),
                     value: widget.audioProvider.isEpicenterEnabled,
                     onChanged: (_) => widget.audioProvider.toggleEpicenter(),
-                    activeThumbColor: Colors.tealAccent,
+                    activeThumbColor: AppTheme.primaryColor,
                   ),
                   EpicenterEngineSelector(
                     value: widget.audioProvider.epicenterEngine,
@@ -384,7 +689,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
   late final TextEditingController _genre;
   late final TextEditingController _year;
   late final TextEditingController _track;
-  
+
   bool _isSaving = false;
 
   File? _newCoverFile;
@@ -397,7 +702,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     final song = widget.song ?? widget.provider.currentSong!;
     final artistText =
         TitleUtils.isUnknownArtist(song.artist) ? "" : song.artist!.trim();
-    _title = TextEditingController(text: widget.isAlbumEdit ? "" : TitleUtils.getDisplayTitle(song));
+    _title = TextEditingController(
+        text: widget.isAlbumEdit ? "" : TitleUtils.getDisplayTitle(song));
     _album = TextEditingController(text: song.album ?? "");
     _artist = TextEditingController(text: artistText);
     _albumArtist = TextEditingController();
@@ -455,9 +761,11 @@ class _EditTagDialogState extends State<_EditTagDialog> {
 
   Future<void> _save() async {
     setState(() => _isSaving = true);
-    
+
     try {
-      final songsToEdit = widget.isAlbumEdit ? (widget.albumSongs ?? []) : [widget.song ?? widget.provider.currentSong!];
+      final songsToEdit = widget.isAlbumEdit
+          ? (widget.albumSongs ?? [])
+          : [widget.song ?? widget.provider.currentSong!];
 
       List<Picture> pics = [];
       Uint8List? coverBytesForCache;
@@ -478,7 +786,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
 
       for (int i = 0; i < songsToEdit.length; i++) {
         final currentSong = songsToEdit[i];
-        
+
         List<Picture> currentPics = List.from(pics);
         String? originalTitle;
         int? originalDuration;
@@ -493,8 +801,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
             }
           }
         } catch (_) {}
-        
-        final newTitle = (!widget.isAlbumEdit && _title.text.trim().isNotEmpty) ? _title.text.trim() : originalTitle;
+
+        final newTitle = (!widget.isAlbumEdit && _title.text.trim().isNotEmpty)
+            ? _title.text.trim()
+            : originalTitle;
 
         final tag = Tag(
           title: newTitle,
@@ -511,9 +821,15 @@ class _EditTagDialogState extends State<_EditTagDialog> {
         await widget.provider.updateSongMetadata(
           currentSong,
           newTitle: newTitle ?? currentSong.title,
-          newArtist: _artist.text.trim().isEmpty ? TitleUtils.getDisplayArtist(currentSong.artist) : _artist.text.trim(),
-          newAlbum: _album.text.trim().isEmpty ? currentSong.album : _album.text.trim(),
-          newGenre: _genre.text.trim().isEmpty ? currentSong.genre : _genre.text.trim(),
+          newArtist: _artist.text.trim().isEmpty
+              ? TitleUtils.getDisplayArtist(currentSong.artist)
+              : _artist.text.trim(),
+          newAlbum: _album.text.trim().isEmpty
+              ? currentSong.album
+              : _album.text.trim(),
+          newGenre: _genre.text.trim().isEmpty
+              ? currentSong.genre
+              : _genre.text.trim(),
           newCoverBytes: coverBytesForCache,
         );
       }
@@ -521,7 +837,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(widget.isAlbumEdit ? "Álbum actualizado correctamente." : "Etiquetas guardadas.",
+            content: Text(
+                widget.isAlbumEdit
+                    ? "Álbum actualizado correctamente."
+                    : "Etiquetas guardadas.",
                 style: const TextStyle(color: Colors.white)),
             backgroundColor: Colors.green));
       }
@@ -536,7 +855,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     }
   }
 
-  Widget _field(TextEditingController ctrl, String label, {bool enabled = true}) {
+  Widget _field(TextEditingController ctrl, String label,
+      {bool enabled = true}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: TextField(
@@ -566,7 +886,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
 
     return AlertDialog(
       backgroundColor: const Color(0xFF2A2A2A),
-      title: Text(widget.isAlbumEdit ? "Editar Álbum Masivo" : "Editor de etiquetas",
+      title: Text(
+          widget.isAlbumEdit ? "Editar Álbum Masivo" : "Editor de etiquetas",
           style: const TextStyle(color: Colors.white, fontSize: 22)),
       contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
       content: SizedBox(
@@ -578,7 +899,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
               if (_isSaving)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 20),
-                  child: Center(child: CircularProgressIndicator(color: Colors.white)),
+                  child: Center(
+                      child: CircularProgressIndicator(color: Colors.white)),
                 ),
               // Cover art picker
               GestureDetector(
@@ -610,14 +932,15 @@ class _EditTagDialogState extends State<_EditTagDialog> {
                       : null,
                 ),
               ),
-              if (!widget.isAlbumEdit) _field(_title, "Título", enabled: !_isSaving),
+              if (!widget.isAlbumEdit)
+                _field(_title, "Título", enabled: !_isSaving),
               _field(_album, "Álbum", enabled: !_isSaving),
               _field(_artist, "Artista", enabled: !_isSaving),
               _field(_albumArtist, "Artista del álbum", enabled: !_isSaving),
               _field(_composer, "Compositor", enabled: !_isSaving),
               _field(_genre, "Género", enabled: !_isSaving),
               _field(_year, "Año", enabled: !_isSaving),
-              
+
               if (!widget.isAlbumEdit)
                 _field(_track, "Track (Ej: 4)", enabled: !_isSaving),
               const SizedBox(height: 8),

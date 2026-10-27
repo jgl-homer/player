@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
+import 'package:path/path.dart' as path;
 import '../../providers/audio_provider.dart';
 import '../../services/state_persistence.dart';
 import '../../theme/app_theme.dart';
@@ -22,6 +23,7 @@ class FolderListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final int songCount = songs.length;
+    final colors = Theme.of(context).colorScheme;
     return ListTile(
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -29,15 +31,15 @@ class FolderListTile extends StatelessWidget {
         height: 50,
         width: 50,
         decoration: BoxDecoration(
-          color: Colors.grey[800],
+          color: colors.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8.0),
         ),
-        child: const Icon(Icons.folder, color: Colors.grey, size: 30),
+        child: Icon(Icons.folder, color: colors.onSurfaceVariant, size: 30),
       ),
       title: Text(
         folderName,
-        style: const TextStyle(
-          color: AppTheme.textMain,
+        style: TextStyle(
+          color: colors.onSurface,
           fontWeight: FontWeight.w500,
           fontSize: 16,
         ),
@@ -46,18 +48,17 @@ class FolderListTile extends StatelessWidget {
         padding: const EdgeInsets.only(top: 4.0),
         child: Text(
           "$songCount Canciones",
-          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+          style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
         ),
       ),
       trailing: PopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert, color: AppTheme.textSecondary),
-        color: AppTheme.surfaceColor,
+        icon: Icon(Icons.more_vert, color: colors.onSurfaceVariant),
+        color: colors.surface,
         onSelected: (value) {
           final audioProvider =
               Provider.of<AudioProvider>(context, listen: false);
-          final folderPath = songs.isNotEmpty
-              ? songs.first.data.replaceAll(songs.first.displayName, "")
-              : folderName;
+          final folderPath =
+              songs.isNotEmpty ? path.dirname(songs.first.data) : folderName;
           if (value == 'reproducir') {
             audioProvider.playFolderSongs(folderPath, songs, 0);
           } else if (value == 'aleatorio') {
@@ -68,6 +69,8 @@ class FolderListTile extends StatelessWidget {
             showFolderInfo(context, folderName, folderPath, songs);
           } else if (value == 'añadir') {
             audioProvider.addAllToQueue(songs);
+          } else if (value == 'hide') {
+            audioProvider.hideFolder(folderPath);
           } else if (value == 'delete') {
             _showDeleteConfirmation(context, audioProvider);
           }
@@ -90,6 +93,10 @@ class FolderListTile extends StatelessWidget {
             child: Text('Añadir a lista'),
           ),
           const PopupMenuDivider(),
+          const PopupMenuItem<String>(
+            value: 'hide',
+            child: Text('Ocultar carpeta'),
+          ),
           const PopupMenuItem<String>(
             value: 'delete',
             child: Text('Borrar carpeta', style: TextStyle(color: Colors.red)),
@@ -115,15 +122,14 @@ class FolderListTile extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('CANCELAR',
+            child: Text('CANCELAR',
                 style: TextStyle(color: AppTheme.primaryColor)),
           ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context); // Close dialog first
               if (songs.isNotEmpty) {
-                final folderPath =
-                    songs.first.data.replaceAll(songs.first.displayName, "");
+                final folderPath = path.dirname(songs.first.data);
                 try {
                   final dir = Directory(folderPath);
                   if (dir.existsSync()) {

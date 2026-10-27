@@ -123,7 +123,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (isPlaying)
-                        const Icon(Icons.equalizer,
+                        Icon(Icons.equalizer,
                             color: AppTheme.primaryColor, size: 20),
                       // Botón de eliminación — solo quita de la cola activa,
                       // nunca borra el archivo físico del almacenamiento.

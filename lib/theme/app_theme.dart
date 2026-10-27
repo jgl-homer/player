@@ -50,7 +50,7 @@ class _SmoothPageTransitionsBuilder extends PageTransitionsBuilder {
 }
 
 class AppTheme {
-  static const Color primaryColor = Color(0xFFFFD500); // Yellow from Muzio
+  static Color primaryColor = const Color(0xFFFFD500);
   static const Color backgroundColor = Colors.black;
   static const Color surfaceColor =
       Color(0xFF121212); // Slightly lighter black for miniplayer
@@ -59,58 +59,98 @@ class AppTheme {
   static const Color textMain = Colors.white;
   static const Color textSecondary = Colors.grey;
 
-  static final ThemeData darkTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    primaryColor: primaryColor,
-    scaffoldBackgroundColor: backgroundColor,
-    appBarTheme: const AppBarTheme(
-      backgroundColor: backgroundColor,
-      foregroundColor: textMain,
-      elevation: 0,
-      iconTheme: IconThemeData(color: textMain),
-    ),
-    colorScheme: const ColorScheme.dark(
-      primary: primaryColor,
-      secondary: primaryColor,
-      surface: surfaceColor,
-    ),
-    textTheme: const TextTheme(
-      titleLarge: TextStyle(color: textMain, fontWeight: FontWeight.bold),
-      bodyLarge: TextStyle(color: textMain),
-      bodyMedium: TextStyle(color: textSecondary),
-    ),
-    iconTheme: const IconThemeData(color: textMain),
-    pageTransitionsTheme: const PageTransitionsTheme(
-      builders: {
-        TargetPlatform.android: _SmoothPageTransitionsBuilder(),
-        TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
-      },
-    ),
-    expansionTileTheme: const ExpansionTileThemeData(
-      expansionAnimationStyle: AnimationStyle(
-        duration: AppMotion.expansionTransition,
-        reverseDuration: AppMotion.expansionTransitionReverse,
-        curve: AppMotion.enterCurve,
-        reverseCurve: AppMotion.exitCurve,
-      ),
-    ),
-    tabBarTheme: const TabBarThemeData(
-      labelColor: primaryColor,
-      unselectedLabelColor: textSecondary,
-      indicatorColor: primaryColor,
-      indicatorSize: TabBarIndicatorSize.label,
-      dividerColor: Colors.transparent,
-      labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-      unselectedLabelStyle:
-          TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
-    ),
-    floatingActionButtonTheme: const FloatingActionButtonThemeData(
-      backgroundColor: primaryColor,
-      foregroundColor: Colors.black,
-    ),
-    bottomSheetTheme: const BottomSheetThemeData(
-      backgroundColor: backgroundColor,
-    ),
-  );
+  static ThemeData get darkTheme => darkThemeFor(primaryColor);
+
+  static ThemeData darkThemeFor(Color accent) => ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        primaryColor: accent,
+        scaffoldBackgroundColor: backgroundColor,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: backgroundColor,
+          foregroundColor: textMain,
+          elevation: 0,
+          iconTheme: IconThemeData(color: textMain),
+        ),
+        colorScheme: ColorScheme.dark(
+          primary: accent,
+          secondary: accent,
+          surface: surfaceColor,
+        ),
+        textTheme: const TextTheme(
+          titleLarge: TextStyle(color: textMain, fontWeight: FontWeight.bold),
+          bodyLarge: TextStyle(color: textMain),
+          bodyMedium: TextStyle(color: textSecondary),
+        ),
+        iconTheme: const IconThemeData(color: textMain),
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: _SmoothPageTransitionsBuilder(),
+            TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
+          },
+        ),
+        expansionTileTheme: const ExpansionTileThemeData(
+          expansionAnimationStyle: AnimationStyle(
+            duration: AppMotion.expansionTransition,
+            reverseDuration: AppMotion.expansionTransitionReverse,
+            curve: AppMotion.enterCurve,
+            reverseCurve: AppMotion.exitCurve,
+          ),
+        ),
+        tabBarTheme: TabBarThemeData(
+          labelColor: accent,
+          unselectedLabelColor: textSecondary,
+          indicatorColor: accent,
+          indicatorSize: TabBarIndicatorSize.label,
+          dividerColor: Colors.transparent,
+          labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          unselectedLabelStyle:
+              TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+        ),
+        floatingActionButtonTheme: FloatingActionButtonThemeData(
+          backgroundColor: accent,
+          foregroundColor: Colors.black,
+        ),
+        bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: backgroundColor,
+        ),
+      );
+
+  static ThemeData lightThemeFor(Color accent) => ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.light,
+        primaryColor: accent,
+        scaffoldBackgroundColor: const Color(0xFFF7F7F7),
+        colorScheme: ColorScheme.light(
+          primary: accent,
+          secondary: accent,
+          surface: Colors.white,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black87,
+          elevation: 0,
+        ),
+        tabBarTheme: TabBarThemeData(
+          labelColor: accent,
+          unselectedLabelColor: Colors.black54,
+          indicatorColor: accent,
+          indicatorSize: TabBarIndicatorSize.label,
+          dividerColor: Colors.transparent,
+          labelStyle:
+              const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          unselectedLabelStyle:
+              const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
+        ),
+        floatingActionButtonTheme: FloatingActionButtonThemeData(
+          backgroundColor: accent,
+          foregroundColor: Colors.black,
+        ),
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: _SmoothPageTransitionsBuilder(),
+            TargetPlatform.fuchsia: _SmoothPageTransitionsBuilder(),
+          },
+        ),
+      );
 }

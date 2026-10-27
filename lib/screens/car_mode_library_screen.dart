@@ -208,7 +208,7 @@ class _CarModeLibraryScreenState extends State<CarModeLibraryScreen> {
                       SizedBox(
                         width: 48,
                         child: isCurrent
-                            ? const Icon(
+                            ? Icon(
                                 Icons.graphic_eq_rounded,
                                 color: AppTheme.primaryColor,
                                 size: 32,

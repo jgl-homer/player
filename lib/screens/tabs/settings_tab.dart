@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/audio_provider.dart';
+import '../../providers/app_settings_provider.dart';
 import '../../services/state_persistence.dart';
 import '../../services/lyrics_service.dart';
 import '../../widgets/epicenter_engine_selector.dart';
+import '../../l10n/app_strings.dart';
+import '../../theme/app_theme.dart';
 
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
@@ -13,13 +16,14 @@ class SettingsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
+    final appSettings = context.watch<AppSettingsProvider>();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Configuración',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        title: Text(context.tr('settings'),
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         leading: Navigator.of(context).canPop()
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
@@ -30,6 +34,104 @@ class SettingsTab extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
         children: [
+          _SettingsSection(
+            storageKey: 'settings_appearance',
+            icon: Icons.palette_outlined,
+            title: 'Apariencia e idioma',
+            subtitle: appSettings.themeMode == ThemeMode.light
+                ? 'Modo claro'
+                : appSettings.themeMode == ThemeMode.system
+                    ? 'Según el sistema'
+                    : 'Modo oscuro',
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Tema', style: TextStyle(color: Colors.white)),
+                  const SizedBox(height: 8),
+                  SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                          value: ThemeMode.dark,
+                          icon: Icon(Icons.dark_mode_outlined),
+                          label: Text('Oscuro')),
+                      ButtonSegment(
+                          value: ThemeMode.light,
+                          icon: Icon(Icons.light_mode_outlined),
+                          label: Text('Claro')),
+                      ButtonSegment(
+                          value: ThemeMode.system,
+                          icon: Icon(Icons.settings_suggest_outlined),
+                          label: Text('Sistema')),
+                    ],
+                    selected: {appSettings.themeMode},
+                    onSelectionChanged: (selection) =>
+                        appSettings.setThemeMode(selection.first),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text('Color de acento',
+                      style: TextStyle(color: Colors.white)),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: const [
+                      Color(0xFFFFD500),
+                      Color(0xFF00E5FF),
+                      Color(0xFF64FFDA),
+                      Color(0xFFFF5252),
+                      Color(0xFFE040FB),
+                      Color(0xFF7C4DFF),
+                      Color(0xFFFF9100),
+                      Color(0xFF69F0AE),
+                    ].map((color) {
+                      final selected = appSettings.accentColor == color;
+                      return InkWell(
+                        onTap: () => appSettings.setAccentColor(color),
+                        borderRadius: BorderRadius.circular(24),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: selected ? Colors.white : Colors.white24,
+                              width: selected ? 3 : 1,
+                            ),
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check, color: Colors.black)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 18),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.language_outlined),
+                    title: const Text('Idioma'),
+                    trailing: DropdownButton<String>(
+                      value: appSettings.locale.languageCode,
+                      items: const [
+                        DropdownMenuItem(value: 'es', child: Text('Español')),
+                        DropdownMenuItem(value: 'en', child: Text('English')),
+                        DropdownMenuItem(value: 'pt', child: Text('Português')),
+                      ],
+                      onChanged: (code) {
+                        if (code != null) {
+                          appSettings.setLocale(Locale(code));
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           _SettingsSection(
             storageKey: 'settings_tabs',
             icon: Icons.tune_rounded,
@@ -47,7 +149,6 @@ class SettingsTab extends StatelessWidget {
                     ? 'Sintetizador 1'
                     : 'Sintetizador 2')
                 : 'Desactivado',
-            initiallyExpanded: true,
             child: Column(
               children: [
                 SwitchListTile(
@@ -59,8 +160,8 @@ class SettingsTab extends StatelessWidget {
                   ),
                   value: audioProvider.isEpicenterEnabled,
                   onChanged: (_) => audioProvider.toggleEpicenter(),
-                  activeThumbColor: Colors.tealAccent,
-                  activeTrackColor: Colors.teal,
+                  activeThumbColor: AppTheme.primaryColor,
+                  activeTrackColor: AppTheme.primaryColor,
                 ),
                 if (audioProvider.isEpicenterEnabled) ...[
                   Padding(
@@ -82,17 +183,17 @@ class SettingsTab extends StatelessWidget {
                     onChanged: (value) => audioProvider.updateEpicenterSettings(
                       peakProtectionEnabled: value,
                     ),
-                    activeThumbColor: Colors.tealAccent,
-                    activeTrackColor: Colors.teal,
+                    activeThumbColor: AppTheme.primaryColor,
+                    activeTrackColor: AppTheme.primaryColor,
                   ),
                   Theme(
                     data: Theme.of(context)
                         .copyWith(dividerColor: Colors.transparent),
                     child: ExpansionTile(
-                      title: const Text(
+                      title: Text(
                         'Ajustes avanzados',
-                        style:
-                            TextStyle(color: Colors.tealAccent, fontSize: 14),
+                        style: TextStyle(
+                            color: AppTheme.primaryColor, fontSize: 14),
                       ),
                       childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                       children: [
@@ -190,8 +291,8 @@ class SettingsTab extends StatelessWidget {
                   ),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.timer_outlined,
-                      color: Colors.tealAccent),
+                  leading:
+                      Icon(Icons.timer_outlined, color: AppTheme.primaryColor),
                   title: const Text(
                     'Ignorar audios cortos',
                     style: TextStyle(color: Colors.white),
@@ -206,7 +307,7 @@ class SettingsTab extends StatelessWidget {
                     value: audioProvider.minimumSongDurationSeconds,
                     dropdownColor: const Color(0xFF252525),
                     underline: const SizedBox.shrink(),
-                    style: const TextStyle(color: Colors.tealAccent),
+                    style: TextStyle(color: AppTheme.primaryColor),
                     items: const [0, 5, 10, 15, 20, 30, 45, 60, 90, 120]
                         .map(
                           (seconds) => DropdownMenuItem(
@@ -222,6 +323,73 @@ class SettingsTab extends StatelessWidget {
                     },
                   ),
                 ),
+                ListTile(
+                  leading: Icon(Icons.multitrack_audio_outlined,
+                      color: AppTheme.primaryColor),
+                  title: const Text(
+                    'Fundido entre canciones',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    audioProvider.crossfadeSeconds == 0
+                        ? 'Desactivado'
+                        : '${audioProvider.crossfadeSeconds} segundos al cambiar de canción',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: audioProvider.crossfadeSeconds,
+                    dropdownColor: const Color(0xFF252525),
+                    underline: const SizedBox.shrink(),
+                    style: TextStyle(color: AppTheme.primaryColor),
+                    items: const [0, 2, 4, 6, 8, 10, 12]
+                        .map(
+                          (seconds) => DropdownMenuItem(
+                            value: seconds,
+                            child: Text(seconds == 0 ? 'No' : '$seconds s'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (seconds) {
+                      if (seconds != null) {
+                        audioProvider.setCrossfadeSeconds(seconds);
+                      }
+                    },
+                  ),
+                ),
+                if (audioProvider.hiddenSongPaths.isNotEmpty ||
+                    audioProvider.hiddenFolderPaths.isNotEmpty)
+                  _HiddenItemsPanel(audioProvider: audioProvider),
+                ListTile(
+                  leading: const Icon(Icons.restart_alt_rounded),
+                  title: const Text('Reiniciar contador de reproducciones'),
+                  subtitle: const Text(
+                    'Borra las estadísticas de la pestaña Más reproducidas.',
+                  ),
+                  onTap: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Reiniciar reproducciones'),
+                        content: const Text(
+                            '¿Quieres borrar todos los conteos guardados?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Cancelar'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('Reiniciar'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await audioProvider.clearPlayCounts();
+                    }
+                  },
+                ),
                 SwitchListTile(
                   title: const Text('Mostrar letras',
                       style: TextStyle(color: Colors.white)),
@@ -231,12 +399,12 @@ class SettingsTab extends StatelessWidget {
                   ),
                   value: audioProvider.lyricsVisible,
                   onChanged: audioProvider.setLyricsVisible,
-                  activeThumbColor: Colors.tealAccent,
-                  activeTrackColor: Colors.teal,
+                  activeThumbColor: AppTheme.primaryColor,
+                  activeTrackColor: AppTheme.primaryColor,
                 ),
                 ListTile(
-                  leading: const Icon(Icons.lyrics_outlined,
-                      color: Colors.tealAccent),
+                  leading:
+                      Icon(Icons.lyrics_outlined, color: AppTheme.primaryColor),
                   title: const Text('Fuente de letras',
                       style: TextStyle(color: Colors.white)),
                   subtitle: Text(
@@ -249,7 +417,7 @@ class SettingsTab extends StatelessWidget {
                     value: audioProvider.lyricsSource,
                     dropdownColor: const Color(0xFF252525),
                     underline: const SizedBox.shrink(),
-                    style: const TextStyle(color: Colors.tealAccent),
+                    style: TextStyle(color: AppTheme.primaryColor),
                     items: const [
                       DropdownMenuItem(
                         value: LyricsSource.internet,
@@ -286,7 +454,7 @@ class SettingsTab extends StatelessWidget {
                               min: 100,
                               max: 10000,
                               divisions: 99,
-                              activeColor: Colors.tealAccent,
+                              activeColor: AppTheme.primaryColor,
                               inactiveColor: Colors.white24,
                               onChanged: (value) =>
                                   audioProvider.setRecentSongsLimit(
@@ -312,13 +480,13 @@ class SettingsTab extends StatelessWidget {
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () => _refreshLibrary(context, audioProvider),
-                      icon: const Icon(Icons.refresh, color: Colors.tealAccent),
-                      label: const Text(
+                      icon: Icon(Icons.refresh, color: AppTheme.primaryColor),
+                      label: Text(
                         'Refrescar biblioteca',
-                        style: TextStyle(color: Colors.tealAccent),
+                        style: TextStyle(color: AppTheme.primaryColor),
                       ),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.teal),
+                        side: BorderSide(color: AppTheme.primaryColor),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                     ),
@@ -407,8 +575,8 @@ class _LibraryStat extends StatelessWidget {
       children: [
         Text(
           '$value',
-          style: const TextStyle(
-            color: Colors.tealAccent,
+          style: TextStyle(
+            color: AppTheme.primaryColor,
             fontSize: 22,
             fontWeight: FontWeight.bold,
           ),
@@ -418,6 +586,67 @@ class _LibraryStat extends StatelessWidget {
           style: const TextStyle(color: Colors.grey, fontSize: 12),
         ),
       ],
+    );
+  }
+}
+
+class _HiddenItemsPanel extends StatelessWidget {
+  final AudioProvider audioProvider;
+
+  const _HiddenItemsPanel({required this.audioProvider});
+
+  @override
+  Widget build(BuildContext context) {
+    final folders = audioProvider.hiddenFolderPaths.toList()..sort();
+    final songs = audioProvider.hiddenSongPaths.toList()..sort();
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        leading:
+            Icon(Icons.visibility_off_outlined, color: AppTheme.primaryColor),
+        title: Text(
+          'Elementos ocultos (${folders.length + songs.length})',
+          style: const TextStyle(color: Colors.white),
+        ),
+        children: [
+          ...folders.map(
+            (folder) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.folder_outlined, size: 20),
+              title: Text(
+                folder.replaceAll('\\', '/').split('/').last,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle:
+                  Text(folder, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: IconButton(
+                tooltip: 'Volver a mostrar',
+                icon: const Icon(Icons.visibility_outlined),
+                onPressed: () => audioProvider.restoreHiddenFolder(folder),
+              ),
+            ),
+          ),
+          ...songs.map(
+            (songPath) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.music_note_outlined, size: 20),
+              title: Text(
+                songPath.replaceAll('\\', '/').split('/').last,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle:
+                  Text(songPath, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: IconButton(
+                tooltip: 'Volver a mostrar',
+                icon: const Icon(Icons.visibility_outlined),
+                onPressed: () => audioProvider.restoreHiddenSong(songPath),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -501,10 +730,11 @@ class _AboutAppSection extends StatelessWidget {
                   TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
             ),
             const SizedBox(height: 12),
-            const Row(
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.shield_outlined, color: Colors.tealAccent, size: 18),
+                Icon(Icons.shield_outlined,
+                    color: AppTheme.primaryColor, size: 18),
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -522,7 +752,7 @@ class _AboutAppSection extends StatelessWidget {
             const Divider(color: Colors.white12, height: 1),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.code_rounded, color: Colors.tealAccent),
+              leading: Icon(Icons.code_rounded, color: AppTheme.primaryColor),
               title: const Text(
                 'jgl-homer en GitHub',
                 style: TextStyle(
@@ -530,9 +760,9 @@ class _AboutAppSection extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              subtitle: const Text(
+              subtitle: Text(
                 'github.com/jgl-homer',
-                style: TextStyle(color: Colors.tealAccent, fontSize: 12),
+                style: TextStyle(color: AppTheme.primaryColor, fontSize: 12),
               ),
               trailing: const Icon(
                 Icons.open_in_new_rounded,
@@ -579,8 +809,8 @@ class _ToneControlsPanel extends StatelessWidget {
           ),
           value: audioProvider.replayGainEnabled,
           onChanged: audioProvider.setReplayGainEnabled,
-          activeThumbColor: Colors.tealAccent,
-          activeTrackColor: Colors.teal,
+          activeThumbColor: AppTheme.primaryColor,
+          activeTrackColor: AppTheme.primaryColor,
         ),
         if (audioProvider.replayGainEnabled)
           Padding(
@@ -622,8 +852,8 @@ class _ToneControlsPanel extends StatelessWidget {
           ),
           value: audioProvider.equalizerEnabled,
           onChanged: audioProvider.setEqualizerEnabled,
-          activeThumbColor: Colors.tealAccent,
-          activeTrackColor: Colors.teal,
+          activeThumbColor: AppTheme.primaryColor,
+          activeTrackColor: AppTheme.primaryColor,
         ),
         if (audioProvider.equalizerEnabled)
           Padding(
@@ -639,7 +869,7 @@ class _ToneControlsPanel extends StatelessWidget {
                       value: selectedPreset,
                       dropdownColor: const Color(0xFF252525),
                       underline: const SizedBox.shrink(),
-                      style: const TextStyle(color: Colors.tealAccent),
+                      style: TextStyle(color: AppTheme.primaryColor),
                       items: [
                         ..._presets.keys.map(
                           (name) => DropdownMenuItem(
@@ -739,7 +969,7 @@ class _EqualizerBandSlider extends StatelessWidget {
             min: -6,
             max: 6,
             divisions: 24,
-            activeColor: Colors.tealAccent,
+            activeColor: AppTheme.primaryColor,
             inactiveColor: Colors.white24,
             onChanged: onChanged,
           ),
@@ -762,7 +992,6 @@ class _SettingsSection extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
-  final bool initiallyExpanded;
   final Widget child;
 
   const _SettingsSection({
@@ -770,16 +999,16 @@ class _SettingsSection extends StatelessWidget {
     required this.icon,
     required this.title,
     this.subtitle,
-    this.initiallyExpanded = false,
     required this.child,
   });
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF181818),
-        border: Border.all(color: Colors.white12),
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
         borderRadius: BorderRadius.circular(6),
       ),
       clipBehavior: Clip.antiAlias,
@@ -787,13 +1016,13 @@ class _SettingsSection extends StatelessWidget {
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
           key: PageStorageKey<String>(storageKey),
-          initiallyExpanded: initiallyExpanded,
+          initiallyExpanded: false,
           maintainState: true,
-          leading: Icon(icon, color: Colors.tealAccent, size: 22),
+          leading: Icon(icon, color: AppTheme.primaryColor, size: 22),
           title: Text(
             title,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: colors.onSurface,
               fontSize: 15,
               fontWeight: FontWeight.w600,
             ),
@@ -802,10 +1031,11 @@ class _SettingsSection extends StatelessWidget {
               ? null
               : Text(
                   subtitle!,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  style:
+                      TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
                 ),
-          iconColor: Colors.tealAccent,
-          collapsedIconColor: Colors.white60,
+          iconColor: AppTheme.primaryColor,
+          collapsedIconColor: colors.onSurfaceVariant,
           tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
           children: [child],
         ),
@@ -849,7 +1079,7 @@ class _BassSlider extends StatelessWidget {
                 value: value,
                 min: min,
                 max: max,
-                activeColor: Colors.tealAccent,
+                activeColor: AppTheme.primaryColor,
                 inactiveColor: Colors.white24,
                 onChanged: onChanged,
               ),
@@ -886,6 +1116,7 @@ class _TabsSelectorState extends State<_TabsSelector> {
     'playlists': _TabMeta('Listas de reproducción', Icons.queue_music_outlined),
     'recently_added':
         _TabMeta('Añadido recientemente', Icons.new_releases_outlined),
+    'most_played': _TabMeta('Más reproducidas', Icons.bar_chart_rounded),
   };
 
   late List<String> _enabled;
@@ -960,7 +1191,7 @@ class _TabsSelectorState extends State<_TabsSelector> {
                             Checkbox(
                               value: enabled,
                               onChanged: isLast ? null : (_) => _toggle(id),
-                              activeColor: Colors.tealAccent,
+                              activeColor: AppTheme.primaryColor,
                               checkColor: Colors.black,
                               side: const BorderSide(
                                 color: Colors.white54,
@@ -973,8 +1204,9 @@ class _TabsSelectorState extends State<_TabsSelector> {
                             const SizedBox(width: 4),
                             Icon(
                               meta.icon,
-                              color:
-                                  enabled ? Colors.tealAccent : Colors.white54,
+                              color: enabled
+                                  ? AppTheme.primaryColor
+                                  : Colors.white54,
                               size: 20,
                             ),
                             const SizedBox(width: 10),
