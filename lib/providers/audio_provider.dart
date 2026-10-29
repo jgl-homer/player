@@ -108,6 +108,30 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   List<SongModel> get allSongs => _allSongs;
   List<AlbumModel> get allAlbums => _allAlbums;
   List<SongModel> get currentPlaylist => _currentPlaylist;
+  List<int> get _visibleQueueIndices {
+    final indices = _playback.effectiveIndices;
+    if (!_shuffle ||
+        indices.length != _currentPlaylist.length ||
+        indices.any((index) => index < 0 || index >= _currentPlaylist.length)) {
+      return List<int>.generate(_currentPlaylist.length, (index) => index);
+    }
+    return indices;
+  }
+
+  List<SongModel> get currentPlaybackOrder => _visibleQueueIndices
+      .map((index) => _currentPlaylist[index])
+      .toList(growable: false);
+
+  int get currentPlaybackOrderIndex {
+    final index = _visibleQueueIndices.indexOf(_currentIndex);
+    return index == -1 ? _currentIndex : index;
+  }
+
+  int queueIndexForPlaybackOrder(int index) {
+    final indices = _visibleQueueIndices;
+    return index >= 0 && index < indices.length ? indices[index] : index;
+  }
+
   bool get isLoading => _isLoading;
   bool get isAutoModeEnabled => _isAutoModeEnabled;
   bool get isIndexing => _isIndexing;

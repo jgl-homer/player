@@ -26,6 +26,8 @@ class PlaybackEngine {
   bool get hasPrevious => _player.hasPrevious;
   LoopMode get loopMode => _player.loopMode;
   bool get shuffleModeEnabled => _player.shuffleModeEnabled;
+  List<int> get effectiveIndices =>
+      List<int>.unmodifiable(_player.effectiveIndices);
   Object? get currentSourceTag => _player.sequenceState.currentSource?.tag;
 
   Stream<bool> get playingStream => _player.playingStream;

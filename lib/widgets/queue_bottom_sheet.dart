@@ -20,7 +20,8 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
   @override
   void initState() {
     super.initState();
-    final currentIndex = context.read<AudioProvider>().currentIndex;
+    final currentIndex =
+        context.read<AudioProvider>().currentPlaybackOrderIndex;
     final initialIndex = currentIndex > 2 ? currentIndex - 2 : 0;
     _scrollController = ScrollController(
       initialScrollOffset: initialIndex * _queueItemExtent,
@@ -36,7 +37,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
-    final queue = audioProvider.currentPlaylist;
+    final queue = audioProvider.currentPlaybackOrder;
 
     return Container(
       decoration: const BoxDecoration(
@@ -131,12 +132,16 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                         icon: const Icon(Icons.delete_outline,
                             color: Colors.white38),
                         tooltip: 'Quitar de la cola',
-                        onPressed: () => audioProvider.removeFromQueue(index),
+                        onPressed: () => audioProvider.removeFromQueue(
+                          audioProvider.queueIndexForPlaybackOrder(index),
+                        ),
                       ),
                     ],
                   ),
                   onTap: () {
-                    audioProvider.skipToIndex(index);
+                    audioProvider.skipToIndex(
+                      audioProvider.queueIndexForPlaybackOrder(index),
+                    );
                   },
                 );
               },
