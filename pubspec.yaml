@@ -16,7 +16,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   just_audio:
     path: plugins/just_audio_epicenter
-  audio_service: ^0.18.15
+  audio_service:
+    path: plugins/audio_service_epicenter
   permission_handler: ^12.0.1
   audio_session: ^0.2.2
   rxdart: ^0.28.0

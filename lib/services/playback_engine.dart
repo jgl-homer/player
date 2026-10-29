@@ -25,6 +25,7 @@ class PlaybackEngine {
   bool get hasNext => _player.hasNext;
   bool get hasPrevious => _player.hasPrevious;
   LoopMode get loopMode => _player.loopMode;
+  bool get shuffleModeEnabled => _player.shuffleModeEnabled;
   Object? get currentSourceTag => _player.sequenceState.currentSource?.tag;
 
   Stream<bool> get playingStream => _player.playingStream;
@@ -124,6 +125,8 @@ class PlaybackEngine {
 
   Future<void> setShuffleModeEnabled(bool enabled) =>
       _player.setShuffleModeEnabled(enabled);
+
+  Future<void> shuffle() => _player.shuffle();
 
   void publishPlaybackModes({
     AudioServiceRepeatMode? repeatMode,

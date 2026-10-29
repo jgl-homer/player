@@ -68,6 +68,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _shuffle = false;
   LoopMode _loopMode = LoopMode.off;
+  DateTime? _lastMediaSessionRepeatRequest;
+  DateTime? _lastMediaSessionShuffleRequest;
+  static const _mediaSessionButtonDebounce = Duration(milliseconds: 750);
   SongModel? _currentSong;
   Set<int> _favoriteIds = {};
   Map<String, List<String>> _savedPlaylists = {};
@@ -1376,6 +1379,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       startIndex = 0;
     }
 
+    // A newly selected context is smart-shuffled below, so leave native
+    // shuffle off to avoid applying a second random order to the same queue.
+    if (_playback.shuffleModeEnabled) {
+      await _playback.setShuffleModeEnabled(false);
+    }
+
     _unshuffledPlaylist = List<SongModel>.from(songs);
     final nextPlaylist = _shuffle && songs.length > 1
         ? _buildSmartShuffleQueue(_unshuffledPlaylist, startIndex)
@@ -1606,6 +1615,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<AudioServiceShuffleMode> toggleMediaSessionShuffleMode(
     AudioServiceShuffleMode _,
   ) async {
+    final now = DateTime.now();
+    final previousRequest = _lastMediaSessionShuffleRequest;
+    if (previousRequest != null &&
+        now.difference(previousRequest) < _mediaSessionButtonDebounce) {
+      return _shuffle
+          ? AudioServiceShuffleMode.all
+          : AudioServiceShuffleMode.none;
+    }
+    _lastMediaSessionShuffleRequest = now;
     await toggleShuffle();
     return _shuffle
         ? AudioServiceShuffleMode.all
@@ -1628,8 +1646,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     _shuffle = enabled;
-    await _playback.setShuffleModeEnabled(false);
-    await _rebuildQueueForShuffleState();
+    if (enabled) {
+      await _playback.shuffle();
+    }
+    await _playback.setShuffleModeEnabled(enabled);
     notifyListeners();
     await savePlaybackStateImmediate();
     _playback.publishPlaybackModes(shuffleMode: confirmed);
@@ -1649,43 +1669,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     debugPrint(
         '[Audio] Dispositivo de salida conectado — reanudando reproducción');
     await _playback.play();
-    notifyListeners();
-  }
-
-  Future<void> _rebuildQueueForShuffleState() async {
-    if (_currentSong == null || _currentPlaylist.length <= 1) return;
-
-    if (_shuffle) {
-      final sourceQueue = _unshuffledPlaylist.isNotEmpty
-          ? _unshuffledPlaylist
-          : _currentPlaylist;
-      final sourceIndex =
-          sourceQueue.indexWhere((song) => song.id == _currentSong!.id);
-      _currentPlaylist = _buildSmartShuffleQueue(
-        sourceQueue,
-        sourceIndex == -1 ? 0 : sourceIndex,
-      );
-    } else {
-      _currentPlaylist = _unshuffledPlaylist.isNotEmpty
-          ? List<SongModel>.from(_unshuffledPlaylist)
-          : _orderedQueueForCurrentMode();
-      final currentSongId = _currentSong!.id;
-      _currentIndex =
-          _currentPlaylist.indexWhere((song) => song.id == currentSongId);
-      if (_currentIndex == -1) {
-        _currentPlaylist = [_currentSong!, ..._currentPlaylist];
-        _currentIndex = 0;
-      }
-    }
-
-    final desiredIndex =
-        _currentPlaylist.indexWhere((song) => song.id == _currentSong!.id);
-    if (desiredIndex == -1) return;
-    _currentIndex = desiredIndex;
-    await _replacePlaybackQueue(
-      position: _playback.position,
-      shouldPlay: _playback.playing,
-    );
     notifyListeners();
   }
 
@@ -1719,6 +1702,17 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<AudioServiceRepeatMode> cycleMediaSessionRepeatMode(
     AudioServiceRepeatMode _,
   ) async {
+    final now = DateTime.now();
+    final previousRequest = _lastMediaSessionRepeatRequest;
+    if (previousRequest != null &&
+        now.difference(previousRequest) < _mediaSessionButtonDebounce) {
+      return switch (_loopMode) {
+        LoopMode.off => AudioServiceRepeatMode.none,
+        LoopMode.one => AudioServiceRepeatMode.one,
+        LoopMode.all => AudioServiceRepeatMode.all,
+      };
+    }
+    _lastMediaSessionRepeatRequest = now;
     await toggleLoop();
     return switch (_loopMode) {
       LoopMode.off => AudioServiceRepeatMode.none,
