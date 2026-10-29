@@ -470,8 +470,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       onStopRequested: stop,
       onPreviousRequested: previousSmart,
       onNextRequested: next,
-      onPreviousFolderRequested: playPreviousFolder,
-      onNextFolderRequested: playNextFolder,
+      onRewindRequested: () => seekRelative(const Duration(seconds: -10)),
+      onFastForwardRequested: () => seekRelative(const Duration(seconds: 10)),
+      onRepeatModeRequested: cycleMediaSessionRepeatMode,
+      onShuffleModeRequested: toggleMediaSessionShuffleMode,
       onTrackCompleted: () async {
         switch (_playbackMode) {
           case PlaybackMode.folder:
@@ -492,6 +494,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
       },
     );
+    unawaited(_publishMediaSessionModes());
 
     // Guardado continuo de posición cada 2 segundos mientras se reproduce directamente,
     // para que al cerrar la app (sin pausa) se recupere el segundo exacto.
@@ -1358,6 +1361,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     await _playback.setShuffleModeEnabled(false);
     final startIndex = songs.length == 1 ? 0 : Random().nextInt(songs.length);
     await _playInternal(songs, startIndex);
+    _playback.publishPlaybackModes(
+      shuffleMode: AudioServiceShuffleMode.all,
+    );
+    await savePlaybackStateImmediate();
     notifyListeners();
   }
 
@@ -1457,6 +1464,15 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> seek(Duration position) => _playback.seek(position);
+
+  Future<void> seekRelative(Duration offset) async {
+    final duration = _playback.duration;
+    var target = _playback.position + offset;
+    if (target < Duration.zero) target = Duration.zero;
+    if (duration != null && target > duration) target = duration;
+    await _playback.seek(target);
+    await savePlaybackStateImmediate(customPositionMs: target.inMilliseconds);
+  }
 
   Future<void> togglePlayPause() async {
     if (_playback.playing) {
@@ -1583,11 +1599,42 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> toggleShuffle() async {
-    _shuffle = !_shuffle;
+  Future<void> toggleShuffle() => applyMediaSessionShuffleMode(
+        _shuffle ? AudioServiceShuffleMode.none : AudioServiceShuffleMode.all,
+      );
+
+  Future<AudioServiceShuffleMode> toggleMediaSessionShuffleMode(
+    AudioServiceShuffleMode _,
+  ) async {
+    await toggleShuffle();
+    return _shuffle
+        ? AudioServiceShuffleMode.all
+        : AudioServiceShuffleMode.none;
+  }
+
+  Future<AudioServiceShuffleMode> applyMediaSessionShuffleMode(
+    AudioServiceShuffleMode mode,
+  ) async {
+    final enabled = switch (mode) {
+      AudioServiceShuffleMode.none => false,
+      AudioServiceShuffleMode.all => true,
+      AudioServiceShuffleMode.group => true,
+    };
+    final confirmed =
+        enabled ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none;
+    if (_shuffle == enabled) {
+      _playback.publishPlaybackModes(shuffleMode: confirmed);
+      return confirmed;
+    }
+
+    _shuffle = enabled;
     await _playback.setShuffleModeEnabled(false);
     await _rebuildQueueForShuffleState();
     notifyListeners();
+    await savePlaybackStateImmediate();
+    _playback.publishPlaybackModes(shuffleMode: confirmed);
+    debugPrint('[AVRCP] shuffle=$_shuffle mode=$confirmed');
+    return confirmed;
   }
 
   /// Autoplay al conectar dispositivo de audio / Bluetooth: reanuda si no está reproduciendo.
@@ -1661,12 +1708,51 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     return List.from(_globalQueue.isNotEmpty ? _globalQueue : _allSongs);
   }
 
-  void toggleLoop() {
-    _loopMode = _loopMode == LoopMode.off
-        ? LoopMode.all
-        : (_loopMode == LoopMode.all ? LoopMode.one : LoopMode.off);
-    unawaited(_syncPlayerLoopMode());
+  Future<void> toggleLoop() => applyMediaSessionRepeatMode(
+        switch (_loopMode) {
+          LoopMode.off => AudioServiceRepeatMode.all,
+          LoopMode.all => AudioServiceRepeatMode.one,
+          LoopMode.one => AudioServiceRepeatMode.none,
+        },
+      );
+
+  Future<AudioServiceRepeatMode> cycleMediaSessionRepeatMode(
+    AudioServiceRepeatMode _,
+  ) async {
+    await toggleLoop();
+    return switch (_loopMode) {
+      LoopMode.off => AudioServiceRepeatMode.none,
+      LoopMode.one => AudioServiceRepeatMode.one,
+      LoopMode.all => AudioServiceRepeatMode.all,
+    };
+  }
+
+  Future<AudioServiceRepeatMode> applyMediaSessionRepeatMode(
+    AudioServiceRepeatMode mode,
+  ) async {
+    final target = switch (mode) {
+      AudioServiceRepeatMode.none => LoopMode.off,
+      AudioServiceRepeatMode.one => LoopMode.one,
+      AudioServiceRepeatMode.all => LoopMode.all,
+      AudioServiceRepeatMode.group => LoopMode.all,
+    };
+    final confirmed = switch (target) {
+      LoopMode.off => AudioServiceRepeatMode.none,
+      LoopMode.one => AudioServiceRepeatMode.one,
+      LoopMode.all => AudioServiceRepeatMode.all,
+    };
+    if (_loopMode == target) {
+      _playback.publishPlaybackModes(repeatMode: confirmed);
+      return confirmed;
+    }
+
+    _loopMode = target;
+    await _syncPlayerLoopMode();
     notifyListeners();
+    await savePlaybackStateImmediate();
+    _playback.publishPlaybackModes(repeatMode: confirmed);
+    debugPrint('[AVRCP] loop=$_loopMode mode=$confirmed');
+    return confirmed;
   }
 
   LoopMode _effectivePlayerLoopMode() {
@@ -1677,6 +1763,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     final targetLoopMode = _effectivePlayerLoopMode();
     if (_playback.loopMode == targetLoopMode) return;
     await _playback.setLoopMode(targetLoopMode);
+  }
+
+  Future<void> _publishMediaSessionModes() async {
+    _playback.publishPlaybackModes(
+      repeatMode: switch (_loopMode) {
+        LoopMode.off => AudioServiceRepeatMode.none,
+        LoopMode.one => AudioServiceRepeatMode.one,
+        LoopMode.all => AudioServiceRepeatMode.all,
+      },
+      shuffleMode:
+          _shuffle ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none,
+    );
   }
 
   // --- Folder Management ---

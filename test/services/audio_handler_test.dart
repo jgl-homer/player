@@ -144,17 +144,30 @@ void main() {
     player.states.add(PlayerState(false, ProcessingState.completed));
     expect(completions, 0);
   });
-  test('rewind and fast forward request previous and next folders', () async {
-    var previousFolders = 0;
-    var nextFolders = 0;
-    handler.onPreviousFolderRequested = () => previousFolders++;
-    handler.onNextFolderRequested = () => nextFolders++;
+  test('rewind and fast forward request relative seeking', () async {
+    var rewinds = 0;
+    var fastForwards = 0;
+    handler.onRewindRequested = () => rewinds++;
+    handler.onFastForwardRequested = () => fastForwards++;
 
     await handler.rewind();
     await handler.fastForward();
 
-    expect(previousFolders, 1);
-    expect(nextFolders, 1);
+    expect(rewinds, 1);
+    expect(fastForwards, 1);
+  });
+  test('repeat and shuffle publish the provider-confirmed modes', () async {
+    handler.onRepeatModeRequested = (_) => AudioServiceRepeatMode.one;
+    handler.onShuffleModeRequested = (_) => AudioServiceShuffleMode.all;
+
+    await handler.setRepeatMode(AudioServiceRepeatMode.group);
+    await handler.setShuffleMode(AudioServiceShuffleMode.group);
+
+    expect(handler.playbackState.value.repeatMode, AudioServiceRepeatMode.one);
+    expect(
+      handler.playbackState.value.shuffleMode,
+      AudioServiceShuffleMode.all,
+    );
   });
   test('failed queue is bounded even with loop all', () async {
     player.failedLoads = 10;

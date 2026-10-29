@@ -1295,18 +1295,20 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
       children: [
         IconButton(
           tooltip: 'Retroceder 10 segundos',
-          onPressed: () {
-            final current = audioProvider.currentPosition;
-            audioProvider.seek(current - const Duration(seconds: 10));
-          },
+          onPressed: () =>
+              audioProvider.seekRelative(const Duration(seconds: -10)),
           icon: Icon(Icons.replay_10_rounded,
               color: Colors.white, size: sideSize),
         ),
-        IconButton(
-          tooltip: 'Anterior',
-          onPressed: audioProvider.previousSmart,
-          icon: Icon(Icons.skip_previous_rounded,
-              color: Colors.white, size: compact ? 38 : 52),
+        GestureDetector(
+          onLongPress: () =>
+              audioProvider.seekRelative(const Duration(seconds: -10)),
+          child: IconButton(
+            tooltip: 'Anterior · mantener para retroceder',
+            onPressed: audioProvider.previousSmart,
+            icon: Icon(Icons.skip_previous_rounded,
+                color: Colors.white, size: compact ? 38 : 52),
+          ),
         ),
         StreamBuilder<bool>(
           stream: audioProvider.playingStream,
@@ -1331,18 +1333,20 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
             );
           },
         ),
-        IconButton(
-          tooltip: 'Siguiente',
-          onPressed: audioProvider.next,
-          icon: Icon(Icons.skip_next_rounded,
-              color: Colors.white, size: compact ? 38 : 52),
+        GestureDetector(
+          onLongPress: () =>
+              audioProvider.seekRelative(const Duration(seconds: 10)),
+          child: IconButton(
+            tooltip: 'Siguiente · mantener para adelantar',
+            onPressed: audioProvider.next,
+            icon: Icon(Icons.skip_next_rounded,
+                color: Colors.white, size: compact ? 38 : 52),
+          ),
         ),
         IconButton(
           tooltip: 'Avanzar 10 segundos',
-          onPressed: () {
-            final current = audioProvider.currentPosition;
-            audioProvider.seek(current + const Duration(seconds: 10));
-          },
+          onPressed: () =>
+              audioProvider.seekRelative(const Duration(seconds: 10)),
           icon: Icon(Icons.forward_10_rounded,
               color: Colors.white, size: sideSize),
         ),

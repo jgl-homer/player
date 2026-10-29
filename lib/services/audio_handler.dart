@@ -18,8 +18,12 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   FutureOr<void> Function()? onStopRequested;
   FutureOr<void> Function()? onPreviousRequested;
   FutureOr<void> Function()? onNextRequested;
-  FutureOr<void> Function()? onPreviousFolderRequested;
-  FutureOr<void> Function()? onNextFolderRequested;
+  FutureOr<void> Function()? onRewindRequested;
+  FutureOr<void> Function()? onFastForwardRequested;
+  FutureOr<AudioServiceRepeatMode> Function(AudioServiceRepeatMode)?
+      onRepeatModeRequested;
+  FutureOr<AudioServiceShuffleMode> Function(AudioServiceShuffleMode)?
+      onShuffleModeRequested;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   int _queueRevision = 0;
   String? _handledCompletion;
@@ -277,18 +281,93 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     await skipToPreviousDirect();
   }
 
-  /// Alpine and other AVRCP receivers commonly expose their group/folder
-  /// buttons as REWIND and FAST_FORWARD transport commands.
   @override
   Future<void> rewind() async {
-    final action = onPreviousFolderRequested;
-    if (action != null) await action();
+    final action = onRewindRequested;
+    if (action != null) {
+      await action();
+      return;
+    }
+    await _player.seek(
+      _clampSeekPosition(_player.position - const Duration(seconds: 10)),
+    );
   }
 
   @override
   Future<void> fastForward() async {
-    final action = onNextFolderRequested;
-    if (action != null) await action();
+    final action = onFastForwardRequested;
+    if (action != null) {
+      await action();
+      return;
+    }
+    await _player.seek(
+      _clampSeekPosition(_player.position + const Duration(seconds: 10)),
+    );
+  }
+
+  Duration _clampSeekPosition(Duration position) {
+    if (position < Duration.zero) return Duration.zero;
+    final duration = _player.duration;
+    if (duration != null && position > duration) return duration;
+    return position;
+  }
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    final action = onRepeatModeRequested;
+    final confirmed = action != null
+        ? await action(repeatMode)
+        : await _setRepeatModeDirect(repeatMode);
+    publishPlaybackModes(repeatMode: confirmed);
+  }
+
+  Future<AudioServiceRepeatMode> _setRepeatModeDirect(
+    AudioServiceRepeatMode repeatMode,
+  ) async {
+    final confirmed = repeatMode == AudioServiceRepeatMode.group
+        ? AudioServiceRepeatMode.all
+        : repeatMode;
+    final loopMode = switch (confirmed) {
+      AudioServiceRepeatMode.none => LoopMode.off,
+      AudioServiceRepeatMode.one => LoopMode.one,
+      AudioServiceRepeatMode.all => LoopMode.all,
+      AudioServiceRepeatMode.group => LoopMode.all,
+    };
+    await _player.setLoopMode(loopMode);
+    return confirmed;
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    final action = onShuffleModeRequested;
+    final confirmed = action != null
+        ? await action(shuffleMode)
+        : await _setShuffleModeDirect(shuffleMode);
+    publishPlaybackModes(shuffleMode: confirmed);
+  }
+
+  Future<AudioServiceShuffleMode> _setShuffleModeDirect(
+    AudioServiceShuffleMode shuffleMode,
+  ) async {
+    final confirmed = shuffleMode == AudioServiceShuffleMode.group
+        ? AudioServiceShuffleMode.all
+        : shuffleMode;
+    await _player.setShuffleModeEnabled(
+      confirmed == AudioServiceShuffleMode.all,
+    );
+    return confirmed;
+  }
+
+  void publishPlaybackModes({
+    AudioServiceRepeatMode? repeatMode,
+    AudioServiceShuffleMode? shuffleMode,
+  }) {
+    playbackState.add(
+      playbackState.value.copyWith(
+        repeatMode: repeatMode ?? playbackState.value.repeatMode,
+        shuffleMode: shuffleMode ?? playbackState.value.shuffleMode,
+      ),
+    );
   }
 
   @override

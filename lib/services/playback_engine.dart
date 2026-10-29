@@ -44,8 +44,12 @@ class PlaybackEngine {
     required FutureOr<void> Function() onStopRequested,
     required FutureOr<void> Function() onPreviousRequested,
     required FutureOr<void> Function() onNextRequested,
-    required FutureOr<void> Function() onPreviousFolderRequested,
-    required FutureOr<void> Function() onNextFolderRequested,
+    required FutureOr<void> Function() onRewindRequested,
+    required FutureOr<void> Function() onFastForwardRequested,
+    required FutureOr<AudioServiceRepeatMode> Function(AudioServiceRepeatMode)
+        onRepeatModeRequested,
+    required FutureOr<AudioServiceShuffleMode> Function(AudioServiceShuffleMode)
+        onShuffleModeRequested,
     required FutureOr<void> Function() onTrackCompleted,
   }) {
     _handler.onToggleFavorite = onToggleFavorite;
@@ -54,8 +58,10 @@ class PlaybackEngine {
     _handler.onStopRequested = onStopRequested;
     _handler.onPreviousRequested = onPreviousRequested;
     _handler.onNextRequested = onNextRequested;
-    _handler.onPreviousFolderRequested = onPreviousFolderRequested;
-    _handler.onNextFolderRequested = onNextFolderRequested;
+    _handler.onRewindRequested = onRewindRequested;
+    _handler.onFastForwardRequested = onFastForwardRequested;
+    _handler.onRepeatModeRequested = onRepeatModeRequested;
+    _handler.onShuffleModeRequested = onShuffleModeRequested;
     _handler.onTrackCompleted = onTrackCompleted;
   }
 
@@ -94,8 +100,10 @@ class PlaybackEngine {
     _handler.onStopRequested = null;
     _handler.onPreviousRequested = null;
     _handler.onNextRequested = null;
-    _handler.onPreviousFolderRequested = null;
-    _handler.onNextFolderRequested = null;
+    _handler.onRewindRequested = null;
+    _handler.onFastForwardRequested = null;
+    _handler.onRepeatModeRequested = null;
+    _handler.onShuffleModeRequested = null;
     _handler.onTrackCompleted = null;
   }
 
@@ -116,6 +124,16 @@ class PlaybackEngine {
 
   Future<void> setShuffleModeEnabled(bool enabled) =>
       _player.setShuffleModeEnabled(enabled);
+
+  void publishPlaybackModes({
+    AudioServiceRepeatMode? repeatMode,
+    AudioServiceShuffleMode? shuffleMode,
+  }) {
+    _handler.publishPlaybackModes(
+      repeatMode: repeatMode,
+      shuffleMode: shuffleMode,
+    );
+  }
 
   Future<void> moveQueueItem(int oldIndex, int newIndex) =>
       _handler.moveQueueItem(oldIndex, newIndex);
