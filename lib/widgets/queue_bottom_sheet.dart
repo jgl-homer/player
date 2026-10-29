@@ -77,11 +77,15 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
+            child: ReorderableListView.builder(
+              scrollController: _scrollController,
               itemExtent: _queueItemExtent,
+              buildDefaultDragHandles: false,
               padding: const EdgeInsets.only(bottom: 20),
               itemCount: queue.length,
+              onReorder: (oldIndex, newIndex) async {
+                await audioProvider.reorderPlaybackOrder(oldIndex, newIndex);
+              },
               itemBuilder: (context, index) {
                 final song = queue[index];
                 final currentSong = audioProvider.currentSong;
@@ -89,7 +93,9 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                     currentSong != null && song.data == currentSong.data;
 
                 return ListTile(
-                  key: ValueKey('${song.id}_${song.data}'),
+                  key: ValueKey(
+                    '${song.id}_${song.data}_${audioProvider.queueIndexForPlaybackOrder(index)}',
+                  ),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                   leading: ClipRRect(
@@ -126,6 +132,20 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                       if (isPlaying)
                         Icon(Icons.equalizer,
                             color: AppTheme.primaryColor, size: 20),
+                      ReorderableDragStartListener(
+                        index: index,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 12,
+                          ),
+                          child: Icon(
+                            Icons.drag_handle_rounded,
+                            color: Colors.white54,
+                            size: 22,
+                          ),
+                        ),
+                      ),
                       // Botón de eliminación — solo quita de la cola activa,
                       // nunca borra el archivo físico del almacenamiento.
                       IconButton(

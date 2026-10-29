@@ -1905,6 +1905,52 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Applies a drag operation to the order currently shown in the queue.
+  /// If shuffle is active, its visible order becomes the new manual order so
+  /// the player can keep playing without rebuilding or reloading the queue.
+  Future<void> reorderPlaybackOrder(int oldIndex, int newIndex) async {
+    final visibleIndices = List<int>.from(_visibleQueueIndices);
+    if (oldIndex < 0 || oldIndex >= visibleIndices.length) return;
+    if (newIndex < 0 || newIndex > visibleIndices.length) return;
+    if (oldIndex < newIndex) newIndex--;
+    if (oldIndex == newIndex) return;
+
+    final movedIndex = visibleIndices.removeAt(oldIndex);
+    visibleIndices.insert(newIndex, movedIndex);
+
+    final previousPlaylist = List<SongModel>.from(_currentPlaylist);
+    final activeSongIndex = _currentIndex;
+    _currentPlaylist = visibleIndices
+        .map((index) => previousPlaylist[index])
+        .toList(growable: true);
+    _currentIndex = visibleIndices.indexOf(activeSongIndex);
+    if (_currentIndex < 0) _currentIndex = 0;
+    _currentSong =
+        _currentPlaylist.isEmpty ? null : _currentPlaylist[_currentIndex];
+
+    if (_shuffle) {
+      _shuffle = false;
+      await _playback.setShuffleModeEnabled(false);
+      _playback.publishPlaybackModes(
+        shuffleMode: AudioServiceShuffleMode.none,
+      );
+    }
+
+    final nativeOrder = List<int>.generate(visibleIndices.length, (i) => i);
+    for (var targetIndex = 0;
+        targetIndex < visibleIndices.length;
+        targetIndex++) {
+      final sourceIndex = nativeOrder.indexOf(visibleIndices[targetIndex]);
+      if (sourceIndex == targetIndex) continue;
+      await _playback.moveQueueItem(sourceIndex, targetIndex);
+      final moved = nativeOrder.removeAt(sourceIndex);
+      nativeOrder.insert(targetIndex, moved);
+    }
+
+    notifyListeners();
+    await savePlaybackStateImmediate();
+  }
+
   // --- Selección Múltiple (Feature #9) ---
 
   void toggleSongSelection(int songId) {
