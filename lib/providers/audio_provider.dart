@@ -24,11 +24,13 @@ import '../services/storage_scanner.dart';
 import '../services/library_database.dart';
 import '../services/library_sync_service.dart';
 import '../utils/title_utils.dart';
+import '../autodj/services/autodj_controller.dart';
 
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final MyAudioHandler _handler;
   late final AudioPlayer _player;
+  late final AutoDjController _autoDj;
   static const _mediaChannel = MethodChannel('com.jglhomer.player/media_utils');
   static const String _cachedSongsKey = 'cached_library_songs_v1';
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
@@ -109,6 +111,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   LoopMode get loopMode => _loopMode;
   PlaybackMode get playbackMode => _playbackMode;
   AudioPlayer get player => _player;
+  AutoDjController get autoDj => _autoDj;
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
   Map<String, List<String>> get savedPlaylists =>
@@ -136,8 +139,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   double get epicenterWidth => _epicenterWidth;
   double get epicenterIntensity => _epicenterIntensity;
   double get epicenterVolume => _epicenterVolume;
-  bool get epicenterPeakProtectionEnabled =>
-      _epicenterPeakProtectionEnabled;
+  bool get epicenterPeakProtectionEnabled => _epicenterPeakProtectionEnabled;
 
   AudioProvider(
     AudioHandler handler, {
@@ -145,6 +147,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   })  : _handler = handler as MyAudioHandler,
         _isAutoModeEnabled = initialAutoMode {
     _player = _handler.player;
+    _autoDj = AutoDjController(primary: _player);
     _init();
     WidgetsBinding.instance.addObserver(this);
     _mediaChannel.setMethodCallHandler((call) async {
@@ -343,6 +346,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           _currentSong = _currentPlaylist[_currentIndex];
         }
         await savePlaybackStateImmediate();
+        _autoDj.updateQueue(
+          _currentPlaylist.map((song) => song.data).toList(growable: false),
+          _currentIndex,
+        );
         notifyListeners();
 
         // Cargar portada de forma diferida solo para la canción actual (evita OutOfMemoryError)
@@ -521,12 +528,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         for (final song in enrichedUpserts) song.data: song,
       };
       for (var i = 0; i < diff.toInsert.length; i++) {
-        diff.toInsert[i] = enrichedByPath[diff.toInsert[i].data] ??
-            diff.toInsert[i];
+        diff.toInsert[i] =
+            enrichedByPath[diff.toInsert[i].data] ?? diff.toInsert[i];
       }
       for (var i = 0; i < diff.toUpdate.length; i++) {
-        diff.toUpdate[i] = enrichedByPath[diff.toUpdate[i].data] ??
-            diff.toUpdate[i];
+        diff.toUpdate[i] =
+            enrichedByPath[diff.toUpdate[i].data] ?? diff.toUpdate[i];
       }
     }
 
@@ -1326,7 +1333,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // esperando la carátula de cada pista. Usamos el fallback placeholder para
     // arrancar el player de inmediato y luego actualizamos la canción actual.
     final useFast = _currentPlaylist.length > 20;
-    final mediaItems = await _songsToMediaItems(_currentPlaylist, fast: useFast);
+    final mediaItems =
+        await _songsToMediaItems(_currentPlaylist, fast: useFast);
 
     try {
       await _syncPlayerLoopMode();
@@ -1380,6 +1388,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> togglePlayPause() async {
     if (_player.playing) {
+      await _autoDj.cancelActiveTransition();
       await _handler.pauseDirect();
       await savePlaybackStateImmediate();
     } else {
@@ -1392,6 +1401,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // Guardar la pista activa y la posición actual antes de detener el reproductor
     final pos = _player.position.inMilliseconds;
     await savePlaybackStateImmediate(customPositionMs: pos);
+    await _autoDj.cancelActiveTransition();
     await _handler.stopDirect();
     await _updateHomeWidget();
     notifyListeners();
@@ -1399,6 +1409,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> next() => _runNavigation(() async {
         try {
+          if (_autoDj.settings.enabled &&
+              _autoDj.settings.manualTransitionEffects &&
+              _autoDj.preparedPlan != null &&
+              !_autoDj.isMixing) {
+            await _autoDj.mixNow();
+            return;
+          }
           if (_player.hasNext) {
             await _handler.skipToNextDirect();
             unawaited(_updateHomeWidget());
@@ -2641,6 +2658,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _libraryRefreshDebounce?.cancel();
     _saveDebounce?.cancel();
     _positionSaveTimer?.cancel();
+    _autoDj.dispose();
     super.dispose();
   }
 }

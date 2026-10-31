@@ -16,6 +16,7 @@ import '../widgets/song_info_modal.dart';
 import '../screens/artist_detail_screen.dart';
 import '../screens/album_detail_screen.dart';
 import '../services/lyrics_service.dart';
+import '../autodj/widgets/autodj_visual_indicator.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -37,12 +38,10 @@ class MiniPlayer extends StatelessWidget {
               context: context,
               isScrollControlled: true,
               useSafeArea: true,
-              backgroundColor: const Color(0xFF121212),
-              clipBehavior: Clip.antiAlias,
-              shape: const RoundedRectangleBorder(
-                  borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(24))),
-              builder: (context) => const _PlayerModalContent(),
+              backgroundColor: Colors.transparent,
+              clipBehavior: Clip.none,
+              constraints: const BoxConstraints(maxWidth: double.infinity),
+              builder: (context) => const _PlayerModalFrame(),
             );
           },
           child: Column(
@@ -127,6 +126,7 @@ class MiniPlayer extends StatelessWidget {
                   ],
                 ),
               ),
+              AutoDjVisualIndicator(controller: audioProvider.autoDj),
               StreamBuilder<DurationState>(
                 stream: audioProvider.durationStateStream,
                 builder: (context, snapshot) {
@@ -151,6 +151,23 @@ class MiniPlayer extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PlayerModalFrame extends StatelessWidget {
+  const _PlayerModalFrame();
+
+  @override
+  Widget build(BuildContext context) {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    if (isLandscape) {
+      return const SizedBox.expand(child: _PlayerModalContent());
+    }
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: const _PlayerModalContent(),
     );
   }
 }
@@ -240,6 +257,12 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     if (song == null) return const SizedBox.shrink();
 
     final artista = TitleUtils.getDisplayArtist(song.artist);
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+
+    if (isLandscape) {
+      return _buildLandscapePlayer(context, audioProvider, song, artista);
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
@@ -373,11 +396,15 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                     Icon(
                       Icons.directions_car_filled_rounded,
                       size: 20,
-                      color: audioProvider.isAutoModeEnabled ? Colors.greenAccent : Colors.white,
+                      color: audioProvider.isAutoModeEnabled
+                          ? Colors.greenAccent
+                          : Colors.white,
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      audioProvider.isAutoModeEnabled ? 'Modo Auto: ON' : 'Modo Auto: OFF',
+                      audioProvider.isAutoModeEnabled
+                          ? 'Modo Auto: ON'
+                          : 'Modo Auto: OFF',
                       style: const TextStyle(color: Colors.white),
                     ),
                   ],
@@ -390,11 +417,15 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
                     Icon(
                       Icons.graphic_eq_rounded,
                       size: 20,
-                      color: audioProvider.isEpicenterEnabled ? Colors.greenAccent : Colors.white,
+                      color: audioProvider.isEpicenterEnabled
+                          ? Colors.greenAccent
+                          : Colors.white,
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      audioProvider.isEpicenterEnabled ? 'Epicentro: ON' : 'Epicentro: OFF',
+                      audioProvider.isEpicenterEnabled
+                          ? 'Epicentro: ON'
+                          : 'Epicentro: OFF',
                       style: const TextStyle(color: Colors.white),
                     ),
                   ],
@@ -830,6 +861,241 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     );
   }
 
+  Widget _buildLandscapePlayer(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+    String artista,
+  ) {
+    final albumLabel = _resolveAlbumLabel(song);
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.bottomLeft,
+              end: Alignment.topRight,
+              colors: [
+                Color(0xFF114D9A),
+                Color(0xFF101820),
+                Color(0xFF101010),
+                Color(0xFF0B6A45),
+              ],
+              stops: [0.0, 0.36, 0.66, 1.0],
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 10, 22, 14),
+            child: Column(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                        color: Colors.white, size: 30),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 7,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 12, right: 20),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                TitleUtils.getDisplayTitle(song),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 30,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.05,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 18),
+                              _LandscapeInfoLine(
+                                icon: Icons.person_rounded,
+                                text: artista,
+                              ),
+                              const SizedBox(height: 12),
+                              _LandscapeInfoLine(
+                                icon: Icons.album_rounded,
+                                text: albumLabel,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 4,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final size = constraints.biggest.shortestSide
+                                .clamp(92.0, 180.0);
+                            return Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                SmartArtwork(
+                                  albumId: song.id,
+                                  songPath: song.data,
+                                  type: ArtworkType.AUDIO,
+                                  size: size,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                const SizedBox(width: 10),
+                                Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    _LandscapeFolderButton(
+                                      add: false,
+                                      tooltip: 'Carpeta anterior',
+                                      onPressed: () =>
+                                          audioProvider.playPreviousFolder(),
+                                    ),
+                                    const SizedBox(height: 18),
+                                    _LandscapeFolderButton(
+                                      add: true,
+                                      tooltip: 'Carpeta siguiente',
+                                      onPressed: audioProvider.playNextFolder,
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                StreamBuilder<DurationState>(
+                  stream: audioProvider.durationStateStream,
+                  builder: (context, snapshot) {
+                    final durationState = snapshot.data;
+                    final progress = durationState?.position ?? Duration.zero;
+                    final total = durationState?.total ?? Duration.zero;
+                    final max = total.inMilliseconds.toDouble().clamp(
+                        progress.inMilliseconds.toDouble(), double.infinity);
+
+                    return Column(
+                      children: [
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 2.5,
+                            thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 5),
+                            overlayShape: const RoundSliderOverlayShape(
+                                overlayRadius: 12),
+                            activeTrackColor: Colors.white,
+                            inactiveTrackColor: Colors.white54,
+                            thumbColor: Colors.white,
+                          ),
+                          child: Slider(
+                            value: progress.inMilliseconds.toDouble(),
+                            max: max,
+                            onChanged: (value) {
+                              audioProvider.player
+                                  .seek(Duration(milliseconds: value.toInt()));
+                            },
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _formatDuration(progress),
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12),
+                              ),
+                              Text(
+                                _formatDuration(total),
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.queue_music_rounded,
+                          color: Colors.white, size: 28),
+                      onPressed: () => showQueueBottomSheet(context),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.skip_previous_rounded,
+                          color: Colors.white, size: 34),
+                      onPressed: audioProvider.previousSmart,
+                    ),
+                    StreamBuilder<bool>(
+                      stream: audioProvider.player.playingStream,
+                      builder: (context, snapshot) {
+                        final isPlaying = snapshot.data ?? false;
+                        return IconButton(
+                          icon: Icon(
+                            isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                          onPressed: audioProvider.togglePlayPause,
+                        );
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.skip_next_rounded,
+                          color: Colors.white, size: 34),
+                      onPressed: audioProvider.next,
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        audioProvider.loopMode == LoopMode.one
+                            ? Icons.repeat_one_rounded
+                            : Icons.repeat_rounded,
+                        color: audioProvider.loopMode != LoopMode.off
+                            ? Colors.greenAccent
+                            : Colors.white,
+                        size: 26,
+                      ),
+                      onPressed: audioProvider.toggleLoop,
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        Icons.shuffle_rounded,
+                        color: audioProvider.isShuffle
+                            ? Colors.greenAccent
+                            : Colors.white,
+                        size: 26,
+                      ),
+                      onPressed: audioProvider.toggleShuffle,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildLyricsSection(SongModel song, AudioProvider audioProvider) {
     _ensureLyricsLoaded(song, audioProvider.lyricsSource);
     return FutureBuilder<LyricsResult?>(
@@ -872,6 +1138,72 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
 
   String _resolveAlbumLabel(dynamic song) {
     return TitleUtils.getDisplayAlbum(song as SongModel);
+  }
+}
+
+class _LandscapeInfoLine extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _LandscapeInfoLine({
+    required this.icon,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.white, size: 22),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LandscapeFolderButton extends StatelessWidget {
+  final bool add;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _LandscapeFolderButton({
+    required this.add,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(Icons.folder_outlined, color: Colors.white, size: 30),
+          Transform.translate(
+            offset: const Offset(6, 6),
+            child: Icon(
+              add ? Icons.add : Icons.remove,
+              color: Colors.white,
+              size: 14,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

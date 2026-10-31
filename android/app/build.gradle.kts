@@ -86,6 +86,7 @@ flutter {
 }
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation(files("libs/decoder_ffmpeg-release.aar"))
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")

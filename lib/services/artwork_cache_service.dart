@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -109,7 +108,8 @@ class ArtworkCacheService {
         await file.delete();
       }
     } catch (e) {
-      debugPrint('[ArtworkCache] Error invalidating cache for songId=$songId: $e');
+      debugPrint(
+          '[ArtworkCache] Error invalidating cache for songId=$songId: $e');
     }
   }
 

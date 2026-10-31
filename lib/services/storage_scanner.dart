@@ -18,7 +18,6 @@ class StorageScanProgress {
 }
 
 class StorageScanner {
-  static const int _progressBatchSize = 48;
   static const Set<String> _audioExtensions = {
     'mp3',
     'flac',
@@ -130,7 +129,7 @@ class StorageScanner {
 
       try {
         final path = song.data;
-        if (path == null || path.isEmpty) continue;
+        if (path.isEmpty) continue;
 
         final dir = path.substring(0, path.lastIndexOf('/'));
 

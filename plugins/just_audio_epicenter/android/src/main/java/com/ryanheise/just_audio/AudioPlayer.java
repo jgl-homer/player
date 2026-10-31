@@ -114,6 +114,12 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     private Map<String, Object> pendingPlaybackEvent;
 
     private ExoPlayer player;
+    private final EpicenterAudioProcessor epicenterProcessor =
+        EpicenterProcessorController.INSTANCE.createProcessor();
+    private final SafeOutputGainAudioProcessor outputGainProcessor =
+        SafeOutputGainController.INSTANCE.createProcessor();
+    private final TransitionEffectAudioProcessor transitionEffectProcessor =
+        new TransitionEffectAudioProcessor();
     private Integer audioSessionId;
     private Integer errorCode;
     private String errorMessage;
@@ -846,7 +852,11 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
 
     private AudioProcessor[] getEpicenterAudioProcessors() {
         Log.d(TAG, "Epicenter AudioProcessor injected");
-        return new AudioProcessor[] { EpicenterProcessorController.INSTANCE.getProcessor() };
+        return new AudioProcessor[] {
+            epicenterProcessor,
+            transitionEffectProcessor,
+            outputGainProcessor
+        };
     }
     private void ensurePlayerInitialized() {
         if (player == null) {
@@ -1092,6 +1102,18 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
         player.setVolume(volume);
     }
 
+    public void beginTransitionEffect(String effect, String role, float intensity) {
+        transitionEffectProcessor.begin(effect, role, intensity);
+    }
+
+    public void updateTransitionEffect(float progress) {
+        transitionEffectProcessor.update(progress);
+    }
+
+    public void endTransitionEffect() {
+        transitionEffectProcessor.end();
+    }
+
     public void setSpeed(final float speed) {
         PlaybackParameters params = player.getPlaybackParameters();
         if (params.speed == speed) return;
@@ -1154,6 +1176,8 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
             processingState = ProcessingState.idle;
             broadcastImmediatePlaybackEvent();
         }
+        EpicenterProcessorController.INSTANCE.releaseProcessor(epicenterProcessor);
+        SafeOutputGainController.INSTANCE.releaseProcessor(outputGainProcessor);
         eventChannel.endOfStream();
         dataEventChannel.endOfStream();
     }

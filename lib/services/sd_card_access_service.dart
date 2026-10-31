@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -48,8 +47,7 @@ class SdCardAccessService {
   /// Retorna el treeUri persistido previamente (si existe), o null.
   static Future<String?> getPersistedTreeUri() async {
     try {
-      final result =
-          await _channel.invokeMethod<String>('getPersistedTreeUri');
+      final result = await _channel.invokeMethod<String>('getPersistedTreeUri');
       return result;
     } catch (e) {
       debugPrint('[SAF] Error getting persisted tree URI: $e');

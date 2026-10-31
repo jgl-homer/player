@@ -56,6 +56,8 @@ JustAudioPlatform get _pluginPlatform {
 /// You must call [stop] or [dispose] to release the resources used by this
 /// player, including any temporary files created to cache assets.
 class AudioPlayer {
+  static const _autoDjChannel =
+      MethodChannel('com.ryanheise.just_audio.methods');
   static String _generateId() => _uuid.v4();
   final _lock = Lock(reentrant: true);
   Future<void>? _playbackEventPipe;
@@ -114,6 +116,42 @@ class AudioPlayer {
   StreamSubscription<void>? _errorsResetSubscription;
 
   String? _id;
+
+  /// Native player identity used to coordinate two-deck AutoDJ transitions.
+  String get playerId => _id!;
+
+  /// Runs the gain envelope on Android's main audio thread, independently of
+  /// Flutter frame scheduling. Both players must already be prepared.
+  Future<void> crossfadeTo(
+    AudioPlayer other, {
+    required Duration duration,
+    double fromStartVolume = 1,
+    double toEndVolume = 1,
+    bool quickCut = false,
+    String effect = 'smooth',
+    double effectIntensity = 0.65,
+  }) async {
+    if (!_isAndroid()) {
+      throw UnsupportedError('Native two-deck crossfade is Android-only');
+    }
+    await _autoDjChannel.invokeMethod<void>('crossfadePlayers', {
+      'fromId': playerId,
+      'toId': other.playerId,
+      'durationMs': duration.inMilliseconds,
+      'fromStartVolume': fromStartVolume,
+      'toEndVolume': toEndVolume,
+      'curve': quickCut ? 'quickCut' : 'equalPower',
+      'effect': effect,
+      'effectIntensity': effectIntensity.clamp(0, 1),
+    });
+  }
+
+  static Future<void> cancelNativeCrossfade() async {
+    if (_isAndroid()) {
+      await _autoDjChannel.invokeMethod<void>('cancelCrossfade');
+    }
+  }
+
   final _proxy = _ProxyHttpServer();
   // ignore: deprecated_member_use_from_same_package
   final ConcatenatingAudioSource _playlist;

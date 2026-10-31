@@ -1,0 +1,40 @@
+ M analysis_options.yaml
+ M get_err.dart
+ M lib/main.dart
+ M lib/screens/album_detail_screen.dart
+ M lib/screens/artist_detail_screen.dart
+ M lib/screens/car_mode_screen.dart
+ M lib/screens/home_screen.dart
+ M lib/screens/playlist_detail_screen.dart
+ M lib/screens/search_screen.dart
+ M lib/screens/tabs/favorites_tab.dart
+ M lib/screens/tabs/folders_tab.dart
+ M lib/services/artwork_cache_service.dart
+ M lib/services/sd_card_access_service.dart
+ M lib/services/storage_scanner.dart
+ M lib/widgets/album_card.dart
+ M lib/widgets/mini_player.dart
+ M lib/widgets/mini_player_pill.dart
+ M lib/widgets/options_menu.dart
+ M lib/widgets/queue_bottom_sheet.dart
+ M lib/widgets/smart_artwork.dart
+ M lib/widgets/wide_card.dart
+ M test/widget_test.dart
+?? .codex_apk_compare/
+?? .worktrees/
+?? "Imagen de Codex 4 oct 2026, 13_20_26.png"
+?? cambios_codex.txt
+?? docs/Epicenter_spec.txt
+?? phone_after_favorites_artwork_fix.png
+?? phone_after_launch_player.png
+?? phone_current.png
+?? phone_current_capture.png
+?? phone_landscape_check.png
+?? phone_modal_width_fix_check.png
+?? phone_modal_width_fix_open.png
+?? phone_pop_fix_installed.png
+?? phone_queue_nav_fix.png
+?? phone_queue_nav_fix_2.png
+?? phone_queue_nav_fix_awake.png
+?? phone_wma_flac_transition_fix.png
+?? phone_wma_metadata_check.png

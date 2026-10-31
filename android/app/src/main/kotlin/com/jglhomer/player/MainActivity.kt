@@ -26,6 +26,7 @@ import android.media.AudioManager
 import android.media.AudioDeviceInfo
 import android.media.AudioDeviceCallback
 import java.io.File
+import com.jglhomer.player.autodj.AutoDjMethodChannel
 
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
@@ -43,12 +44,17 @@ class MainActivity : AudioServiceActivity() {
     private var myFlutterEngine: FlutterEngine? = null
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var audioDeviceCallback: AudioDeviceCallback? = null
+    private var autoDjMethodChannel: AutoDjMethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         this.myFlutterEngine = flutterEngine
 
         widgetMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
+        autoDjMethodChannel = AutoDjMethodChannel(
+            applicationContext,
+            flutterEngine.dartExecutor.binaryMessenger,
+        )
 
         mediaMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         mediaMethodChannel?.setMethodCallHandler { call, result ->
@@ -133,6 +139,20 @@ class MainActivity : AudioServiceActivity() {
                         applyEpicenterParams(params)
                         result.success(true)
                     }
+                }
+                "set_output_gain" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    val gainDb = call.argument<Number>("gainDb")?.toFloat() ?: 0f
+                    val limiterEnabled = call.argument<Boolean>("limiterEnabled") ?: true
+                    com.ryanheise.just_audio.SafeOutputGainController.configure(
+                        enabled,
+                        gainDb,
+                        limiterEnabled,
+                    )
+                    result.success(true)
+                }
+                "get_output_gain_meter" -> {
+                    result.success(com.ryanheise.just_audio.SafeOutputGainController.meter())
                 }
                 "set_keep_screen_on" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
@@ -346,6 +366,8 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
+        autoDjMethodChannel?.dispose()
+        autoDjMethodChannel = null
         mediaObserver?.let { contentResolver.unregisterContentObserver(it) }
         mediaObserver = null
         bluetoothReceiver?.let {

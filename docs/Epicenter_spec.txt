@@ -1,0 +1,1534 @@
+Quiero que rehagas y mejores específicamente el **Epicenter DSP** de este proyecto.
+
+El objetivo NO es simplemente hacerlo sonar más fuerte.
+
+Quiero corregir el algoritmo para convertirlo en un verdadero restaurador/generador de subgrave relacionado musicalmente con el bajo original.
+
+IMPORTANTE: hay muchos cambios locales en el working tree que NO están relacionados con Epicenter.
+
+NO hagas:
+
+`git reset`
+`git restore`
+`git checkout .`
+`git clean`
+`git stash`
+reverts generales
+commit automático
+push automático
+
+NO destruyas ni reviertas cambios locales de:
+
+- artwork;
+- notificaciones;
+- biblioteca;
+- playlists;
+- UI;
+- scanner;
+- SD;
+- WMA;
+- car mode;
+- otros módulos.
+
+Trabaja únicamente sobre los archivos necesarios para Epicenter.
+
+---
+
+# 1. PRIMERO REVISA EL ESTADO ACTUAL
+
+Antes de modificar código:
+
+1. revisa `git status`;
+2. revisa `git diff`;
+3. analiza la implementación actual del Epicenter;
+4. explícame brevemente cómo funciona ahora;
+5. identifica qué partes vale la pena conservar y qué partes necesitan cambiar.
+
+Los archivos principales que debes revisar son:
+
+`plugins/just_audio_epicenter/android/src/main/kotlin/com/ryanheise/just_audio/EpicenterDsp.kt`
+
+`plugins/just_audio_epicenter/android/src/main/kotlin/com/ryanheise/just_audio/EpicenterAudioProcessor.kt`
+
+`plugins/just_audio_epicenter/android/src/main/java/com/ryanheise/just_audio/AudioPlayer.java`
+
+`lib/providers/audio_provider.dart`
+
+`lib/services/state_persistence.dart`
+
+los widgets/UI donde están los controles de Epicenter.
+
+También revisa:
+
+`docs/EPICENTER_BASELINE.md`
+
+`docs/EPICENTER_TARGET_ARCHITECTURE.md`
+
+si siguen presentes.
+
+---
+
+# 2. COSAS DE LA VERSIÓN ACTUAL QUE QUIERO CONSERVAR
+
+La última implementación introdujo varias mejoras técnicas que NO quiero perder.
+
+Conserva, salvo que exista una razón técnica fuerte para cambiarlo:
+
+- reutilización de `inputSamples`;
+- reutilización de `outputSamples`;
+- buffers internos reutilizables;
+- evitar `FloatArray` nuevas constantemente dentro del callback;
+- soporte PCM16;
+- soporte PCM24;
+- soporte PCM32;
+- soporte PCM FLOAT;
+- sample rate real del audio;
+- filtros cuyos coeficientes dependen del sample rate;
+- suavizado de parámetros;
+- transición wet/dry para evitar clicks;
+- capacidad de trabajar realtime dentro de Media3;
+- bypass limpio una vez terminada la transición;
+- separación razonable entre processor y DSP.
+
+No vuelvas a introducir allocations por muestra o por callback innecesariamente.
+
+---
+
+# 3. PROBLEMA DE LA IMPLEMENTACIÓN ACTUAL
+
+Actualmente el Epicenter todavía depende demasiado de:
+
+`sweepBand`
+
+`upperBassBand`
+
+`Envelope`
+
+`lastDetector`
+
+`flipState`
+
+`octaveWave`
+
+`tanh`
+
+filtros posteriores
+
+y refuerzo adicional del bajo original.
+
+La versión actual puede producir una sensación de subgrave, pero NO realiza una estimación suficientemente clara de la frecuencia fundamental real.
+
+No quiero que la lógica sea básicamente:
+
+“hay actividad en esta banda → genero algo grave”.
+
+Quiero que el DSP sea capaz de estimar aproximadamente:
+
+“estoy observando una señal estable alrededor de 80 Hz”
+
+y entonces generar una señal relacionada aproximadamente a:
+
+40 Hz.
+
+Ejemplos:
+
+100 Hz -> 50 Hz
+
+90 Hz -> 45 Hz
+
+80 Hz -> 40 Hz
+
+70 Hz -> 35 Hz
+
+60 Hz -> 30 Hz
+
+El objetivo es una verdadera extensión hacia abajo.
+
+---
+
+# 4. RESULTADO SONORO QUE QUIERO
+
+Quiero que al activar Epicenter en música con un buen sistema de subwoofer ocurra esto:
+
+ANTES:
+
+la canción tiene bastante contenido entre aproximadamente 60 y 100 Hz.
+
+DESPUÉS:
+
+sigue conservando ese bajo original, pero aparece extensión real aproximadamente entre 30 y 50 Hz.
+
+Debe sentirse:
+
+- profundo;
+- redondo;
+- suave;
+- con cuerpo;
+- “cremoso”;
+- potente;
+- musical;
+- con buena pegada;
+- claramente más profundo.
+
+NO quiero:
+
+- un simple bass boost;
+- un low shelf;
+- un EQ disfrazado;
+- una señal constante de 30-40 Hz;
+- BRRRRR permanente;
+- retumbe en toda la canción;
+- clipping;
+- pumping exagerado;
+- voces disparando subgrave;
+- platillos disparando subgrave;
+- ruido disparando subgrave;
+- que el bajo original pierda definición.
+
+---
+
+# 5. PRINCIPIO FUNDAMENTAL
+
+La arquitectura debe seguir principalmente:
+
+`OUTPUT = ORIGINAL + GENERATED`
+
+La ruta ORIGINAL debe permanecer esencialmente intacta.
+
+Arquitectura conceptual:
+
+```text
+INPUT
+ |
+ +-------------------- ORIGINAL -----------------------+
+ |                                                     |
+ +-> BASS ANALYSIS                                     |
+     |                                                 |
+     +-> detector de periodicidad / f0                 |
+     |                                                 |
+     +-> confidence                                    |
+     |                                                 |
+     +-> envelope                                      |
+     |                                                 |
+     +-> target f0/2                                   |
+     |                                                 |
+     +-> subharmonic synthesis                         |
+     |                                                 |
+     +-> HPF / LPF                                     |
+     |                                                 |
+     +-> GENERATED ------------------------------------+
+                                                       |
+                                                       v
+                                                      MIX
+                                                       |
+                                                       v
+                                                HEADROOM/LIMITER
+                                                       |
+                                                       v
+                                                     OUTPUT
+```
+
+La ruta de análisis puede filtrar copias de la señal.
+
+La ruta ORIGINAL NO debe pasar por todos esos filtros.
+
+---
+
+# 6. NO QUIERO RECONSTRUIR EL ORIGINAL
+
+La implementación actual tiene cosas como:
+
+`bassLowpass`
+
+`lowMidBody`
+
+`lowMidDip`
+
+`bassBlend`
+
+`shapedSupport`
+
+y reducción del original mediante algo parecido a:
+
+`headroom = 1 - intensity * ...`
+
+Quiero revisar seriamente esa arquitectura.
+
+NO quiero que activar Epicenter signifique:
+
+- bajar el original;
+- volver a crear el bajo mediante filtros;
+- sumar low-mid;
+- colorear toda la canción.
+
+La ruta principal debe ser:
+
+```text
+original = input
+generated = subharmonicGenerator(...)
+mix = original + generated
+```
+
+Si hace falta una pequeña compensación de headroom, debe ser dinámica y mínima.
+
+No quiero una reducción fija considerable del ORIGINAL simplemente porque Intensity esté alto.
+
+---
+
+# 7. DETECCIÓN REAL DE FRECUENCIA FUNDAMENTAL
+
+Implementa un detector realtime ligero para el bajo.
+
+Rango aproximado inicial:
+
+50 Hz a 120 Hz.
+
+No hace falta un afinador perfecto.
+
+Sí necesito una estimación estable de:
+
+`estimatedF0`
+
+y:
+
+`confidence`.
+
+Puedes elegir una estrategia eficiente como:
+
+- medición de periodo;
+- zero-crossings robustos sobre una señal band-limited;
+- autocorrelación corta;
+- autocorrelación decimada;
+- PLL;
+- phase/frequency tracker;
+- detector híbrido.
+
+Elige la alternativa que tenga mejor relación:
+
+calidad / CPU / latencia.
+
+No uses una FFT gigante innecesaria.
+
+---
+
+# 8. ESTABILIDAD DE F0
+
+No aceptes cualquier estimación instantánea.
+
+La frecuencia detectada debe tener:
+
+- estabilidad temporal;
+- hysteresis;
+- smoothing;
+- límites razonables de cambio;
+- rechazo de outliers.
+
+Ejemplo de algo NO deseado:
+
+```text
+70 Hz
+94 Hz
+53 Hz
+109 Hz
+64 Hz
+```
+
+en pocos milisegundos.
+
+Debe seguir las notas del bajo de una forma musical.
+
+Si cambia la nota:
+
+70 -> 80 Hz
+
+la estimación puede deslizarse/interpolarse durante un corto tiempo.
+
+---
+
+# 9. CONFIDENCE DE VERDAD
+
+No quiero que `confidence` sea simplemente “hay bastante volumen”.
+
+Quiero que combine información como:
+
+- energía en banda grave;
+- estabilidad del periodo;
+- cantidad de ciclos válidos;
+- correlación;
+- relación señal/ruido;
+- coherencia temporal;
+- coherencia Mid;
+- compatibilidad L/R;
+- cambios razonables en f0.
+
+Cuando confidence sea bajo:
+
+`GENERATED -> 0`
+
+de forma suave.
+
+No genere subgrave simplemente porque algo esté fuerte.
+
+---
+
+# 10. EL PUNCH NO PUEDE SUSTITUIR CONFIDENCE
+
+En la implementación actual existe un detector de ataque/punch.
+
+Puede ser útil.
+
+Pero un transitorio fuerte NO significa que exista una nota grave confiable.
+
+NO quiero:
+
+```text
+punch alto -> abrir generator
+```
+
+sin tener suficiente confidence.
+
+El punch puede modificar:
+
+- attack;
+- cantidad momentánea;
+- envelope;
+- sensación de impacto.
+
+Pero solamente DESPUÉS de confirmar que existe contenido grave válido.
+
+Un click fuerte no debe producir una cola de 35 Hz.
+
+---
+
+# 11. GENERACIÓN SUBARMÓNICA F/2
+
+Cuando tengas una `estimatedF0` válida:
+
+```text
+targetSub = estimatedF0 / 2
+```
+
+Ejemplos:
+
+```text
+100 -> 50
+80 -> 40
+70 -> 35
+60 -> 30
+```
+
+La señal generada debe seguir la frecuencia detectada.
+
+NO quiero una frecuencia fija.
+
+NO quiero simplemente alternar el signo basándote en cruces de banda sin medir correctamente el periodo.
+
+Puedes conservar un divisor tipo flip/phase divider SI lo conviertes en una implementación verdaderamente controlada por el periodo/f0 detectado.
+
+También puedes utilizar un phase accumulator.
+
+Lo importante es:
+
+- continuidad de fase;
+- cambios suaves de frecuencia;
+- relación clara con f0.
+
+---
+
+# 12. NO REINICIAR FASE
+
+El subarmónico debe mantener continuidad entre bloques.
+
+No hagas:
+
+```text
+phase = 0
+```
+
+cada callback.
+
+Mantén estado DSP persistente.
+
+Cuando `targetSub` cambie:
+
+interpola la frecuencia.
+
+Evita clicks y saltos de fase.
+
+---
+
+# 13. RANGO DEL SUB GENERADO
+
+Quiero que la ruta GENERATED viva principalmente aproximadamente entre:
+
+25 Hz y 65/70 Hz.
+
+Como punto inicial:
+
+HPF:
+
+24-27 Hz.
+
+LPF:
+
+65-70 Hz.
+
+Puedes ajustar según resultados.
+
+No quiero energía inútil extrema.
+
+---
+
+# 14. FRECUENCIAS DEMASIADO BAJAS
+
+Si:
+
+```text
+f0 / 2 < 25 Hz
+```
+
+NO hagas esto:
+
+```text
+target = 25 Hz
+```
+
+automáticamente.
+
+Eso convertiría muchas notas en un tono artificial de 25 Hz.
+
+En cambio:
+
+- reduce progresivamente la generación;
+- disminuye confidence/gain;
+- finalmente descarta la generación.
+
+Quiero un fade-out del rango útil.
+
+---
+
+# 15. ENVELOPE FOLLOWER
+
+La señal GENERATED debe seguir la dinámica del bajo original.
+
+Necesito un envelope dedicado para el generador.
+
+Debe tener:
+
+- ataque suficientemente rápido;
+- release musical;
+- ausencia de clicks;
+- ausencia de cola absurda.
+
+Ejemplo:
+
+```text
+bajo original:
+
+     /\
+____/  \_____
+
+sub generado:
+
+      /\
+_____/  \_____
+```
+
+No quiero:
+
+```text
+____________________
+~~~~~~~~~~~~~~~~~~~~
+```
+
+con el sub permanentemente encendido.
+
+---
+
+# 16. QUITAR BALANCE
+
+Elimina por completo el control `Balance` del Epicenter.
+
+Actualmente su función se solapa demasiado con `Intensity`.
+
+No quiero que el usuario tenga dos controles diferentes haciendo casi lo mismo.
+
+Elimina `balance` de:
+
+- `EpicenterParams`;
+- `EpicenterDsp`;
+- `EpicenterAudioProcessor`;
+- controller;
+- MethodChannels si aplica;
+- `AudioProvider`;
+- UI;
+- presets;
+- defaults;
+- persistencia nueva.
+
+IMPORTANTE:
+
+Si existe una preferencia vieja:
+
+`epicenter_balance`
+
+NO hace falta borrar agresivamente los datos del usuario.
+
+Puedes dejar la key legacy ignorada o hacer una migración segura.
+
+Una instalación existente no debe romper.
+
+---
+
+# 17. CONTROLES FINALES
+
+Quiero simplificar Epicenter.
+
+Los controles principales deben ser:
+
+### CENTER / SWEEP
+
+Qué región de bajos quieres analizar.
+
+### WIDTH
+
+Qué tan amplia es la zona válida alrededor de CENTER.
+
+### INTENSITY
+
+Qué cantidad de restauración/subgrave generar.
+
+Eso es todo lo realmente importante.
+
+Si actualmente existe `Volume`, evalúa si hace falta.
+
+Preferencia:
+
+el volumen normal del reproductor controla el nivel general.
+
+No quiero una colección innecesaria de perillas.
+
+---
+
+# 18. CENTER / SWEEP
+
+Dale un significado técnico claro.
+
+Actualmente Sweep usa aproximadamente rango:
+
+27-63.
+
+Puedes mantenerlo por compatibilidad con la UI, pero documenta exactamente la conversión.
+
+Por ejemplo:
+
+```text
+Sweep UI -> center frequency del detector
+```
+
+Sweep bajo:
+
+prioriza bajos más profundos.
+
+Sweep alto:
+
+prioriza upper-bass.
+
+No quiero que Sweep controle directamente un bass boost.
+
+---
+
+# 19. WIDTH
+
+Width debe controlar principalmente:
+
+qué tan amplio es el rango de frecuencias aceptado alrededor de CENTER.
+
+Ejemplo conceptual:
+
+CENTER = 75 Hz
+
+Width bajo:
+
+65-85 Hz.
+
+Width alto:
+
+50-110 Hz.
+
+No tiene que ser exactamente esa matemática.
+
+Pero esa debe ser la idea.
+
+Width NO debe:
+
+- controlar estéreo artificial;
+- subir directamente low-mid;
+- subir volumen general;
+- meter side al sub.
+
+---
+
+# 20. INTENSITY
+
+Intensity debe convertirse en EL control principal del efecto.
+
+Su función fundamental:
+
+```text
+generatedGain
+```
+
+Puede también modificar ligeramente:
+
+- threshold del confidence;
+- release;
+- gate;
+- fuerza de restauración.
+
+Pero principalmente:
+
+```text
+Intensity ↑ -> más GENERATED
+```
+
+No:
+
+```text
+Intensity ↑
+-> más ORIGINAL bass
+-> más low-mid
+-> más EQ
+-> más distorsión
+```
+
+Intensity = 0:
+
+después de terminar el crossfade:
+
+```text
+OUTPUT = INPUT
+```
+
+Intensity = 100:
+
+máxima restauración permitida de forma segura.
+
+---
+
+# 21. NO METER SIDE EN EL SUB
+
+La versión actual agrega información de `side` al contenido generado.
+
+No quiero eso para la región de subgrave.
+
+El GENERATED debe ser MONO/CENTER por defecto.
+
+```text
+ORIGINAL:
+L/R intacto
+
+GENERATED:
+mono
+```
+
+Después:
+
+```text
+Lout = Lin + generated
+Rout = Rin + generated
+```
+
+con niveles apropiados.
+
+Eso ayuda a:
+
+- coherencia de fase;
+- sistemas con subwoofer;
+- compatibilidad mono;
+- evitar cancelaciones.
+
+---
+
+# 22. MID/SIDE SOLO PARA ANÁLISIS
+
+Puedes utilizar:
+
+```text
+mid = (L + R) * 0.5
+side = (L - R) * 0.5
+```
+
+para tomar decisiones.
+
+Por ejemplo:
+
+si hay mucho side extraño en bajas frecuencias:
+
+reduce confidence.
+
+Pero no quiero convertir `side` directamente en subgrave sintetizado.
+
+---
+
+# 23. VOZ
+
+No confíes únicamente en un filtro llamado `voiceBand`.
+
+Quiero que el principal mecanismo de rechazo sea:
+
+periodicidad + confidence + banda objetivo.
+
+Una voz masculina puede ser periódica, así que tampoco asumas que toda periodicidad es bajo musical.
+
+Combina:
+
+- rango de frecuencia;
+- energía;
+- estabilidad;
+- envelope;
+- relación con low-frequency content.
+
+Pero no hagas procesamiento agresivo del ORIGINAL para “proteger las voces”.
+
+La voz original debe simplemente permanecer intacta.
+
+---
+
+# 24. HEADROOM
+
+No quiero resolver el headroom únicamente bajando todo el original.
+
+Antes de generar, estima cuánto margen existe.
+
+Por ejemplo:
+
+```text
+originalPeak
+generatedPeak
+availableHeadroom
+```
+
+Reduce primero GENERATED si la suma va a excederse.
+
+Preferencia:
+
+```text
+generatedGain = min(requestedGain, safeGain)
+```
+
+Luego:
+
+```text
+mix = original + generated
+```
+
+Si todavía hace falta:
+
+aplica una reducción global suave.
+
+Pero evita una reducción fija grande ligada directamente a Intensity.
+
+---
+
+# 25. LIMITER
+
+Rehaz el limiter.
+
+El actual `SoftLimiter` usa `tanh`.
+
+No quiero que toda la música pase constantemente por una no-linealidad audible.
+
+El limiter debe ser esencialmente transparente mientras no hace falta limitar.
+
+Comportamiento deseado:
+
+```text
+peak < threshold
+-> output aproximadamente igual a input
+```
+
+Cuando excede threshold:
+
+```text
+gain reduction suave
+```
+
+Puede existir un soft clipper como última defensa cerca de 0 dBFS.
+
+Pero NO como procesamiento permanente.
+
+---
+
+# 26. LIMITER STEREO-LINKED
+
+Muy importante.
+
+No quiero un limiter separado por canal que cambie la imagen estéreo.
+
+Usa un detector común:
+
+```text
+peak = max(abs(L), abs(R))
+```
+
+y calcula UNA sola ganancia.
+
+Luego:
+
+```text
+L *= limiterGain
+R *= limiterGain
+```
+
+Así se mantiene la imagen estéreo.
+
+---
+
+# 27. BYPASS
+
+Con Epicenter desactivado:
+
+durante unos milisegundos puedes hacer crossfade para evitar clicks.
+
+Después:
+
+```text
+input -> output
+```
+
+directamente.
+
+No quiero procesamiento permanente cuando:
+
+```text
+wetMix == 0
+```
+
+No resetees estados abruptamente en mitad de la transición.
+
+---
+
+# 28. REALTIME
+
+Esto corre en Android realtime.
+
+No hagas:
+
+- allocation por muestra;
+- allocation continua por bloque;
+- `MutableList` creciendo durante reproducción;
+- locks;
+- I/O;
+- logs por sample;
+- Android API dentro del procesamiento DSP;
+- objetos nuevos por frame;
+- FFT enormes.
+
+Buffers de análisis:
+
+preasignados/reutilizados.
+
+Si el bloque aumenta:
+
+puedes crecer el buffer una vez y reutilizarlo.
+
+---
+
+# 29. PERFORMANCE
+
+Debe funcionar correctamente como mínimo en:
+
+44.1 kHz
+
+48 kHz
+
+96 kHz si la ruta lo entrega.
+
+Idealmente:
+
+192 kHz sin glitches si el dispositivo lo soporta.
+
+Si un detector de periodicidad cuesta demasiado a sample rates altos:
+
+puedes decimar SOLO la ruta de análisis.
+
+Por ejemplo:
+
+```text
+original -> untouched
+analysis copy -> downsample/decimate -> detector
+```
+
+pero GENERATED y OUTPUT deben seguir en el sample rate real.
+
+---
+
+# 30. NO FORZAR RESAMPLING GENERAL
+
+Epicenter no debe cambiar innecesariamente:
+
+44.1 -> 48
+
+96 -> 48
+
+etc.
+
+Trabaja con el sample rate real recibido desde Media3.
+
+Si decimas internamente para el detector:
+
+eso solamente ocurre en la ruta de análisis.
+
+---
+
+# 31. DEFAULTS
+
+NO intentes arreglar la calidad poniendo presets absurdamente fuertes.
+
+Actualmente se han probado valores altos como:
+
+Width ≈ 86
+
+Intensity ≈ 84
+
+y anteriormente Balance alto.
+
+No quiero depender de eso.
+
+Primero haz que el algoritmo funcione correctamente alrededor de valores medios.
+
+Después define defaults agradables.
+
+Un buen algoritmo debería ser evidente incluso cerca de:
+
+Intensity 40-60%.
+
+---
+
+# 32. PRESETS
+
+Puedes conservar presets si la UI los necesita.
+
+Pero elimínales Balance.
+
+Por ejemplo:
+
+Profundo
+
+Limpio
+
+Fuerte
+
+etc.
+
+Si existe un preset llamado `AudioControl`, recuerda que NO estamos replicando exactamente un algoritmo propietario.
+
+Si lo conservas, trátalo únicamente como:
+
+tuning inspirado en ese estilo sonoro.
+
+No afirmes equivalencia exacta.
+
+---
+
+# 33. PRUEBAS DSP OBLIGATORIAS
+
+Quiero pruebas reales.
+
+Crea una forma de medir por separado:
+
+`ORIGINAL`
+
+`GENERATED`
+
+`FINAL`
+
+No quiero únicamente “compiló”.
+
+---
+
+# 34. TEST 100 HZ
+
+Input:
+
+seno 100 Hz.
+
+Con Epicenter activo:
+
+ORIGINAL:
+
+100 Hz.
+
+GENERATED:
+
+componente dominante aproximadamente 50 Hz.
+
+FINAL:
+
+100 + 50 Hz.
+
+La magnitud exacta depende de Intensity.
+
+---
+
+# 35. TEST 80 HZ
+
+Input:
+
+80 Hz.
+
+GENERATED esperado:
+
+aproximadamente 40 Hz.
+
+---
+
+# 36. TEST 70 HZ
+
+Input:
+
+70 Hz.
+
+GENERATED esperado:
+
+aproximadamente 35 Hz.
+
+---
+
+# 37. TEST 60 HZ
+
+Input:
+
+60 Hz.
+
+GENERATED esperado:
+
+aproximadamente 30 Hz.
+
+---
+
+# 38. TEST 50 HZ
+
+Input:
+
+50 Hz.
+
+GENERATED:
+
+aproximadamente 25 Hz pero con protección/ramp apropiado.
+
+No quiero que se vuelva exagerado.
+
+---
+
+# 39. TEST POR DEBAJO DEL RANGO
+
+Ejemplo:
+
+40 Hz.
+
+`40 / 2 = 20 Hz`.
+
+Quiero que la generación se reduzca mucho o desaparezca.
+
+NO quiero:
+
+20 -> clamped automáticamente a 25.
+
+---
+
+# 40. TEST SIN BAJO
+
+Entrada con muy poca energía en la banda objetivo.
+
+Resultado:
+
+GENERATED aproximadamente cero.
+
+---
+
+# 41. TEST RUIDO
+
+White noise.
+
+Pink noise.
+
+No debe aparecer una frecuencia subgrave estable fuerte.
+
+---
+
+# 42. TEST TRANSITORIO
+
+Click/transitorio corto.
+
+No debe producir una cola larga de subgrave.
+
+---
+
+# 43. TEST KICK
+
+Kick con componente grave estable.
+
+Puede disparar la restauración si existe periodicidad suficiente.
+
+Kick extremadamente corto sin fundamental clara:
+
+no debe crear una nota ficticia enorme.
+
+---
+
+# 44. TEST ESTÉREO
+
+Prueba:
+
+L y R coherentes.
+
+Debe generar subgrave mono estable.
+
+Prueba graves L/R muy fuera de fase.
+
+Debe bajar confidence o cantidad de GENERATED.
+
+No debe producir subgrave impredecible.
+
+---
+
+# 45. TEST BYPASS
+
+Epicenter apagado.
+
+Una vez terminado el crossfade:
+
+OUTPUT debe igualar INPUT dentro del error numérico esperado.
+
+No debe haber:
+
+EQ;
+
+tanh;
+
+limiter innecesario;
+
+filtros del original.
+
+---
+
+# 46. MEDICIONES
+
+Para los tonos de prueba reporta:
+
+- frecuencia input;
+- estimatedF0;
+- confidence media;
+- targetSub;
+- pico ORIGINAL;
+- pico GENERATED;
+- pico FINAL;
+- frecuencia dominante de GENERATED.
+
+Ejemplo:
+
+```text
+Input: 80.0 Hz
+Estimated f0: 79.8 Hz
+Confidence: 0.93
+Target sub: 39.9 Hz
+Generated dominant: 39.9 Hz
+```
+
+No inventes resultados.
+
+Ejecuta las pruebas y muestra los resultados reales obtenidos.
+
+---
+
+# 47. CAMBIOS DE UI
+
+Elimina Balance visualmente.
+
+Quiero que los controles de Epicenter queden simples.
+
+Idealmente:
+
+```text
+Center
+Width
+Intensity
+```
+
+Si `Volume` sigue siendo necesario técnicamente, puede permanecer de manera secundaria.
+
+No agregues 10 parámetros nuevos a la interfaz.
+
+Attack/release/confidence thresholds pueden permanecer internos.
+
+---
+
+# 48. PERSISTENCIA
+
+Actualiza `StatePersistence`.
+
+Elimina el uso activo de:
+
+`defaultEpicenterBalance`
+
+y de balance como parámetro nuevo.
+
+No rompas usuarios existentes.
+
+Si SharedPreferences todavía contiene:
+
+`epicenter_balance`
+
+simplemente ignóralo.
+
+Puedes mantener compatibilidad de lectura/migración si hace falta, pero no debe participar en el nuevo DSP.
+
+Actualiza la versión de tuning si es necesario.
+
+---
+
+# 49. AUDIO PROVIDER
+
+Actualiza el provider para que:
+
+`updateEpicenterSettings`
+
+ya no necesite Balance.
+
+Verifica todos los callers.
+
+No dejes referencias rotas.
+
+---
+
+# 50. NATIVE API
+
+Actualiza controller / MethodChannel / Kotlin si existe:
+
+`setBalance`
+
+o campos balance.
+
+Elimínalos limpiamente si ya no tienen uso.
+
+No mantengas parámetros muertos entrando al DSP.
+
+---
+
+# 51. NO CAMBIAR COSAS NO RELACIONADAS
+
+Mientras trabajes en esto:
+
+NO arregles lints generales.
+
+NO reformatees todo el proyecto.
+
+NO cambies artwork.
+
+NO cambies notificaciones.
+
+NO cambies playlists.
+
+NO cambies car mode.
+
+NO cambies scanner.
+
+NO cambies WMA salvo que sea estrictamente necesario para compilar Epicenter.
+
+Mantén el diff enfocado.
+
+---
+
+# 52. COMPILACIÓN
+
+Después de los cambios:
+
+ejecuta las pruebas DSP.
+
+Después compila al menos el módulo Android correspondiente.
+
+Si es viable, ejecuta también:
+
+`flutter analyze`
+
+pero NO modifiques decenas de archivos irrelevantes solamente para dejar cero warnings.
+
+Después intenta:
+
+build debug del proyecto.
+
+---
+
+# 53. NO OCULTAR PROBLEMAS
+
+Si las pruebas muestran que el detector todavía confunde notas o produce octave errors:
+
+dímelo.
+
+No maquilles los resultados cambiando los thresholds hasta que una prueba específica pase.
+
+Prioridad:
+
+calidad real del DSP.
+
+---
+
+# 54. RESULTADO FINAL QUE ESPERO
+
+No quiero:
+
+“Epicenter ahora da +muchos dB de bajo”.
+
+Quiero:
+
+“Epicenter reconstruye una octava inferior relacionada con el contenido musical real”.
+
+Ejemplo perceptual:
+
+una canción tiene bajo principal alrededor de 75 Hz.
+
+Sin Epicenter:
+
+el subwoofer pega, pero no baja demasiado.
+
+Con Epicenter:
+
+aparece energía coherente aproximadamente cerca de 37.5 Hz.
+
+El bajo sigue teniendo el carácter original, pero ahora tiene profundidad.
+
+Debe sentirse como:
+
+“ahora sí bajó”.
+
+No como:
+
+“le subieron al bass boost”.
+
+---
+
+# 55. RESUMEN OBLIGATORIO AL TERMINAR
+
+Cuando termines, responde con:
+
+### Archivos modificados
+
+Lista exacta.
+
+### Algoritmo anterior
+
+Explica brevemente qué hacía `flipState`, `octaveWave`, filtros y shaping.
+
+### Algoritmo nuevo
+
+Describe el pipeline.
+
+### Detector f0
+
+Explica:
+
+cómo mide periodo/frecuencia.
+
+### Confidence
+
+Qué factores utiliza.
+
+### Síntesis
+
+Cómo genera `f0 / 2`.
+
+### Phase
+
+Cómo mantiene continuidad.
+
+### Envelope
+
+Attack/release implementados.
+
+### Filtros GENERATED
+
+HPF y LPF.
+
+### Center
+
+Qué hace exactamente.
+
+### Width
+
+Qué hace exactamente.
+
+### Intensity
+
+Qué hace exactamente.
+
+### Balance
+
+Confirma que fue eliminado.
+
+### Headroom
+
+Explica cómo evita clipping sin reducir permanentemente el original.
+
+### Limiter
+
+Explica cómo funciona y confirma que es stereo-linked.
+
+### Realtime
+
+Confirma qué buffers se reutilizan.
+
+### Pruebas
+
+Incluye resultados reales de:
+
+100 Hz
+
+80 Hz
+
+70 Hz
+
+60 Hz
+
+50 Hz
+
+ruido
+
+transitorio
+
+bypass.
+
+### Build
+
+Indica exactamente qué comando compilaste y su resultado.
+
+---
+
+# REGLA FINAL
+
+NO quiero que simplemente cambies constantes.
+
+NO quiero que únicamente aumentes gain.
+
+NO quiero que simplemente cambies:
+
+Intensity 84 -> 100.
+
+Quiero cambiar el comportamiento fundamental del DSP.
+
+La prioridad absoluta es:
+
+```text
+ORIGINAL limpio
++
+SUBARMÓNICO GENERADO correctamente
+=
+BAJO MÁS PROFUNDO
+```
+
+Implementa los cambios.
+
+No hagas commit.
+
+No hagas push.

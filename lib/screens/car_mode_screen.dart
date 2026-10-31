@@ -9,7 +9,6 @@ import '../theme/app_theme.dart';
 import '../utils/title_utils.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/smart_artwork.dart';
-import '../widgets/mini_player.dart';
 import 'car_mode_library_screen.dart';
 
 class CarModeScreen extends StatefulWidget {

@@ -3,7 +3,6 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
 import 'smart_artwork.dart';
-import '../theme/app_theme.dart';
 import '../utils/title_utils.dart';
 
 class AlbumCard extends StatefulWidget {
@@ -18,7 +17,8 @@ class AlbumCard extends StatefulWidget {
   State<AlbumCard> createState() => _AlbumCardState();
 }
 
-class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMixin {
+class _AlbumCardState extends State<AlbumCard>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -27,8 +27,8 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
     super.initState();
     _controller = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 100));
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -42,8 +42,6 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
     final audioProvider = Provider.of<AudioProvider>(context);
     final isCurrentSong = audioProvider.currentSong?.id == widget.song.id;
     final isPlaying = isCurrentSong && audioProvider.player.playing;
-    final isFavorite = audioProvider.isFavorite(widget.song.id);
-
     return GestureDetector(
       onTapDown: (_) => _controller.forward(),
       onTapUp: (_) => _controller.reverse(),
@@ -70,7 +68,7 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                 : null,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -97,7 +95,9 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
               Text(
                 TitleUtils.getDisplayTitle(widget.song),
                 style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -124,8 +124,10 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                           audioProvider.playPlaylist([widget.song], 0);
                           return;
                         }
-                        final startIndex = albumSongs.indexWhere((s) => s.id == widget.song.id);
-                        audioProvider.playPlaylist(albumSongs, startIndex == -1 ? 0 : startIndex);
+                        final startIndex = albumSongs
+                            .indexWhere((s) => s.id == widget.song.id);
+                        audioProvider.playPlaylist(
+                            albumSongs, startIndex == -1 ? 0 : startIndex);
                       },
                       icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
                       label: const Text('Play'),
@@ -150,7 +152,8 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
                         audioProvider.playPlaylistShuffled(albumSongs);
                       },
                       icon: const Icon(Icons.shuffle, color: Colors.white),
-                      label: const Text('Shuffle', style: TextStyle(color: Colors.white)),
+                      label: const Text('Shuffle',
+                          style: TextStyle(color: Colors.white)),
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.white24),
                       ),

@@ -114,7 +114,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                     TitleUtils.getDisplayArtist(song.artist),
                     style: TextStyle(
                         color: isPlaying
-                            ? AppTheme.primaryColor.withOpacity(0.7)
+                            ? AppTheme.primaryColor.withValues(alpha: 0.7)
                             : Colors.white54,
                         fontSize: 13),
                     maxLines: 1,

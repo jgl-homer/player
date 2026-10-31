@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:on_audio_query/on_audio_query.dart';
@@ -78,11 +80,17 @@ class _SmartArtworkState extends State<SmartArtwork> {
       Uint8List? bytes;
       final querySize = _querySizeForWidget();
 
-      if (isLarge) {
-        bytes = await _mediaChannel.invokeMethod<Uint8List>(
-          'extractEmbeddedArtwork',
-          {'filePath': widget.songPath},
-        );
+      bytes = await _mediaChannel.invokeMethod<Uint8List>(
+        'extractEmbeddedArtwork',
+        {'filePath': widget.songPath},
+      );
+
+      if (bytes == null || bytes.isEmpty) {
+        bytes = await _loadPreferredFolderArtwork();
+      }
+
+      if (bytes == null || bytes.isEmpty) {
+        bytes = await _loadFolderArtwork();
       }
 
       if (bytes == null || bytes.isEmpty) {
@@ -91,13 +99,6 @@ class _SmartArtworkState extends State<SmartArtwork> {
           widget.type,
           size: querySize,
           quality: isLarge ? 100 : 80,
-        );
-      }
-
-      if (!isLarge && (bytes == null || bytes.isEmpty)) {
-        bytes = await _mediaChannel.invokeMethod<Uint8List>(
-          'extractEmbeddedArtwork',
-          {'filePath': widget.songPath},
         );
       }
 
@@ -115,6 +116,84 @@ class _SmartArtworkState extends State<SmartArtwork> {
         setState(() => _tried = true);
       }
     }
+  }
+
+  Future<Uint8List?> _loadPreferredFolderArtwork() {
+    return _loadFolderArtworkInternal(preferredOnly: true);
+  }
+
+  Future<Uint8List?> _loadFolderArtwork() async {
+    return _loadFolderArtworkInternal(preferredOnly: false);
+  }
+
+  Future<Uint8List?> _loadFolderArtworkInternal(
+      {required bool preferredOnly}) async {
+    final normalizedPath = widget.songPath.replaceAll('\\', '/');
+    final lastSeparator = normalizedPath.lastIndexOf('/');
+    if (lastSeparator <= 0) return null;
+
+    final dir = Directory(normalizedPath.substring(0, lastSeparator));
+    if (!await dir.exists()) return null;
+
+    const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+    final preferredNames = preferredOnly
+        ? const ['folder']
+        : const ['folder', 'cover', 'front', 'album', 'albumart'];
+    for (final name in preferredNames) {
+      for (final ext in extensions) {
+        final bytes = await _readArtworkFileIfValid('${dir.path}/$name.$ext');
+        if (bytes != null) return bytes;
+      }
+    }
+
+    if (preferredOnly) {
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final fileName = entity.path.replaceAll('\\', '/').split('/').last;
+        final dot = fileName.lastIndexOf('.');
+        if (dot <= 0 || dot == fileName.length - 1) continue;
+        final base = fileName.substring(0, dot).toLowerCase();
+        final ext = fileName.substring(dot + 1).toLowerCase();
+        if (base != 'folder' || !extensions.contains(ext)) continue;
+        final length = await entity.length();
+        if (length <= 0 || length > 20 * 1024 * 1024) continue;
+        return entity.readAsBytes();
+      }
+      return null;
+    }
+
+    const names = {'folder', 'cover', 'front', 'album', 'albumart'};
+    const allExtensions = {
+      'jpg',
+      'jpeg',
+      'png',
+      'webp',
+    };
+
+    await for (final entity in dir.list(followLinks: false)) {
+      if (entity is! File) continue;
+      final fileName = entity.path.replaceAll('\\', '/').split('/').last;
+      final dot = fileName.lastIndexOf('.');
+      if (dot <= 0 || dot == fileName.length - 1) continue;
+
+      final base = fileName.substring(0, dot).toLowerCase();
+      final ext = fileName.substring(dot + 1).toLowerCase();
+      if (!names.contains(base) || !allExtensions.contains(ext)) continue;
+
+      final length = await entity.length();
+      if (length <= 0 || length > 20 * 1024 * 1024) continue;
+      return entity.readAsBytes();
+    }
+
+    return null;
+  }
+
+  Future<Uint8List?> _readArtworkFileIfValid(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) return null;
+    final length = await file.length();
+    if (length <= 0 || length > 20 * 1024 * 1024) return null;
+    return file.readAsBytes();
   }
 
   static void _remember(String key, Uint8List? bytes) {

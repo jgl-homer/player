@@ -3,9 +3,10 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../utils/title_utils.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
-import '../theme/app_theme.dart';
 import '../widgets/options_menu.dart';
 import '../widgets/smart_artwork.dart';
+import '../widgets/song_list_tile.dart';
+import '../widgets/mini_player.dart';
 
 class AlbumDetailScreen extends StatefulWidget {
   final String albumName;
@@ -42,11 +43,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         .toList();
     final songs = liveSongs.isNotEmpty ? liveSongs : widget.songs;
 
-    final albumName = songs.isNotEmpty && (songs.first.album?.isNotEmpty == true)
-        ? songs.first.album!
-        : widget.albumName;
-    final albumId =
-        songs.isNotEmpty ? (songs.first.albumId ?? widget.albumId) : widget.albumId;
+    final albumName =
+        songs.isNotEmpty && (songs.first.album?.isNotEmpty == true)
+            ? songs.first.album!
+            : widget.albumName;
+    final albumId = songs.isNotEmpty
+        ? (songs.first.albumId ?? widget.albumId)
+        : widget.albumId;
     final firstSong = songs.isNotEmpty ? songs.first : widget.songs.first;
     final artistName = songs.isNotEmpty
         ? TitleUtils.getDisplayArtist(songs.first.artist)
@@ -56,154 +59,137 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            backgroundColor: const Color(0xFF1A1A1A),
-            pinned: true,
-            expandedHeight: 200,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.edit, color: Colors.white),
-                onPressed: () {
-                  showEditTagDialog(
-                    context,
-                    audioProvider,
-                    song: firstSong,
-                    isAlbumEdit: true,
-                    albumSongs: songs,
-                  );
-                  // El rebuild ocurre automáticamente porque escuchamos al provider
-                },
-              ),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                color: const Color(0xFF1A1A1A),
-                padding: EdgeInsets.only(
-                    top: MediaQuery.of(context).padding.top + 56,
-                    left: 16,
-                    right: 16,
-                    bottom: 16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    SmartArtwork(
-                      albumId: albumId,
-                      songPath: firstSong.data,
-                      size: 120,
-                      borderRadius: BorderRadius.circular(8),
+      body: Column(
+        children: [
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  backgroundColor: const Color(0xFF1A1A1A),
+                  pinned: true,
+                  expandedHeight: 200,
+                  leading: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.edit, color: Colors.white),
+                      onPressed: () {
+                        showEditTagDialog(
+                          context,
+                          audioProvider,
+                          song: firstSong,
+                          isAlbumEdit: true,
+                          albumSongs: songs,
+                        );
+                        // El rebuild ocurre automáticamente porque escuchamos al provider
+                      },
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  ],
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: Container(
+                      color: const Color(0xFF1A1A1A),
+                      padding: EdgeInsets.only(
+                          top: MediaQuery.of(context).padding.top + 56,
+                          left: 16,
+                          right: 16,
+                          bottom: 16),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(albumName,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis),
-                          const SizedBox(height: 4),
-                          Text(artistName,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 14),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${songs.length} Canciones  •  ${_formatDuration(totalDuration)}',
-                            style: const TextStyle(
-                                color: Colors.grey, fontSize: 13),
+                          SmartArtwork(
+                            albumId: albumId,
+                            songPath: firstSong.data,
+                            size: 120,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(albumName,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 4),
+                                Text(artistName,
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 14),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${songs.length} Canciones  •  ${_formatDuration(totalDuration)}',
+                                  style: const TextStyle(
+                                      color: Colors.grey, fontSize: 13),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ),
-
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _ActionButton(
-                      icon: Icons.play_arrow,
-                      label: 'REPRODUCIR TODO',
-                      onTap: () => audioProvider.playAlbumSongs(songs, 0,
-                          albumId: albumId),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _ActionButton(
+                            icon: Icons.play_arrow,
+                            label: 'REPRODUCIR TODO',
+                            onTap: () => audioProvider.playAlbumSongs(songs, 0,
+                                albumId: albumId),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _ActionButton(
+                            icon: Icons.shuffle,
+                            label: 'ALEATORIO',
+                            onTap: () {
+                              audioProvider.playAlbumSongs(songs, 0,
+                                  albumId: albumId);
+                              if (!audioProvider.isShuffle) {
+                                audioProvider.toggleShuffle();
+                              }
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _ActionButton(
-                      icon: Icons.shuffle,
-                      label: 'ALEATORIO',
-                      onTap: () {
-                          audioProvider.playAlbumSongs(songs, 0, albumId: albumId);
-                          if (!audioProvider.isShuffle) audioProvider.toggleShuffle();
-                        },
-                    ),
+                ),
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final song = songs[index];
+                      final isPlaying =
+                          audioProvider.currentSong?.id == song.id;
+
+                      return SongListTile(
+                        song: song,
+                        isSelected: isPlaying,
+                        onTap: () => audioProvider.playAlbumSongs(songs, index,
+                            albumId: albumId),
+                      );
+                    },
+                    childCount: songs.length,
                   ),
-                ],
-              ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              ],
             ),
           ),
-
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final song = songs[index];
-                final isPlaying = audioProvider.currentSong?.id == song.id;
-                final duration = Duration(milliseconds: song.duration ?? 0);
-
-                return ListTile(
-                  leading: SmartArtwork(
-                    albumId: song.albumId ?? albumId,
-                    songPath: song.data,
-                    size: 48,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  title: Text(
-                    TitleUtils.getDisplayTitle(song),
-                    style: TextStyle(
-                      color: isPlaying
-                          ? AppTheme.primaryColor
-                          : Colors.white,
-                      fontWeight:
-                          isPlaying ? FontWeight.bold : FontWeight.normal,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    _formatDuration(duration),
-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.more_vert, color: Colors.grey),
-                    onPressed: () =>
-                        showOptionsMenu(context, audioProvider, song: song),
-                  ),
-                  onTap: () => audioProvider.playAlbumSongs(songs, index,
-                      albumId: albumId),
-                );
-              },
-              childCount: songs.length,
-            ),
-          ),
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+          if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
         ],
       ),
     );

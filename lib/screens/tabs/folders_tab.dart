@@ -156,8 +156,8 @@ class _FoldersTabState extends State<FoldersTab> {
                     final folderName = folderPath.split('/').last;
                     final folderSongs = allSongs
                         .where((song) =>
-                            song.data.startsWith(folderPath + '/') ||
-                            song.data.startsWith(folderPath + '\\'))
+                            song.data.startsWith('$folderPath/') ||
+                            song.data.startsWith('$folderPath\\'))
                         .where((song) {
                       final songDir = path.dirname(song.data);
                       return songDir == folderPath;

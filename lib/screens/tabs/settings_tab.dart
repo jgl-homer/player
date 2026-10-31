@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../services/state_persistence.dart';
 import '../../services/lyrics_service.dart';
+import '../../autodj/widgets/autodj_settings_section.dart';
 
 class SettingsTab extends StatelessWidget {
   const SettingsTab({super.key});
@@ -187,6 +188,15 @@ class SettingsTab extends StatelessWidget {
 
           const SizedBox(height: 8),
           const Divider(color: Colors.white10, height: 1),
+          const SizedBox(height: 8),
+
+          AutoDjSettingsSection(
+            controller: audioProvider.autoDj,
+            libraryPaths: audioProvider.allSongs
+                .map((song) => song.data)
+                .toList(growable: false),
+          ),
+
           const SizedBox(height: 8),
 
           // ─── Sección: Biblioteca ───────────────────────────────────────

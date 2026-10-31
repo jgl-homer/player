@@ -17,7 +17,8 @@ class MiniPlayerPill extends StatefulWidget {
   State<MiniPlayerPill> createState() => _MiniPlayerPillState();
 }
 
-class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProviderStateMixin {
+class _MiniPlayerPillState extends State<MiniPlayerPill>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
 
@@ -26,8 +27,8 @@ class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProvid
     super.initState();
     _controller = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 100));
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -67,7 +68,7 @@ class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProvid
             borderRadius: BorderRadius.circular(32),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),

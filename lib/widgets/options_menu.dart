@@ -9,7 +9,8 @@ import '../services/state_persistence.dart';
 import '../utils/title_utils.dart';
 import 'song_info_modal.dart';
 
-void showOptionsMenu(BuildContext context, AudioProvider audioProvider, {SongModel? song}) {
+void showOptionsMenu(BuildContext context, AudioProvider audioProvider,
+    {SongModel? song}) {
   showModalBottomSheet(
     context: context,
     backgroundColor: const Color(0xFF222222),
@@ -99,52 +100,53 @@ class _OptionsMenuContent extends StatelessWidget {
     );
   }
 
-  void _showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
+  void _showDeleteDialog(
+      BuildContext context, AudioProvider provider, SongModel song) {
     showDeleteDialog(context, provider, song);
   }
 }
 
-void showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF222222),
-        title: const Text("Confirmar eliminación",
-            style: TextStyle(color: Colors.white)),
-        content: Text(
-            "¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?",
-            style: const TextStyle(color: Colors.white70)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child:
-                  const Text("Cancelar", style: TextStyle(color: Colors.grey))),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              final success = await provider.deleteSong(song);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success
-                          ? "Archivo eliminado correctamente."
-                          : "Error al eliminar. Verifica los permisos.",
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    backgroundColor: success ? Colors.black87 : Colors.red,
+void showDeleteDialog(
+    BuildContext context, AudioProvider provider, SongModel song) {
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF222222),
+      title: const Text("Confirmar eliminación",
+          style: TextStyle(color: Colors.white)),
+      content: Text(
+          "¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?",
+          style: const TextStyle(color: Colors.white70)),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:
+                const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(ctx);
+            final success = await provider.deleteSong(song);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    success
+                        ? "Archivo eliminado correctamente."
+                        : "Error al eliminar. Verifica los permisos.",
+                    style: const TextStyle(color: Colors.white),
                   ),
-                );
-              }
-            },
-            child: const Text("Eliminar",
-                style: TextStyle(color: Colors.redAccent)),
-          ),
-        ],
-      ),
-    );
-  }
+                  backgroundColor: success ? Colors.black87 : Colors.red,
+                ),
+              );
+            }
+          },
+          child:
+              const Text("Eliminar", style: TextStyle(color: Colors.redAccent)),
+        ),
+      ],
+    ),
+  );
+}
 
 class _EpicenterSettingsSheet extends StatefulWidget {
   final AudioProvider audioProvider;
@@ -160,6 +162,7 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
   late double _sweepFreq;
   late double _width;
   late double _intensity;
+  late bool _peakProtectionEnabled;
 
   @override
   void initState() {
@@ -168,6 +171,7 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
     _sweepFreq = provider.epicenterSweepFreq;
     _width = provider.epicenterWidth;
     _intensity = provider.epicenterIntensity;
+    _peakProtectionEnabled = provider.epicenterPeakProtectionEnabled;
   }
 
   Future<void> _resetDefaults() async {
@@ -175,8 +179,27 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
       _sweepFreq = StatePersistence.defaultEpicenterSweepFreq;
       _width = StatePersistence.defaultEpicenterWidth;
       _intensity = StatePersistence.defaultEpicenterIntensity;
+      _peakProtectionEnabled =
+          StatePersistence.defaultEpicenterPeakProtectionEnabled;
     });
     await widget.audioProvider.resetEpicenterSettingsToDefault();
+  }
+
+  Future<void> _applyPreset({
+    required double sweepFreq,
+    required double width,
+    required double intensity,
+  }) async {
+    setState(() {
+      _sweepFreq = sweepFreq;
+      _width = width;
+      _intensity = intensity;
+    });
+    await widget.audioProvider.updateEpicenterSettings(
+      sweepFreq: sweepFreq,
+      width: width,
+      intensity: intensity,
+    );
   }
 
   @override
@@ -203,6 +226,43 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _PresetButton(
+                    label: 'AudioControl',
+                    onPressed: () => _applyPreset(
+                      sweepFreq: 41,
+                      width: 86,
+                      intensity: 84,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _PresetButton(
+                    label: 'Profundo',
+                    onPressed: () => _applyPreset(
+                      sweepFreq: 34,
+                      width: 72,
+                      intensity: 78,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _PresetButton(
+                    label: 'Limpio',
+                    onPressed: () => _applyPreset(
+                      sweepFreq: 48,
+                      width: 58,
+                      intensity: 58,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             _ParamSlider(
@@ -238,6 +298,28 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
                 widget.audioProvider.updateEpicenterSettings(intensity: value);
               },
             ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Protección anti-clip',
+                style: TextStyle(color: Colors.white),
+              ),
+              subtitle: Text(
+                _peakProtectionEnabled
+                    ? 'Límite transparente actual'
+                    : 'Salida como antes del límite',
+                style: const TextStyle(color: Colors.white54),
+              ),
+              value: _peakProtectionEnabled,
+              activeThumbColor: Colors.white,
+              activeTrackColor: Colors.greenAccent,
+              onChanged: (value) {
+                setState(() => _peakProtectionEnabled = value);
+                widget.audioProvider.updateEpicenterSettings(
+                  peakProtectionEnabled: value,
+                );
+              },
+            ),
             const SizedBox(height: 10),
             Row(
               children: [
@@ -269,6 +351,30 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _PresetButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+
+  const _PresetButton({
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: const BorderSide(color: Colors.white30),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+      child: FittedBox(child: Text(label)),
     );
   }
 }
@@ -363,7 +469,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
   late final TextEditingController _genre;
   late final TextEditingController _year;
   late final TextEditingController _track;
-  
+
   bool _isSaving = false;
 
   File? _newCoverFile;
@@ -376,7 +482,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     final song = widget.song ?? widget.provider.currentSong!;
     final artistText =
         TitleUtils.isUnknownArtist(song.artist) ? "" : song.artist!.trim();
-    _title = TextEditingController(text: widget.isAlbumEdit ? "" : TitleUtils.getDisplayTitle(song));
+    _title = TextEditingController(
+        text: widget.isAlbumEdit ? "" : TitleUtils.getDisplayTitle(song));
     _album = TextEditingController(text: song.album ?? "");
     _artist = TextEditingController(text: artistText);
     _albumArtist = TextEditingController();
@@ -434,9 +541,11 @@ class _EditTagDialogState extends State<_EditTagDialog> {
 
   Future<void> _save() async {
     setState(() => _isSaving = true);
-    
+
     try {
-      final songsToEdit = widget.isAlbumEdit ? (widget.albumSongs ?? []) : [widget.song ?? widget.provider.currentSong!];
+      final songsToEdit = widget.isAlbumEdit
+          ? (widget.albumSongs ?? [])
+          : [widget.song ?? widget.provider.currentSong!];
 
       List<Picture> pics = [];
       Uint8List? coverBytesForCache;
@@ -457,7 +566,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
 
       for (int i = 0; i < songsToEdit.length; i++) {
         final currentSong = songsToEdit[i];
-        
+
         List<Picture> currentPics = List.from(pics);
         String? originalTitle;
         int? originalDuration;
@@ -472,8 +581,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
             }
           }
         } catch (_) {}
-        
-        final newTitle = (!widget.isAlbumEdit && _title.text.trim().isNotEmpty) ? _title.text.trim() : originalTitle;
+
+        final newTitle = (!widget.isAlbumEdit && _title.text.trim().isNotEmpty)
+            ? _title.text.trim()
+            : originalTitle;
 
         final tag = Tag(
           title: newTitle,
@@ -490,9 +601,15 @@ class _EditTagDialogState extends State<_EditTagDialog> {
         await widget.provider.updateSongMetadata(
           currentSong,
           newTitle: newTitle ?? currentSong.title,
-          newArtist: _artist.text.trim().isEmpty ? TitleUtils.getDisplayArtist(currentSong.artist) : _artist.text.trim(),
-          newAlbum: _album.text.trim().isEmpty ? currentSong.album : _album.text.trim(),
-          newGenre: _genre.text.trim().isEmpty ? currentSong.genre : _genre.text.trim(),
+          newArtist: _artist.text.trim().isEmpty
+              ? TitleUtils.getDisplayArtist(currentSong.artist)
+              : _artist.text.trim(),
+          newAlbum: _album.text.trim().isEmpty
+              ? currentSong.album
+              : _album.text.trim(),
+          newGenre: _genre.text.trim().isEmpty
+              ? currentSong.genre
+              : _genre.text.trim(),
           newCoverBytes: coverBytesForCache,
         );
       }
@@ -500,7 +617,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(widget.isAlbumEdit ? "Álbum actualizado correctamente." : "Etiquetas guardadas.",
+            content: Text(
+                widget.isAlbumEdit
+                    ? "Álbum actualizado correctamente."
+                    : "Etiquetas guardadas.",
                 style: const TextStyle(color: Colors.white)),
             backgroundColor: Colors.green));
       }
@@ -515,7 +635,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
     }
   }
 
-  Widget _field(TextEditingController ctrl, String label, {bool enabled = true}) {
+  Widget _field(TextEditingController ctrl, String label,
+      {bool enabled = true}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: TextField(
@@ -545,7 +666,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
 
     return AlertDialog(
       backgroundColor: const Color(0xFF2A2A2A),
-      title: Text(widget.isAlbumEdit ? "Editar Álbum Masivo" : "Editor de etiquetas",
+      title: Text(
+          widget.isAlbumEdit ? "Editar Álbum Masivo" : "Editor de etiquetas",
           style: const TextStyle(color: Colors.white, fontSize: 22)),
       contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
       content: SizedBox(
@@ -557,7 +679,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
               if (_isSaving)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 20),
-                  child: Center(child: CircularProgressIndicator(color: Colors.white)),
+                  child: Center(
+                      child: CircularProgressIndicator(color: Colors.white)),
                 ),
               // Cover art picker
               GestureDetector(
@@ -589,14 +712,15 @@ class _EditTagDialogState extends State<_EditTagDialog> {
                       : null,
                 ),
               ),
-              if (!widget.isAlbumEdit) _field(_title, "Título", enabled: !_isSaving),
+              if (!widget.isAlbumEdit)
+                _field(_title, "Título", enabled: !_isSaving),
               _field(_album, "Álbum", enabled: !_isSaving),
               _field(_artist, "Artista", enabled: !_isSaving),
               _field(_albumArtist, "Artista del álbum", enabled: !_isSaving),
               _field(_composer, "Compositor", enabled: !_isSaving),
               _field(_genre, "Género", enabled: !_isSaving),
               _field(_year, "Año", enabled: !_isSaving),
-              
+
               if (!widget.isAlbumEdit)
                 _field(_track, "Track (Ej: 4)", enabled: !_isSaving),
               const SizedBox(height: 8),

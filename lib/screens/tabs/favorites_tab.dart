@@ -1,12 +1,46 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../widgets/song_list_tile.dart';
 import '../../widgets/count_banner.dart';
 
-class FavoritesTab extends StatelessWidget {
+class FavoritesTab extends StatefulWidget {
   const FavoritesTab({super.key});
+
+  @override
+  State<FavoritesTab> createState() => _FavoritesTabState();
+}
+
+class _FavoritesTabState extends State<FavoritesTab> {
+  List<SongModel>? _songsSource;
+  int? _favoritesFingerprint;
+  List<SongModel> _favoriteSongs = const [];
+
+  int _fingerprintFavorites(Set<int> ids) {
+    var hash = ids.length;
+    for (final id in ids) {
+      hash = 0x1fffffff & (hash + id.hashCode);
+      hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
+      hash ^= hash >> 6;
+    }
+    return hash;
+  }
+
+  List<SongModel> _songsForFavorites(AudioProvider audioProvider) {
+    final allSongs = audioProvider.allSongs;
+    final fingerprint = _fingerprintFavorites(audioProvider.favoriteIds);
+    if (!identical(_songsSource, allSongs) ||
+        _favoritesFingerprint != fingerprint) {
+      _songsSource = allSongs;
+      _favoritesFingerprint = fingerprint;
+      _favoriteSongs = allSongs
+          .where((song) => audioProvider.favoriteIds.contains(song.id))
+          .toList(growable: false);
+    }
+    return _favoriteSongs;
+  }
 
   Future<void> _importFavorites(
       BuildContext context, AudioProvider audioProvider) async {
@@ -50,10 +84,8 @@ class FavoritesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final audioProvider = Provider.of<AudioProvider>(context);
-    final favoriteSongs = audioProvider.allSongs
-        .where((s) => audioProvider.isFavorite(s.id))
-        .toList();
+    final audioProvider = context.watch<AudioProvider>();
+    final favoriteSongs = _songsForFavorites(audioProvider);
 
     return Column(
       children: [
@@ -86,7 +118,9 @@ class FavoritesTab extends StatelessWidget {
         ),
         Expanded(
           child: ListView.builder(
+            key: const PageStorageKey<String>('favorites_list'),
             itemCount: favoriteSongs.length,
+            itemExtent: 64.0,
             itemBuilder: (context, index) {
               final song = favoriteSongs[index];
               final isSelected = audioProvider.currentSong?.id == song.id;

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/audio_provider.dart';
 import '../widgets/song_list_tile.dart';
+import '../widgets/mini_player.dart';
 
 class PlaylistDetailScreen extends StatelessWidget {
   final String playlistName;
@@ -44,23 +45,33 @@ class PlaylistDetailScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: songs.isEmpty
-          ? const Center(
-              child: Text('Esta playlist no tiene canciones',
-                  style: TextStyle(color: Colors.grey)),
-            )
-          : ListView.builder(
-              itemCount: songs.length,
-              itemBuilder: (context, index) {
-                final song = songs[index];
-                return SongListTile(
-                  song: song,
-                  isSelected: audioProvider.currentSong?.id == song.id,
-                  onTap: () => audioProvider.playPlaylistNamed(songs, index,
-                      playlistName: playlistName),
-                );
-              },
-            ),
+      body: Column(
+        children: [
+          Expanded(
+            child: songs.isEmpty
+                ? const Center(
+                    child: Text('Esta playlist no tiene canciones',
+                        style: TextStyle(color: Colors.grey)),
+                  )
+                : ListView.builder(
+                    itemCount: songs.length,
+                    itemBuilder: (context, index) {
+                      final song = songs[index];
+                      return SongListTile(
+                        song: song,
+                        isSelected: audioProvider.currentSong?.id == song.id,
+                        onTap: () => audioProvider.playPlaylistNamed(
+                          songs,
+                          index,
+                          playlistName: playlistName,
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
+        ],
+      ),
     );
   }
 }

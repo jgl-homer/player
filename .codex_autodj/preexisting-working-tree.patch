@@ -1,0 +1,2309 @@
+diff --git a/analysis_options.yaml b/analysis_options.yaml
+index 0d29021..4d1ec23 100644
+--- a/analysis_options.yaml
++++ b/analysis_options.yaml
+@@ -9,6 +9,11 @@
+ # packages, and plugins designed to encourage good coding practices.
+ include: package:flutter_lints/flutter.yaml
+ 
++analyzer:
++  exclude:
++    - plugins/just_audio_epicenter/lib/just_audio.dart
++    - plugins/just_audio_epicenter/test/**
++
+ linter:
+   # The lint rules applied to this project can be customized in the
+   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
+diff --git a/get_err.dart b/get_err.dart
+index af56be9..6e2aeb1 100644
+--- a/get_err.dart
++++ b/get_err.dart
+@@ -1,5 +1,6 @@
+ import 'dart:io';
++
+ void main() async {
+   var res = await Process.run('dart', ['analyze']);
+-  File('out.log').writeAsStringSync(res.stdout.toString() + "\n" + res.stderr.toString());
++  File('out.log').writeAsStringSync('${res.stdout}\n${res.stderr}');
+ }
+diff --git a/lib/main.dart b/lib/main.dart
+index 600aec8..5c6d3cf 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
+ 
+ late AudioHandler _audioHandler;
+ late bool _initialAutoMode;
++const bool _enableDevicePreview = bool.fromEnvironment('ENABLE_DEVICE_PREVIEW');
+ 
+ Future<void> main() async {
+   WidgetsFlutterBinding.ensureInitialized();
+@@ -55,7 +56,7 @@ Future<void> main() async {
+ 
+   runApp(
+     DevicePreview(
+-      enabled: !kReleaseMode,
++      enabled: !kReleaseMode && _enableDevicePreview,
+       builder: (context) => const MyApp(),
+     ),
+   );
+diff --git a/lib/screens/album_detail_screen.dart b/lib/screens/album_detail_screen.dart
+index a671689..a23af57 100644
+--- a/lib/screens/album_detail_screen.dart
++++ b/lib/screens/album_detail_screen.dart
+@@ -3,9 +3,10 @@ import 'package:on_audio_query/on_audio_query.dart';
+ import '../utils/title_utils.dart';
+ import 'package:provider/provider.dart';
+ import '../providers/audio_provider.dart';
+-import '../theme/app_theme.dart';
+ import '../widgets/options_menu.dart';
+ import '../widgets/smart_artwork.dart';
++import '../widgets/song_list_tile.dart';
++import '../widgets/mini_player.dart';
+ 
+ class AlbumDetailScreen extends StatefulWidget {
+   final String albumName;
+@@ -42,11 +43,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
+         .toList();
+     final songs = liveSongs.isNotEmpty ? liveSongs : widget.songs;
+ 
+-    final albumName = songs.isNotEmpty && (songs.first.album?.isNotEmpty == true)
+-        ? songs.first.album!
+-        : widget.albumName;
+-    final albumId =
+-        songs.isNotEmpty ? (songs.first.albumId ?? widget.albumId) : widget.albumId;
++    final albumName =
++        songs.isNotEmpty && (songs.first.album?.isNotEmpty == true)
++            ? songs.first.album!
++            : widget.albumName;
++    final albumId = songs.isNotEmpty
++        ? (songs.first.albumId ?? widget.albumId)
++        : widget.albumId;
+     final firstSong = songs.isNotEmpty ? songs.first : widget.songs.first;
+     final artistName = songs.isNotEmpty
+         ? TitleUtils.getDisplayArtist(songs.first.artist)
+@@ -56,154 +59,137 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
+ 
+     return Scaffold(
+       backgroundColor: const Color(0xFF121212),
+-      body: CustomScrollView(
+-        slivers: [
+-          SliverAppBar(
+-            backgroundColor: const Color(0xFF1A1A1A),
+-            pinned: true,
+-            expandedHeight: 200,
+-            leading: IconButton(
+-              icon: const Icon(Icons.arrow_back, color: Colors.white),
+-              onPressed: () => Navigator.pop(context),
+-            ),
+-            actions: [
+-              IconButton(
+-                icon: const Icon(Icons.edit, color: Colors.white),
+-                onPressed: () {
+-                  showEditTagDialog(
+-                    context,
+-                    audioProvider,
+-                    song: firstSong,
+-                    isAlbumEdit: true,
+-                    albumSongs: songs,
+-                  );
+-                  // El rebuild ocurre automáticamente porque escuchamos al provider
+-                },
+-              ),
+-            ],
+-            flexibleSpace: FlexibleSpaceBar(
+-              background: Container(
+-                color: const Color(0xFF1A1A1A),
+-                padding: EdgeInsets.only(
+-                    top: MediaQuery.of(context).padding.top + 56,
+-                    left: 16,
+-                    right: 16,
+-                    bottom: 16),
+-                child: Row(
+-                  crossAxisAlignment: CrossAxisAlignment.end,
+-                  children: [
+-                    SmartArtwork(
+-                      albumId: albumId,
+-                      songPath: firstSong.data,
+-                      size: 120,
+-                      borderRadius: BorderRadius.circular(8),
++      body: Column(
++        children: [
++          Expanded(
++            child: CustomScrollView(
++              slivers: [
++                SliverAppBar(
++                  backgroundColor: const Color(0xFF1A1A1A),
++                  pinned: true,
++                  expandedHeight: 200,
++                  leading: IconButton(
++                    icon: const Icon(Icons.arrow_back, color: Colors.white),
++                    onPressed: () => Navigator.pop(context),
++                  ),
++                  actions: [
++                    IconButton(
++                      icon: const Icon(Icons.edit, color: Colors.white),
++                      onPressed: () {
++                        showEditTagDialog(
++                          context,
++                          audioProvider,
++                          song: firstSong,
++                          isAlbumEdit: true,
++                          albumSongs: songs,
++                        );
++                        // El rebuild ocurre automáticamente porque escuchamos al provider
++                      },
+                     ),
+-                    const SizedBox(width: 16),
+-                    Expanded(
+-                      child: Column(
+-                        mainAxisAlignment: MainAxisAlignment.end,
+-                        crossAxisAlignment: CrossAxisAlignment.start,
++                  ],
++                  flexibleSpace: FlexibleSpaceBar(
++                    background: Container(
++                      color: const Color(0xFF1A1A1A),
++                      padding: EdgeInsets.only(
++                          top: MediaQuery.of(context).padding.top + 56,
++                          left: 16,
++                          right: 16,
++                          bottom: 16),
++                      child: Row(
++                        crossAxisAlignment: CrossAxisAlignment.end,
+                         children: [
+-                          Text(albumName,
+-                              style: const TextStyle(
+-                                  color: Colors.white,
+-                                  fontSize: 20,
+-                                  fontWeight: FontWeight.bold),
+-                              maxLines: 2,
+-                              overflow: TextOverflow.ellipsis),
+-                          const SizedBox(height: 4),
+-                          Text(artistName,
+-                              style: const TextStyle(
+-                                  color: Colors.white70, fontSize: 14),
+-                              maxLines: 1,
+-                              overflow: TextOverflow.ellipsis),
+-                          const SizedBox(height: 4),
+-                          Text(
+-                            '${songs.length} Canciones  •  ${_formatDuration(totalDuration)}',
+-                            style: const TextStyle(
+-                                color: Colors.grey, fontSize: 13),
++                          SmartArtwork(
++                            albumId: albumId,
++                            songPath: firstSong.data,
++                            size: 120,
++                            borderRadius: BorderRadius.circular(8),
++                          ),
++                          const SizedBox(width: 16),
++                          Expanded(
++                            child: Column(
++                              mainAxisAlignment: MainAxisAlignment.end,
++                              crossAxisAlignment: CrossAxisAlignment.start,
++                              children: [
++                                Text(albumName,
++                                    style: const TextStyle(
++                                        color: Colors.white,
++                                        fontSize: 20,
++                                        fontWeight: FontWeight.bold),
++                                    maxLines: 2,
++                                    overflow: TextOverflow.ellipsis),
++                                const SizedBox(height: 4),
++                                Text(artistName,
++                                    style: const TextStyle(
++                                        color: Colors.white70, fontSize: 14),
++                                    maxLines: 1,
++                                    overflow: TextOverflow.ellipsis),
++                                const SizedBox(height: 4),
++                                Text(
++                                  '${songs.length} Canciones  •  ${_formatDuration(totalDuration)}',
++                                  style: const TextStyle(
++                                      color: Colors.grey, fontSize: 13),
++                                ),
++                              ],
++                            ),
+                           ),
+                         ],
+                       ),
+                     ),
+-                  ],
+-                ),
+-              ),
+-            ),
+-          ),
+-
+-          SliverToBoxAdapter(
+-            child: Padding(
+-              padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+-              child: Row(
+-                children: [
+-                  Expanded(
+-                    child: _ActionButton(
+-                      icon: Icons.play_arrow,
+-                      label: 'REPRODUCIR TODO',
+-                      onTap: () => audioProvider.playAlbumSongs(songs, 0,
+-                          albumId: albumId),
+-                    ),
+                   ),
+-                  const SizedBox(width: 12),
+-                  Expanded(
+-                    child: _ActionButton(
+-                      icon: Icons.shuffle,
+-                      label: 'ALEATORIO',
+-                      onTap: () {
+-                          audioProvider.playAlbumSongs(songs, 0, albumId: albumId);
+-                          if (!audioProvider.isShuffle) audioProvider.toggleShuffle();
+-                        },
++                ),
++                SliverToBoxAdapter(
++                  child: Padding(
++                    padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
++                    child: Row(
++                      children: [
++                        Expanded(
++                          child: _ActionButton(
++                            icon: Icons.play_arrow,
++                            label: 'REPRODUCIR TODO',
++                            onTap: () => audioProvider.playAlbumSongs(songs, 0,
++                                albumId: albumId),
++                          ),
++                        ),
++                        const SizedBox(width: 12),
++                        Expanded(
++                          child: _ActionButton(
++                            icon: Icons.shuffle,
++                            label: 'ALEATORIO',
++                            onTap: () {
++                              audioProvider.playAlbumSongs(songs, 0,
++                                  albumId: albumId);
++                              if (!audioProvider.isShuffle) {
++                                audioProvider.toggleShuffle();
++                              }
++                            },
++                          ),
++                        ),
++                      ],
+                     ),
+                   ),
+-                ],
+-              ),
+-            ),
+-          ),
+-
+-          SliverList(
+-            delegate: SliverChildBuilderDelegate(
+-              (context, index) {
+-                final song = songs[index];
+-                final isPlaying = audioProvider.currentSong?.id == song.id;
+-                final duration = Duration(milliseconds: song.duration ?? 0);
++                ),
++                SliverList(
++                  delegate: SliverChildBuilderDelegate(
++                    (context, index) {
++                      final song = songs[index];
++                      final isPlaying =
++                          audioProvider.currentSong?.id == song.id;
+ 
+-                return ListTile(
+-                  leading: SmartArtwork(
+-                    albumId: song.albumId ?? albumId,
+-                    songPath: song.data,
+-                    size: 48,
+-                    borderRadius: BorderRadius.circular(4),
++                      return SongListTile(
++                        song: song,
++                        isSelected: isPlaying,
++                        onTap: () => audioProvider.playAlbumSongs(songs, index,
++                            albumId: albumId),
++                      );
++                    },
++                    childCount: songs.length,
+                   ),
+-                  title: Text(
+-                    TitleUtils.getDisplayTitle(song),
+-                    style: TextStyle(
+-                      color: isPlaying
+-                          ? AppTheme.primaryColor
+-                          : Colors.white,
+-                      fontWeight:
+-                          isPlaying ? FontWeight.bold : FontWeight.normal,
+-                    ),
+-                    maxLines: 1,
+-                    overflow: TextOverflow.ellipsis,
+-                  ),
+-                  subtitle: Text(
+-                    _formatDuration(duration),
+-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+-                  ),
+-                  trailing: IconButton(
+-                    icon: const Icon(Icons.more_vert, color: Colors.grey),
+-                    onPressed: () =>
+-                        showOptionsMenu(context, audioProvider, song: song),
+-                  ),
+-                  onTap: () => audioProvider.playAlbumSongs(songs, index,
+-                      albumId: albumId),
+-                );
+-              },
+-              childCount: songs.length,
++                ),
++                const SliverToBoxAdapter(child: SizedBox(height: 24)),
++              ],
+             ),
+           ),
+-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
++          if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
+         ],
+       ),
+     );
+diff --git a/lib/screens/artist_detail_screen.dart b/lib/screens/artist_detail_screen.dart
+index e43d883..b56acd1 100644
+--- a/lib/screens/artist_detail_screen.dart
++++ b/lib/screens/artist_detail_screen.dart
+@@ -1,10 +1,12 @@
+ import 'package:flutter/material.dart';
+ import 'package:on_audio_query/on_audio_query.dart';
+ import 'package:provider/provider.dart';
++
+ import '../providers/audio_provider.dart';
+-import '../theme/app_theme.dart';
+ import '../utils/title_utils.dart';
++import '../widgets/mini_player.dart';
+ import '../widgets/smart_artwork.dart';
++import '../widgets/song_list_tile.dart';
+ import 'album_detail_screen.dart';
+ 
+ String _fmt(Duration d) {
+@@ -41,240 +43,240 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final audioProvider = Provider.of<AudioProvider>(context, listen: false);
++    final audioProvider = Provider.of<AudioProvider>(context);
+ 
+     final filteredSongs = _searchQuery.isEmpty
+         ? widget.songs
+-        : widget.songs.where((s) {
+-            final title = TitleUtils.getDisplayTitle(s).toLowerCase();
+-            final album = TitleUtils.getDisplayAlbum(s).toLowerCase();
++        : widget.songs.where((song) {
++            final title = TitleUtils.getDisplayTitle(song).toLowerCase();
++            final album = TitleUtils.getDisplayAlbum(song).toLowerCase();
+             final q = _searchQuery.toLowerCase();
+             return title.contains(q) || album.contains(q);
+           }).toList();
+ 
+     final Map<String, List<SongModel>> byAlbum = {};
+-    for (final s in filteredSongs) {
+-      byAlbum.putIfAbsent(TitleUtils.getAlbumKey(s), () => []).add(s);
++    for (final song in filteredSongs) {
++      byAlbum.putIfAbsent(TitleUtils.getAlbumKey(song), () => []).add(song);
+     }
+     final groupedAlbums = byAlbum.values.toList();
+ 
+-    final totalMs = filteredSongs.fold<int>(0, (sum, s) => sum + (s.duration ?? 0));
++    final totalMs =
++        filteredSongs.fold<int>(0, (sum, song) => sum + (song.duration ?? 0));
+     final totalDuration = Duration(milliseconds: totalMs);
+ 
+     return Scaffold(
+       backgroundColor: const Color(0xFF121212),
+-      body: CustomScrollView(
+-        slivers: [
+-          SliverAppBar(
+-            backgroundColor: const Color(0xFF1A1A1A),
+-            pinned: true,
+-            expandedHeight: 200,
+-            leading: IconButton(
+-              icon: const Icon(Icons.arrow_back, color: Colors.white),
+-              onPressed: () {
+-                if (_isSearching) {
+-                  setState(() {
+-                    _isSearching = false;
+-                    _searchQuery = "";
+-                    _searchCtrl.clear();
+-                  });
+-                } else {
+-                  Navigator.pop(context);
+-                }
+-              },
+-            ),
+-            title: _isSearching
+-                ? TextField(
+-                    controller: _searchCtrl,
+-                    autofocus: true,
+-                    style: const TextStyle(color: Colors.white),
+-                    decoration: const InputDecoration(
+-                      hintText: 'Buscar canción o álbum...',
+-                      hintStyle: TextStyle(color: Colors.white54),
+-                      border: InputBorder.none,
+-                    ),
+-                    onChanged: (val) {
+-                      setState(() {
+-                        _searchQuery = val;
+-                      });
++      body: Column(
++        children: [
++          Expanded(
++            child: CustomScrollView(
++              slivers: [
++                SliverAppBar(
++                  backgroundColor: const Color(0xFF1A1A1A),
++                  pinned: true,
++                  expandedHeight: 200,
++                  leading: IconButton(
++                    icon: const Icon(Icons.arrow_back, color: Colors.white),
++                    onPressed: () {
++                      if (_isSearching) {
++                        setState(() {
++                          _isSearching = false;
++                          _searchQuery = "";
++                          _searchCtrl.clear();
++                        });
++                      } else {
++                        Navigator.pop(context);
++                      }
+                     },
+-                  )
+-                : null,
+-            actions: [
+-              if (!_isSearching)
+-                IconButton(
+-                  icon: const Icon(Icons.search, color: Colors.white),
+-                  onPressed: () {
+-                    setState(() {
+-                      _isSearching = true;
+-                    });
+-                  },
+-                ),
+-            ],
+-            flexibleSpace: _isSearching
+-                ? null
+-                : FlexibleSpaceBar(
+-                    background: _ArtistHeader(
+-                      artistName: widget.artistName,
+-                      songs: filteredSongs,
+-                      albumGroups: groupedAlbums,
+-                      totalDuration: totalDuration,
+-                    ),
+                   ),
+-          ),
+-
+-          if (filteredSongs.isNotEmpty)
+-            SliverToBoxAdapter(
+-              child: Padding(
+-                padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+-                child: Row(
+-                  children: [
+-                    Expanded(
+-                      child: _ActionButton(
+-                        icon: Icons.play_arrow,
+-                        label: 'REPRODUCIR TODO',
+-                        onTap: () => audioProvider.playArtistSongs(
+-                            filteredSongs, 0,
+-                            artistName: widget.artistName),
+-                      ),
+-                    ),
+-                    const SizedBox(width: 12),
+-                    Expanded(
+-                      child: _ActionButton(
+-                        icon: Icons.shuffle,
+-                        label: 'ALEATORIO',
+-                        onTap: () {
+-                            audioProvider.playArtistSongs(filteredSongs, 0,
+-                                artistName: widget.artistName);
+-                            if (!audioProvider.isShuffle) audioProvider.toggleShuffle();
++                  title: _isSearching
++                      ? TextField(
++                          controller: _searchCtrl,
++                          autofocus: true,
++                          style: const TextStyle(color: Colors.white),
++                          decoration: const InputDecoration(
++                            hintText: 'Buscar canción o álbum...',
++                            hintStyle: TextStyle(color: Colors.white54),
++                            border: InputBorder.none,
++                          ),
++                          onChanged: (value) {
++                            setState(() => _searchQuery = value);
+                           },
++                        )
++                      : null,
++                  actions: [
++                    if (!_isSearching)
++                      IconButton(
++                        icon: const Icon(Icons.search, color: Colors.white),
++                        onPressed: () {
++                          setState(() => _isSearching = true);
++                        },
+                       ),
+-                    ),
+                   ],
++                  flexibleSpace: _isSearching
++                      ? null
++                      : FlexibleSpaceBar(
++                          background: _ArtistHeader(
++                            artistName: widget.artistName,
++                            songs: filteredSongs,
++                            albumGroups: groupedAlbums,
++                            totalDuration: totalDuration,
++                          ),
++                        ),
+                 ),
+-              ),
+-            ),
+-
+-          if (groupedAlbums.isNotEmpty) ...[
+-            const SliverToBoxAdapter(
+-              child: Padding(
+-                padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+-                child: Text('Álbumes',
+-                    style: TextStyle(
+-                        color: Colors.white,
+-                        fontSize: 18,
+-                        fontWeight: FontWeight.bold)),
+-              ),
+-            ),
+-            SliverToBoxAdapter(
+-              child: SizedBox(
+-                height: 140,
+-                child: ListView.builder(
+-                  scrollDirection: Axis.horizontal,
+-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+-                  itemCount: groupedAlbums.length,
+-                  itemBuilder: (ctx, i) {
+-                    final albumSongs = groupedAlbums[i];
+-                    final albumId = albumSongs.first.albumId ?? 0;
+-                    final albumName = TitleUtils.getDisplayAlbum(albumSongs.first);
+-                    return GestureDetector(
+-                      onTap: () => Navigator.push(
+-                          context,
+-                          MaterialPageRoute(
+-                              builder: (_) => AlbumDetailScreen(
+-                                    albumName: albumName,
++                if (filteredSongs.isNotEmpty)
++                  SliverToBoxAdapter(
++                    child: Padding(
++                      padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
++                      child: Row(
++                        children: [
++                          Expanded(
++                            child: _ActionButton(
++                              icon: Icons.play_arrow,
++                              label: 'REPRODUCIR TODO',
++                              onTap: () => audioProvider.playArtistSongs(
++                                filteredSongs,
++                                0,
++                                artistName: widget.artistName,
++                              ),
++                            ),
++                          ),
++                          const SizedBox(width: 12),
++                          Expanded(
++                            child: _ActionButton(
++                              icon: Icons.shuffle,
++                              label: 'ALEATORIO',
++                              onTap: () {
++                                audioProvider.playArtistSongs(
++                                  filteredSongs,
++                                  0,
++                                  artistName: widget.artistName,
++                                );
++                                if (!audioProvider.isShuffle) {
++                                  audioProvider.toggleShuffle();
++                                }
++                              },
++                            ),
++                          ),
++                        ],
++                      ),
++                    ),
++                  ),
++                if (groupedAlbums.isNotEmpty) ...[
++                  const SliverToBoxAdapter(
++                    child: Padding(
++                      padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
++                      child: Text(
++                        'Álbumes',
++                        style: TextStyle(
++                          color: Colors.white,
++                          fontSize: 18,
++                          fontWeight: FontWeight.bold,
++                        ),
++                      ),
++                    ),
++                  ),
++                  SliverToBoxAdapter(
++                    child: SizedBox(
++                      height: 140,
++                      child: ListView.builder(
++                        scrollDirection: Axis.horizontal,
++                        padding: const EdgeInsets.symmetric(horizontal: 12),
++                        itemCount: groupedAlbums.length,
++                        itemBuilder: (context, index) {
++                          final albumSongs = groupedAlbums[index];
++                          final albumId = albumSongs.first.albumId ?? 0;
++                          final albumName =
++                              TitleUtils.getDisplayAlbum(albumSongs.first);
++                          return GestureDetector(
++                            onTap: () => Navigator.push(
++                              context,
++                              MaterialPageRoute(
++                                builder: (_) => AlbumDetailScreen(
++                                  albumName: albumName,
++                                  albumId: albumId,
++                                  songs: albumSongs,
++                                ),
++                              ),
++                            ),
++                            child: Container(
++                              width: 110,
++                              margin: const EdgeInsets.only(right: 8),
++                              child: Column(
++                                crossAxisAlignment: CrossAxisAlignment.start,
++                                children: [
++                                  SmartArtwork(
+                                     albumId: albumId,
+-                                    songs: albumSongs,
+-                                  ))),
+-                      child: Container(
+-                        width: 110,
+-                        margin: const EdgeInsets.only(right: 8),
+-                        child: Column(
+-                          crossAxisAlignment: CrossAxisAlignment.start,
+-                          children: [
+-                            SmartArtwork(
+-                              albumId: albumId,
+-                              songPath: albumSongs.first.data,
+-                              size: 110,
+-                              borderRadius: BorderRadius.circular(6),
++                                    songPath: albumSongs.first.data,
++                                    size: 110,
++                                    borderRadius: BorderRadius.circular(6),
++                                  ),
++                                  const SizedBox(height: 4),
++                                  Text(
++                                    albumName,
++                                    style: const TextStyle(
++                                      color: Colors.white70,
++                                      fontSize: 11,
++                                    ),
++                                    maxLines: 1,
++                                    overflow: TextOverflow.ellipsis,
++                                  ),
++                                ],
++                              ),
+                             ),
+-                            const SizedBox(height: 4),
+-                            Text(albumName,
+-                                style: const TextStyle(
+-                                    color: Colors.white70, fontSize: 11),
+-                                maxLines: 1,
+-                                overflow: TextOverflow.ellipsis),
+-                          ],
++                          );
++                        },
++                      ),
++                    ),
++                  ),
++                ],
++                if (filteredSongs.isNotEmpty)
++                  const SliverToBoxAdapter(
++                    child: Padding(
++                      padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
++                      child: Text(
++                        'Canciones',
++                        style: TextStyle(
++                          color: Colors.white,
++                          fontSize: 18,
++                          fontWeight: FontWeight.bold,
+                         ),
+                       ),
+-                    );
+-                  },
+-                ),
+-              ),
+-            ),
+-          ],
+-
+-          if (filteredSongs.isNotEmpty)
+-            const SliverToBoxAdapter(
+-              child: Padding(
+-                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+-                child: Text('Canciones',
+-                    style: TextStyle(
+-                        color: Colors.white,
+-                        fontSize: 18,
+-                        fontWeight: FontWeight.bold)),
+-              ),
+-            ),
+-
+-          SliverList(
+-            delegate: SliverChildBuilderDelegate(
+-              (ctx, i) {
+-                final s = filteredSongs[i];
+-                final isPlaying = audioProvider.currentSong?.id == s.id;
+-                final duration = Duration(milliseconds: s.duration ?? 0);
+-                return ListTile(
+-                  leading: SmartArtwork(
+-                    albumId: s.albumId ?? 0,
+-                    songPath: s.data,
+-                    size: 48,
+-                    borderRadius: BorderRadius.circular(4),
++                    ),
+                   ),
+-                  title: Text(
+-                    TitleUtils.getDisplayTitle(s),
+-                    style: TextStyle(
+-                        color: isPlaying
+-                            ? AppTheme.primaryColor
+-                            : Colors.white,
+-                        fontWeight: isPlaying
+-                            ? FontWeight.bold
+-                            : FontWeight.normal),
+-                    maxLines: 1,
+-                    overflow: TextOverflow.ellipsis,
++                SliverList(
++                  delegate: SliverChildBuilderDelegate(
++                    (context, index) {
++                      final song = filteredSongs[index];
++                      final isPlaying =
++                          audioProvider.currentSong?.id == song.id;
++                      return SongListTile(
++                        song: song,
++                        isSelected: isPlaying,
++                        onTap: () => audioProvider.playArtistSongs(
++                          filteredSongs,
++                          index,
++                          artistName: widget.artistName,
++                        ),
++                      );
++                    },
++                    childCount: filteredSongs.length,
+                   ),
+-                  subtitle: Text(
+-                    '${TitleUtils.getDisplayAlbum(s)}  •  ${_fmt(duration)}',
+-                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+-                    maxLines: 1,
+-                    overflow: TextOverflow.ellipsis,
++                ),
++                if (filteredSongs.isEmpty)
++                  const SliverFillRemaining(
++                    child: Center(
++                      child: Text(
++                        'No se encontraron resultados',
++                        style: TextStyle(color: Colors.white54),
++                      ),
++                    ),
+                   ),
+-                  trailing: const Icon(Icons.more_vert, color: Colors.grey),
+-                  onTap: () => audioProvider.playArtistSongs(
+-                      filteredSongs, i,
+-                      artistName: widget.artistName),
+-                );
+-              },
+-              childCount: filteredSongs.length,
++                const SliverToBoxAdapter(child: SizedBox(height: 24)),
++              ],
+             ),
+           ),
+-
+-          if (filteredSongs.isEmpty)
+-            const SliverFillRemaining(
+-              child: Center(
+-                child: Text("No se encontraron resultados", style: TextStyle(color: Colors.white54)),
+-              ),
+-            ),
+-
+-          const SliverToBoxAdapter(child: SizedBox(height: 80)),
++          if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
+         ],
+       ),
+     );
+@@ -299,10 +301,11 @@ class _ArtistHeader extends StatelessWidget {
+     return Container(
+       color: const Color(0xFF1A1A1A),
+       padding: EdgeInsets.only(
+-          top: MediaQuery.of(context).padding.top + 56,
+-          left: 16,
+-          right: 16,
+-          bottom: 16),
++        top: MediaQuery.of(context).padding.top + 56,
++        left: 16,
++        right: 16,
++        bottom: 16,
++      ),
+       child: Row(
+         crossAxisAlignment: CrossAxisAlignment.end,
+         children: [
+@@ -320,20 +323,24 @@ class _ArtistHeader extends StatelessWidget {
+               mainAxisAlignment: MainAxisAlignment.end,
+               crossAxisAlignment: CrossAxisAlignment.start,
+               children: [
+-                Text(artistName,
+-                    style: const TextStyle(
+-                        color: Colors.white,
+-                        fontSize: 20,
+-                        fontWeight: FontWeight.bold),
+-                    maxLines: 2),
++                Text(
++                  artistName,
++                  style: const TextStyle(
++                    color: Colors.white,
++                    fontSize: 20,
++                    fontWeight: FontWeight.bold,
++                  ),
++                  maxLines: 2,
++                ),
+                 const SizedBox(height: 4),
+                 Text(
+                   '${albumGroups.length} Álbumes  •  ${songs.length} Canciones',
+                   style: const TextStyle(color: Colors.grey, fontSize: 13),
+                 ),
+-                Text(_fmt(totalDuration),
+-                    style:
+-                        const TextStyle(color: Colors.grey, fontSize: 13)),
++                Text(
++                  _fmt(totalDuration),
++                  style: const TextStyle(color: Colors.grey, fontSize: 13),
++                ),
+               ],
+             ),
+           ),
+@@ -345,14 +352,16 @@ class _ArtistHeader extends StatelessWidget {
+ 
+ class _AlbumCollage extends StatelessWidget {
+   final List<List<SongModel>> albumGroups;
++
+   const _AlbumCollage({required this.albumGroups});
+ 
+   @override
+   Widget build(BuildContext context) {
+     if (albumGroups.isEmpty) {
+       return Container(
+-          color: Colors.grey[800],
+-          child: const Icon(Icons.music_note, color: Colors.grey, size: 50));
++        color: Colors.grey[800],
++        child: const Icon(Icons.music_note, color: Colors.grey, size: 50),
++      );
+     }
+     if (albumGroups.length == 1) {
+       return SmartArtwork(
+@@ -361,8 +370,10 @@ class _AlbumCollage extends StatelessWidget {
+         size: 120,
+       );
+     }
+-    final cells =
+-        List.generate(4, (i) => i < albumGroups.length ? albumGroups[i] : null);
++    final cells = List.generate(
++      4,
++      (index) => index < albumGroups.length ? albumGroups[index] : null,
++    );
+     return GridView.count(
+       crossAxisCount: 2,
+       physics: const NeverScrollableScrollPhysics(),
+@@ -385,8 +396,11 @@ class _ActionButton extends StatelessWidget {
+   final String label;
+   final VoidCallback onTap;
+ 
+-  const _ActionButton(
+-      {required this.icon, required this.label, required this.onTap});
++  const _ActionButton({
++    required this.icon,
++    required this.label,
++    required this.onTap,
++  });
+ 
+   @override
+   Widget build(BuildContext context) {
+@@ -403,12 +417,15 @@ class _ActionButton extends StatelessWidget {
+           children: [
+             Icon(icon, color: Colors.white, size: 20),
+             const SizedBox(width: 6),
+-            Text(label,
+-                style: const TextStyle(
+-                    color: Colors.white,
+-                    fontSize: 12,
+-                    fontWeight: FontWeight.bold,
+-                    letterSpacing: 0.5)),
++            Text(
++              label,
++              style: const TextStyle(
++                color: Colors.white,
++                fontSize: 12,
++                fontWeight: FontWeight.bold,
++                letterSpacing: 0.5,
++              ),
++            ),
+           ],
+         ),
+       ),
+diff --git a/lib/screens/car_mode_screen.dart b/lib/screens/car_mode_screen.dart
+index 4c50817..723df24 100644
+--- a/lib/screens/car_mode_screen.dart
++++ b/lib/screens/car_mode_screen.dart
+@@ -9,7 +9,6 @@ import '../theme/app_theme.dart';
+ import '../utils/title_utils.dart';
+ import '../widgets/marquee_text.dart';
+ import '../widgets/smart_artwork.dart';
+-import '../widgets/mini_player.dart';
+ import 'car_mode_library_screen.dart';
+ 
+ class CarModeScreen extends StatefulWidget {
+diff --git a/lib/screens/home_screen.dart b/lib/screens/home_screen.dart
+index 555c855..72ea297 100644
+--- a/lib/screens/home_screen.dart
++++ b/lib/screens/home_screen.dart
+@@ -90,10 +90,10 @@ class HomeScreen extends StatelessWidget {
+                   .clamp(0, activeDefs.length - 1),
+           child: Scaffold(
+             appBar: AppBar(
+-        title: Image.asset(
++              title: Image.asset(
+                 'assets/icon/jglcustoms.png',
+                 height: 40,
+-              ), 
++              ),
+               actions: [
+                 IconButton(
+                   icon: const Icon(Icons.search),
+@@ -132,15 +132,18 @@ class HomeScreen extends StatelessWidget {
+                             );
+                           } else {
+                             final lines = <String>[];
+-                            if (result.toInsert.isNotEmpty)
++                            if (result.toInsert.isNotEmpty) {
+                               lines
+                                   .add('+ ${result.toInsert.length} agregadas');
+-                            if (result.toUpdate.isNotEmpty)
++                            }
++                            if (result.toUpdate.isNotEmpty) {
+                               lines.add(
+                                   '~ ${result.toUpdate.length} modificadas');
+-                            if (result.toDelete.isNotEmpty)
++                            }
++                            if (result.toDelete.isNotEmpty) {
+                               lines.add(
+                                   '- ${result.toDelete.length} eliminadas');
++                            }
+                             ScaffoldMessenger.of(context).showSnackBar(
+                               SnackBar(
+                                 content: Text(
+diff --git a/lib/screens/playlist_detail_screen.dart b/lib/screens/playlist_detail_screen.dart
+index 7f24c0a..2a2ccfc 100644
+--- a/lib/screens/playlist_detail_screen.dart
++++ b/lib/screens/playlist_detail_screen.dart
+@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
+ 
+ import '../providers/audio_provider.dart';
+ import '../widgets/song_list_tile.dart';
++import '../widgets/mini_player.dart';
+ 
+ class PlaylistDetailScreen extends StatelessWidget {
+   final String playlistName;
+@@ -44,23 +45,33 @@ class PlaylistDetailScreen extends StatelessWidget {
+           ),
+         ],
+       ),
+-      body: songs.isEmpty
+-          ? const Center(
+-              child: Text('Esta playlist no tiene canciones',
+-                  style: TextStyle(color: Colors.grey)),
+-            )
+-          : ListView.builder(
+-              itemCount: songs.length,
+-              itemBuilder: (context, index) {
+-                final song = songs[index];
+-                return SongListTile(
+-                  song: song,
+-                  isSelected: audioProvider.currentSong?.id == song.id,
+-                  onTap: () => audioProvider.playPlaylistNamed(songs, index,
+-                      playlistName: playlistName),
+-                );
+-              },
+-            ),
++      body: Column(
++        children: [
++          Expanded(
++            child: songs.isEmpty
++                ? const Center(
++                    child: Text('Esta playlist no tiene canciones',
++                        style: TextStyle(color: Colors.grey)),
++                  )
++                : ListView.builder(
++                    itemCount: songs.length,
++                    itemBuilder: (context, index) {
++                      final song = songs[index];
++                      return SongListTile(
++                        song: song,
++                        isSelected: audioProvider.currentSong?.id == song.id,
++                        onTap: () => audioProvider.playPlaylistNamed(
++                          songs,
++                          index,
++                          playlistName: playlistName,
++                        ),
++                      );
++                    },
++                  ),
++          ),
++          if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
++        ],
++      ),
+     );
+   }
+ }
+diff --git a/lib/screens/search_screen.dart b/lib/screens/search_screen.dart
+index 8f72fd0..5518f80 100644
+--- a/lib/screens/search_screen.dart
++++ b/lib/screens/search_screen.dart
+@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
+ import '../providers/audio_provider.dart';
+ import '../theme/app_theme.dart';
+ import '../utils/title_utils.dart';
++import '../widgets/mini_player.dart';
+ import '../widgets/song_list_tile.dart';
+ import '../widgets/smart_artwork.dart';
+ import 'album_detail_screen.dart';
+@@ -250,6 +251,7 @@ class _SearchScreenState extends State<SearchScreen> {
+                       ],
+                     ),
+             ),
++            if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
+           ],
+         ),
+       ),
+diff --git a/lib/screens/tabs/favorites_tab.dart b/lib/screens/tabs/favorites_tab.dart
+index b59d9d9..5fc0d88 100644
+--- a/lib/screens/tabs/favorites_tab.dart
++++ b/lib/screens/tabs/favorites_tab.dart
+@@ -1,13 +1,47 @@
+ import 'dart:io';
+ import 'package:flutter/material.dart';
++import 'package:on_audio_query/on_audio_query.dart';
+ import 'package:provider/provider.dart';
+ import '../../providers/audio_provider.dart';
+ import '../../widgets/song_list_tile.dart';
+ import '../../widgets/count_banner.dart';
+ 
+-class FavoritesTab extends StatelessWidget {
++class FavoritesTab extends StatefulWidget {
+   const FavoritesTab({super.key});
+ 
++  @override
++  State<FavoritesTab> createState() => _FavoritesTabState();
++}
++
++class _FavoritesTabState extends State<FavoritesTab> {
++  List<SongModel>? _songsSource;
++  int? _favoritesFingerprint;
++  List<SongModel> _favoriteSongs = const [];
++
++  int _fingerprintFavorites(Set<int> ids) {
++    var hash = ids.length;
++    for (final id in ids) {
++      hash = 0x1fffffff & (hash + id.hashCode);
++      hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
++      hash ^= hash >> 6;
++    }
++    return hash;
++  }
++
++  List<SongModel> _songsForFavorites(AudioProvider audioProvider) {
++    final allSongs = audioProvider.allSongs;
++    final fingerprint = _fingerprintFavorites(audioProvider.favoriteIds);
++    if (!identical(_songsSource, allSongs) ||
++        _favoritesFingerprint != fingerprint) {
++      _songsSource = allSongs;
++      _favoritesFingerprint = fingerprint;
++      _favoriteSongs = allSongs
++          .where((song) => audioProvider.favoriteIds.contains(song.id))
++          .toList(growable: false);
++    }
++    return _favoriteSongs;
++  }
++
+   Future<void> _importFavorites(
+       BuildContext context, AudioProvider audioProvider) async {
+     final directory = Directory('/storage/emulated/0/Music');
+@@ -50,10 +84,8 @@ class FavoritesTab extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
+-    final audioProvider = Provider.of<AudioProvider>(context);
+-    final favoriteSongs = audioProvider.allSongs
+-        .where((s) => audioProvider.isFavorite(s.id))
+-        .toList();
++    final audioProvider = context.watch<AudioProvider>();
++    final favoriteSongs = _songsForFavorites(audioProvider);
+ 
+     return Column(
+       children: [
+@@ -86,7 +118,9 @@ class FavoritesTab extends StatelessWidget {
+         ),
+         Expanded(
+           child: ListView.builder(
++            key: const PageStorageKey<String>('favorites_list'),
+             itemCount: favoriteSongs.length,
++            itemExtent: 64.0,
+             itemBuilder: (context, index) {
+               final song = favoriteSongs[index];
+               final isSelected = audioProvider.currentSong?.id == song.id;
+diff --git a/lib/screens/tabs/folders_tab.dart b/lib/screens/tabs/folders_tab.dart
+index aedbec4..c2eaca0 100644
+--- a/lib/screens/tabs/folders_tab.dart
++++ b/lib/screens/tabs/folders_tab.dart
+@@ -156,8 +156,8 @@ class _FoldersTabState extends State<FoldersTab> {
+                     final folderName = folderPath.split('/').last;
+                     final folderSongs = allSongs
+                         .where((song) =>
+-                            song.data.startsWith(folderPath + '/') ||
+-                            song.data.startsWith(folderPath + '\\'))
++                            song.data.startsWith('$folderPath/') ||
++                            song.data.startsWith('$folderPath\\'))
+                         .where((song) {
+                       final songDir = path.dirname(song.data);
+                       return songDir == folderPath;
+diff --git a/lib/services/artwork_cache_service.dart b/lib/services/artwork_cache_service.dart
+index d6a8770..65f0e95 100644
+--- a/lib/services/artwork_cache_service.dart
++++ b/lib/services/artwork_cache_service.dart
+@@ -1,5 +1,4 @@
+ import 'dart:io';
+-import 'dart:typed_data';
+ 
+ import 'package:flutter/foundation.dart';
+ import 'package:path_provider/path_provider.dart';
+@@ -109,7 +108,8 @@ class ArtworkCacheService {
+         await file.delete();
+       }
+     } catch (e) {
+-      debugPrint('[ArtworkCache] Error invalidating cache for songId=$songId: $e');
++      debugPrint(
++          '[ArtworkCache] Error invalidating cache for songId=$songId: $e');
+     }
+   }
+ 
+diff --git a/lib/services/sd_card_access_service.dart b/lib/services/sd_card_access_service.dart
+index f167419..5960208 100644
+--- a/lib/services/sd_card_access_service.dart
++++ b/lib/services/sd_card_access_service.dart
+@@ -1,5 +1,4 @@
+ import 'dart:io';
+-import 'dart:typed_data';
+ 
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter/services.dart';
+@@ -48,8 +47,7 @@ class SdCardAccessService {
+   /// Retorna el treeUri persistido previamente (si existe), o null.
+   static Future<String?> getPersistedTreeUri() async {
+     try {
+-      final result =
+-          await _channel.invokeMethod<String>('getPersistedTreeUri');
++      final result = await _channel.invokeMethod<String>('getPersistedTreeUri');
+       return result;
+     } catch (e) {
+       debugPrint('[SAF] Error getting persisted tree URI: $e');
+diff --git a/lib/services/storage_scanner.dart b/lib/services/storage_scanner.dart
+index 8052e57..b318109 100644
+--- a/lib/services/storage_scanner.dart
++++ b/lib/services/storage_scanner.dart
+@@ -18,7 +18,6 @@ class StorageScanProgress {
+ }
+ 
+ class StorageScanner {
+-  static const int _progressBatchSize = 48;
+   static const Set<String> _audioExtensions = {
+     'mp3',
+     'flac',
+@@ -130,7 +129,7 @@ class StorageScanner {
+ 
+       try {
+         final path = song.data;
+-        if (path == null || path.isEmpty) continue;
++        if (path.isEmpty) continue;
+ 
+         final dir = path.substring(0, path.lastIndexOf('/'));
+ 
+diff --git a/lib/widgets/album_card.dart b/lib/widgets/album_card.dart
+index 5ea958c..2637e44 100644
+--- a/lib/widgets/album_card.dart
++++ b/lib/widgets/album_card.dart
+@@ -3,7 +3,6 @@ import 'package:on_audio_query/on_audio_query.dart';
+ import 'package:provider/provider.dart';
+ import '../providers/audio_provider.dart';
+ import 'smart_artwork.dart';
+-import '../theme/app_theme.dart';
+ import '../utils/title_utils.dart';
+ 
+ class AlbumCard extends StatefulWidget {
+@@ -18,7 +17,8 @@ class AlbumCard extends StatefulWidget {
+   State<AlbumCard> createState() => _AlbumCardState();
+ }
+ 
+-class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMixin {
++class _AlbumCardState extends State<AlbumCard>
++    with SingleTickerProviderStateMixin {
+   late AnimationController _controller;
+   late Animation<double> _scaleAnimation;
+ 
+@@ -27,8 +27,8 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
+     super.initState();
+     _controller = AnimationController(
+         vsync: this, duration: const Duration(milliseconds: 100));
+-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+-        CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
++    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95)
++        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+   }
+ 
+   @override
+@@ -42,8 +42,6 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
+     final audioProvider = Provider.of<AudioProvider>(context);
+     final isCurrentSong = audioProvider.currentSong?.id == widget.song.id;
+     final isPlaying = isCurrentSong && audioProvider.player.playing;
+-    final isFavorite = audioProvider.isFavorite(widget.song.id);
+-
+     return GestureDetector(
+       onTapDown: (_) => _controller.forward(),
+       onTapUp: (_) => _controller.reverse(),
+@@ -70,7 +68,7 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
+                 : null,
+             boxShadow: [
+               BoxShadow(
+-                color: Colors.black.withOpacity(0.5),
++                color: Colors.black.withValues(alpha: 0.5),
+                 blurRadius: 10,
+                 offset: const Offset(0, 4),
+               ),
+@@ -97,7 +95,9 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
+               Text(
+                 TitleUtils.getDisplayTitle(widget.song),
+                 style: const TextStyle(
+-                    color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
++                    color: Colors.white,
++                    fontWeight: FontWeight.bold,
++                    fontSize: 15),
+                 maxLines: 1,
+                 overflow: TextOverflow.ellipsis,
+               ),
+@@ -124,8 +124,10 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
+                           audioProvider.playPlaylist([widget.song], 0);
+                           return;
+                         }
+-                        final startIndex = albumSongs.indexWhere((s) => s.id == widget.song.id);
+-                        audioProvider.playPlaylist(albumSongs, startIndex == -1 ? 0 : startIndex);
++                        final startIndex = albumSongs
++                            .indexWhere((s) => s.id == widget.song.id);
++                        audioProvider.playPlaylist(
++                            albumSongs, startIndex == -1 ? 0 : startIndex);
+                       },
+                       icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow),
+                       label: const Text('Play'),
+@@ -150,7 +152,8 @@ class _AlbumCardState extends State<AlbumCard> with SingleTickerProviderStateMix
+                         audioProvider.playPlaylistShuffled(albumSongs);
+                       },
+                       icon: const Icon(Icons.shuffle, color: Colors.white),
+-                      label: const Text('Shuffle', style: TextStyle(color: Colors.white)),
++                      label: const Text('Shuffle',
++                          style: TextStyle(color: Colors.white)),
+                       style: OutlinedButton.styleFrom(
+                         side: const BorderSide(color: Colors.white24),
+                       ),
+diff --git a/lib/widgets/mini_player.dart b/lib/widgets/mini_player.dart
+index 13f33d7..c6deaae 100644
+--- a/lib/widgets/mini_player.dart
++++ b/lib/widgets/mini_player.dart
+@@ -37,12 +37,10 @@ class MiniPlayer extends StatelessWidget {
+               context: context,
+               isScrollControlled: true,
+               useSafeArea: true,
+-              backgroundColor: const Color(0xFF121212),
+-              clipBehavior: Clip.antiAlias,
+-              shape: const RoundedRectangleBorder(
+-                  borderRadius:
+-                      BorderRadius.vertical(top: Radius.circular(24))),
+-              builder: (context) => const _PlayerModalContent(),
++              backgroundColor: Colors.transparent,
++              clipBehavior: Clip.none,
++              constraints: const BoxConstraints(maxWidth: double.infinity),
++              builder: (context) => const _PlayerModalFrame(),
+             );
+           },
+           child: Column(
+@@ -155,6 +153,23 @@ class MiniPlayer extends StatelessWidget {
+   }
+ }
+ 
++class _PlayerModalFrame extends StatelessWidget {
++  const _PlayerModalFrame();
++
++  @override
++  Widget build(BuildContext context) {
++    final isLandscape =
++        MediaQuery.of(context).orientation == Orientation.landscape;
++    if (isLandscape) {
++      return const SizedBox.expand(child: _PlayerModalContent());
++    }
++    return ClipRRect(
++      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
++      child: const _PlayerModalContent(),
++    );
++  }
++}
++
+ class _PlayerModalContent extends StatefulWidget {
+   const _PlayerModalContent();
+ 
+@@ -240,6 +255,12 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
+     if (song == null) return const SizedBox.shrink();
+ 
+     final artista = TitleUtils.getDisplayArtist(song.artist);
++    final isLandscape =
++        MediaQuery.of(context).orientation == Orientation.landscape;
++
++    if (isLandscape) {
++      return _buildLandscapePlayer(context, audioProvider, song, artista);
++    }
+ 
+     return Scaffold(
+       backgroundColor: const Color(0xFF121212),
+@@ -373,11 +394,15 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
+                     Icon(
+                       Icons.directions_car_filled_rounded,
+                       size: 20,
+-                      color: audioProvider.isAutoModeEnabled ? Colors.greenAccent : Colors.white,
++                      color: audioProvider.isAutoModeEnabled
++                          ? Colors.greenAccent
++                          : Colors.white,
+                     ),
+                     const SizedBox(width: 10),
+                     Text(
+-                      audioProvider.isAutoModeEnabled ? 'Modo Auto: ON' : 'Modo Auto: OFF',
++                      audioProvider.isAutoModeEnabled
++                          ? 'Modo Auto: ON'
++                          : 'Modo Auto: OFF',
+                       style: const TextStyle(color: Colors.white),
+                     ),
+                   ],
+@@ -390,11 +415,15 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
+                     Icon(
+                       Icons.graphic_eq_rounded,
+                       size: 20,
+-                      color: audioProvider.isEpicenterEnabled ? Colors.greenAccent : Colors.white,
++                      color: audioProvider.isEpicenterEnabled
++                          ? Colors.greenAccent
++                          : Colors.white,
+                     ),
+                     const SizedBox(width: 10),
+                     Text(
+-                      audioProvider.isEpicenterEnabled ? 'Epicentro: ON' : 'Epicentro: OFF',
++                      audioProvider.isEpicenterEnabled
++                          ? 'Epicentro: ON'
++                          : 'Epicentro: OFF',
+                       style: const TextStyle(color: Colors.white),
+                     ),
+                   ],
+@@ -830,6 +859,241 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
+     );
+   }
+ 
++  Widget _buildLandscapePlayer(
++    BuildContext context,
++    AudioProvider audioProvider,
++    SongModel song,
++    String artista,
++  ) {
++    final albumLabel = _resolveAlbumLabel(song);
++
++    return Scaffold(
++      backgroundColor: Colors.black,
++      body: SafeArea(
++        child: Container(
++          decoration: const BoxDecoration(
++            gradient: LinearGradient(
++              begin: Alignment.bottomLeft,
++              end: Alignment.topRight,
++              colors: [
++                Color(0xFF114D9A),
++                Color(0xFF101820),
++                Color(0xFF101010),
++                Color(0xFF0B6A45),
++              ],
++              stops: [0.0, 0.36, 0.66, 1.0],
++            ),
++          ),
++          child: Padding(
++            padding: const EdgeInsets.fromLTRB(22, 10, 22, 14),
++            child: Column(
++              children: [
++                Align(
++                  alignment: Alignment.centerLeft,
++                  child: IconButton(
++                    icon: const Icon(Icons.keyboard_arrow_down_rounded,
++                        color: Colors.white, size: 30),
++                    onPressed: () => Navigator.pop(context),
++                  ),
++                ),
++                Expanded(
++                  child: Row(
++                    children: [
++                      Expanded(
++                        flex: 7,
++                        child: Padding(
++                          padding: const EdgeInsets.only(left: 12, right: 20),
++                          child: Column(
++                            mainAxisAlignment: MainAxisAlignment.center,
++                            crossAxisAlignment: CrossAxisAlignment.start,
++                            children: [
++                              Text(
++                                TitleUtils.getDisplayTitle(song),
++                                style: const TextStyle(
++                                  color: Colors.white,
++                                  fontSize: 30,
++                                  fontWeight: FontWeight.w700,
++                                  height: 1.05,
++                                ),
++                                maxLines: 2,
++                                overflow: TextOverflow.ellipsis,
++                              ),
++                              const SizedBox(height: 18),
++                              _LandscapeInfoLine(
++                                icon: Icons.person_rounded,
++                                text: artista,
++                              ),
++                              const SizedBox(height: 12),
++                              _LandscapeInfoLine(
++                                icon: Icons.album_rounded,
++                                text: albumLabel,
++                              ),
++                            ],
++                          ),
++                        ),
++                      ),
++                      Expanded(
++                        flex: 4,
++                        child: LayoutBuilder(
++                          builder: (context, constraints) {
++                            final size = constraints.biggest.shortestSide
++                                .clamp(92.0, 180.0);
++                            return Row(
++                              mainAxisAlignment: MainAxisAlignment.end,
++                              children: [
++                                SmartArtwork(
++                                  albumId: song.id,
++                                  songPath: song.data,
++                                  type: ArtworkType.AUDIO,
++                                  size: size,
++                                  borderRadius: BorderRadius.circular(4),
++                                ),
++                                const SizedBox(width: 10),
++                                Column(
++                                  mainAxisAlignment: MainAxisAlignment.center,
++                                  children: [
++                                    _LandscapeFolderButton(
++                                      add: false,
++                                      tooltip: 'Carpeta anterior',
++                                      onPressed: () =>
++                                          audioProvider.playPreviousFolder(),
++                                    ),
++                                    const SizedBox(height: 18),
++                                    _LandscapeFolderButton(
++                                      add: true,
++                                      tooltip: 'Carpeta siguiente',
++                                      onPressed: audioProvider.playNextFolder,
++                                    ),
++                                  ],
++                                ),
++                              ],
++                            );
++                          },
++                        ),
++                      ),
++                    ],
++                  ),
++                ),
++                StreamBuilder<DurationState>(
++                  stream: audioProvider.durationStateStream,
++                  builder: (context, snapshot) {
++                    final durationState = snapshot.data;
++                    final progress = durationState?.position ?? Duration.zero;
++                    final total = durationState?.total ?? Duration.zero;
++                    final max = total.inMilliseconds.toDouble().clamp(
++                        progress.inMilliseconds.toDouble(), double.infinity);
++
++                    return Column(
++                      children: [
++                        SliderTheme(
++                          data: SliderTheme.of(context).copyWith(
++                            trackHeight: 2.5,
++                            thumbShape: const RoundSliderThumbShape(
++                                enabledThumbRadius: 5),
++                            overlayShape: const RoundSliderOverlayShape(
++                                overlayRadius: 12),
++                            activeTrackColor: Colors.white,
++                            inactiveTrackColor: Colors.white54,
++                            thumbColor: Colors.white,
++                          ),
++                          child: Slider(
++                            value: progress.inMilliseconds.toDouble(),
++                            max: max,
++                            onChanged: (value) {
++                              audioProvider.player
++                                  .seek(Duration(milliseconds: value.toInt()));
++                            },
++                          ),
++                        ),
++                        Padding(
++                          padding: const EdgeInsets.symmetric(horizontal: 10),
++                          child: Row(
++                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
++                            children: [
++                              Text(
++                                _formatDuration(progress),
++                                style: const TextStyle(
++                                    color: Colors.white, fontSize: 12),
++                              ),
++                              Text(
++                                _formatDuration(total),
++                                style: const TextStyle(
++                                    color: Colors.white, fontSize: 12),
++                              ),
++                            ],
++                          ),
++                        ),
++                      ],
++                    );
++                  },
++                ),
++                const SizedBox(height: 4),
++                Row(
++                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
++                  children: [
++                    IconButton(
++                      icon: const Icon(Icons.queue_music_rounded,
++                          color: Colors.white, size: 28),
++                      onPressed: () => showQueueBottomSheet(context),
++                    ),
++                    IconButton(
++                      icon: const Icon(Icons.skip_previous_rounded,
++                          color: Colors.white, size: 34),
++                      onPressed: audioProvider.previousSmart,
++                    ),
++                    StreamBuilder<bool>(
++                      stream: audioProvider.player.playingStream,
++                      builder: (context, snapshot) {
++                        final isPlaying = snapshot.data ?? false;
++                        return IconButton(
++                          icon: Icon(
++                            isPlaying
++                                ? Icons.pause_rounded
++                                : Icons.play_arrow_rounded,
++                            color: Colors.white,
++                            size: 36,
++                          ),
++                          onPressed: audioProvider.togglePlayPause,
++                        );
++                      },
++                    ),
++                    IconButton(
++                      icon: const Icon(Icons.skip_next_rounded,
++                          color: Colors.white, size: 34),
++                      onPressed: audioProvider.next,
++                    ),
++                    IconButton(
++                      icon: Icon(
++                        audioProvider.loopMode == LoopMode.one
++                            ? Icons.repeat_one_rounded
++                            : Icons.repeat_rounded,
++                        color: audioProvider.loopMode != LoopMode.off
++                            ? Colors.greenAccent
++                            : Colors.white,
++                        size: 26,
++                      ),
++                      onPressed: audioProvider.toggleLoop,
++                    ),
++                    IconButton(
++                      icon: Icon(
++                        Icons.shuffle_rounded,
++                        color: audioProvider.isShuffle
++                            ? Colors.greenAccent
++                            : Colors.white,
++                        size: 26,
++                      ),
++                      onPressed: audioProvider.toggleShuffle,
++                    ),
++                  ],
++                ),
++              ],
++            ),
++          ),
++        ),
++      ),
++    );
++  }
++
+   Widget _buildLyricsSection(SongModel song, AudioProvider audioProvider) {
+     _ensureLyricsLoaded(song, audioProvider.lyricsSource);
+     return FutureBuilder<LyricsResult?>(
+@@ -875,6 +1139,72 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
+   }
+ }
+ 
++class _LandscapeInfoLine extends StatelessWidget {
++  final IconData icon;
++  final String text;
++
++  const _LandscapeInfoLine({
++    required this.icon,
++    required this.text,
++  });
++
++  @override
++  Widget build(BuildContext context) {
++    return Row(
++      children: [
++        Icon(icon, color: Colors.white, size: 22),
++        const SizedBox(width: 10),
++        Expanded(
++          child: Text(
++            text,
++            style: const TextStyle(
++              color: Colors.white,
++              fontSize: 18,
++              fontWeight: FontWeight.w500,
++            ),
++            maxLines: 1,
++            overflow: TextOverflow.ellipsis,
++          ),
++        ),
++      ],
++    );
++  }
++}
++
++class _LandscapeFolderButton extends StatelessWidget {
++  final bool add;
++  final String tooltip;
++  final VoidCallback onPressed;
++
++  const _LandscapeFolderButton({
++    required this.add,
++    required this.tooltip,
++    required this.onPressed,
++  });
++
++  @override
++  Widget build(BuildContext context) {
++    return IconButton(
++      tooltip: tooltip,
++      onPressed: onPressed,
++      icon: Stack(
++        alignment: Alignment.center,
++        children: [
++          const Icon(Icons.folder_outlined, color: Colors.white, size: 30),
++          Transform.translate(
++            offset: const Offset(6, 6),
++            child: Icon(
++              add ? Icons.add : Icons.remove,
++              color: Colors.white,
++              size: 14,
++            ),
++          ),
++        ],
++      ),
++    );
++  }
++}
++
+ class _SyncedLyricsView extends StatefulWidget {
+   final List<LyricsLine> lines;
+   final Stream<Duration> positionStream;
+diff --git a/lib/widgets/mini_player_pill.dart b/lib/widgets/mini_player_pill.dart
+index f1e7608..7f62b24 100644
+--- a/lib/widgets/mini_player_pill.dart
++++ b/lib/widgets/mini_player_pill.dart
+@@ -17,7 +17,8 @@ class MiniPlayerPill extends StatefulWidget {
+   State<MiniPlayerPill> createState() => _MiniPlayerPillState();
+ }
+ 
+-class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProviderStateMixin {
++class _MiniPlayerPillState extends State<MiniPlayerPill>
++    with SingleTickerProviderStateMixin {
+   late AnimationController _controller;
+   late Animation<double> _scaleAnimation;
+ 
+@@ -26,8 +27,8 @@ class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProvid
+     super.initState();
+     _controller = AnimationController(
+         vsync: this, duration: const Duration(milliseconds: 100));
+-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+-        CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
++    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95)
++        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+   }
+ 
+   @override
+@@ -67,7 +68,7 @@ class _MiniPlayerPillState extends State<MiniPlayerPill> with SingleTickerProvid
+             borderRadius: BorderRadius.circular(32),
+             boxShadow: [
+               BoxShadow(
+-                color: Colors.black.withOpacity(0.5),
++                color: Colors.black.withValues(alpha: 0.5),
+                 blurRadius: 10,
+                 offset: const Offset(0, 4),
+               ),
+diff --git a/lib/widgets/options_menu.dart b/lib/widgets/options_menu.dart
+index 4a6a0c3..11fe909 100644
+--- a/lib/widgets/options_menu.dart
++++ b/lib/widgets/options_menu.dart
+@@ -9,7 +9,8 @@ import '../services/state_persistence.dart';
+ import '../utils/title_utils.dart';
+ import 'song_info_modal.dart';
+ 
+-void showOptionsMenu(BuildContext context, AudioProvider audioProvider, {SongModel? song}) {
++void showOptionsMenu(BuildContext context, AudioProvider audioProvider,
++    {SongModel? song}) {
+   showModalBottomSheet(
+     context: context,
+     backgroundColor: const Color(0xFF222222),
+@@ -99,52 +100,53 @@ class _OptionsMenuContent extends StatelessWidget {
+     );
+   }
+ 
+-  void _showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
++  void _showDeleteDialog(
++      BuildContext context, AudioProvider provider, SongModel song) {
+     showDeleteDialog(context, provider, song);
+   }
+ }
+ 
+-void showDeleteDialog(BuildContext context, AudioProvider provider, SongModel song) {
+-
+-    showDialog(
+-      context: context,
+-      builder: (ctx) => AlertDialog(
+-        backgroundColor: const Color(0xFF222222),
+-        title: const Text("Confirmar eliminación",
+-            style: TextStyle(color: Colors.white)),
+-        content: Text(
+-            "¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?",
+-            style: const TextStyle(color: Colors.white70)),
+-        actions: [
+-          TextButton(
+-              onPressed: () => Navigator.pop(ctx),
+-              child:
+-                  const Text("Cancelar", style: TextStyle(color: Colors.grey))),
+-          TextButton(
+-            onPressed: () async {
+-              Navigator.pop(ctx);
+-              final success = await provider.deleteSong(song);
+-              if (context.mounted) {
+-                ScaffoldMessenger.of(context).showSnackBar(
+-                  SnackBar(
+-                    content: Text(
+-                      success
+-                          ? "Archivo eliminado correctamente."
+-                          : "Error al eliminar. Verifica los permisos.",
+-                      style: const TextStyle(color: Colors.white),
+-                    ),
+-                    backgroundColor: success ? Colors.black87 : Colors.red,
++void showDeleteDialog(
++    BuildContext context, AudioProvider provider, SongModel song) {
++  showDialog(
++    context: context,
++    builder: (ctx) => AlertDialog(
++      backgroundColor: const Color(0xFF222222),
++      title: const Text("Confirmar eliminación",
++          style: TextStyle(color: Colors.white)),
++      content: Text(
++          "¿Eliminar '${TitleUtils.getDisplayTitle(song)}' del dispositivo?",
++          style: const TextStyle(color: Colors.white70)),
++      actions: [
++        TextButton(
++            onPressed: () => Navigator.pop(ctx),
++            child:
++                const Text("Cancelar", style: TextStyle(color: Colors.grey))),
++        TextButton(
++          onPressed: () async {
++            Navigator.pop(ctx);
++            final success = await provider.deleteSong(song);
++            if (context.mounted) {
++              ScaffoldMessenger.of(context).showSnackBar(
++                SnackBar(
++                  content: Text(
++                    success
++                        ? "Archivo eliminado correctamente."
++                        : "Error al eliminar. Verifica los permisos.",
++                    style: const TextStyle(color: Colors.white),
+                   ),
+-                );
+-              }
+-            },
+-            child: const Text("Eliminar",
+-                style: TextStyle(color: Colors.redAccent)),
+-          ),
+-        ],
+-      ),
+-    );
+-  }
++                  backgroundColor: success ? Colors.black87 : Colors.red,
++                ),
++              );
++            }
++          },
++          child:
++              const Text("Eliminar", style: TextStyle(color: Colors.redAccent)),
++        ),
++      ],
++    ),
++  );
++}
+ 
+ class _EpicenterSettingsSheet extends StatefulWidget {
+   final AudioProvider audioProvider;
+@@ -160,6 +162,7 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
+   late double _sweepFreq;
+   late double _width;
+   late double _intensity;
++  late bool _peakProtectionEnabled;
+ 
+   @override
+   void initState() {
+@@ -168,6 +171,7 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
+     _sweepFreq = provider.epicenterSweepFreq;
+     _width = provider.epicenterWidth;
+     _intensity = provider.epicenterIntensity;
++    _peakProtectionEnabled = provider.epicenterPeakProtectionEnabled;
+   }
+ 
+   Future<void> _resetDefaults() async {
+@@ -175,10 +179,29 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
+       _sweepFreq = StatePersistence.defaultEpicenterSweepFreq;
+       _width = StatePersistence.defaultEpicenterWidth;
+       _intensity = StatePersistence.defaultEpicenterIntensity;
++      _peakProtectionEnabled =
++          StatePersistence.defaultEpicenterPeakProtectionEnabled;
+     });
+     await widget.audioProvider.resetEpicenterSettingsToDefault();
+   }
+ 
++  Future<void> _applyPreset({
++    required double sweepFreq,
++    required double width,
++    required double intensity,
++  }) async {
++    setState(() {
++      _sweepFreq = sweepFreq;
++      _width = width;
++      _intensity = intensity;
++    });
++    await widget.audioProvider.updateEpicenterSettings(
++      sweepFreq: sweepFreq,
++      width: width,
++      intensity: intensity,
++    );
++  }
++
+   @override
+   Widget build(BuildContext context) {
+     return SafeArea(
+@@ -205,6 +228,43 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
+               ),
+             ),
+             const SizedBox(height: 12),
++            Row(
++              children: [
++                Expanded(
++                  child: _PresetButton(
++                    label: 'AudioControl',
++                    onPressed: () => _applyPreset(
++                      sweepFreq: 41,
++                      width: 86,
++                      intensity: 84,
++                    ),
++                  ),
++                ),
++                const SizedBox(width: 8),
++                Expanded(
++                  child: _PresetButton(
++                    label: 'Profundo',
++                    onPressed: () => _applyPreset(
++                      sweepFreq: 34,
++                      width: 72,
++                      intensity: 78,
++                    ),
++                  ),
++                ),
++                const SizedBox(width: 8),
++                Expanded(
++                  child: _PresetButton(
++                    label: 'Limpio',
++                    onPressed: () => _applyPreset(
++                      sweepFreq: 48,
++                      width: 58,
++                      intensity: 58,
++                    ),
++                  ),
++                ),
++              ],
++            ),
++            const SizedBox(height: 12),
+             _ParamSlider(
+               label: 'Sweep Freq',
+               value: _sweepFreq,
+@@ -238,6 +298,28 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
+                 widget.audioProvider.updateEpicenterSettings(intensity: value);
+               },
+             ),
++            SwitchListTile(
++              contentPadding: EdgeInsets.zero,
++              title: const Text(
++                'Protección anti-clip',
++                style: TextStyle(color: Colors.white),
++              ),
++              subtitle: Text(
++                _peakProtectionEnabled
++                    ? 'Límite transparente actual'
++                    : 'Salida como antes del límite',
++                style: const TextStyle(color: Colors.white54),
++              ),
++              value: _peakProtectionEnabled,
++              activeThumbColor: Colors.white,
++              activeTrackColor: Colors.greenAccent,
++              onChanged: (value) {
++                setState(() => _peakProtectionEnabled = value);
++                widget.audioProvider.updateEpicenterSettings(
++                  peakProtectionEnabled: value,
++                );
++              },
++            ),
+             const SizedBox(height: 10),
+             Row(
+               children: [
+@@ -273,6 +355,30 @@ class _EpicenterSettingsSheetState extends State<_EpicenterSettingsSheet> {
+   }
+ }
+ 
++class _PresetButton extends StatelessWidget {
++  final String label;
++  final VoidCallback onPressed;
++
++  const _PresetButton({
++    required this.label,
++    required this.onPressed,
++  });
++
++  @override
++  Widget build(BuildContext context) {
++    return OutlinedButton(
++      onPressed: onPressed,
++      style: OutlinedButton.styleFrom(
++        foregroundColor: Colors.white,
++        side: const BorderSide(color: Colors.white30),
++        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
++        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
++      ),
++      child: FittedBox(child: Text(label)),
++    );
++  }
++}
++
+ class _ParamSlider extends StatelessWidget {
+   final String label;
+   final double value;
+@@ -363,7 +469,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+   late final TextEditingController _genre;
+   late final TextEditingController _year;
+   late final TextEditingController _track;
+-  
++
+   bool _isSaving = false;
+ 
+   File? _newCoverFile;
+@@ -376,7 +482,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+     final song = widget.song ?? widget.provider.currentSong!;
+     final artistText =
+         TitleUtils.isUnknownArtist(song.artist) ? "" : song.artist!.trim();
+-    _title = TextEditingController(text: widget.isAlbumEdit ? "" : TitleUtils.getDisplayTitle(song));
++    _title = TextEditingController(
++        text: widget.isAlbumEdit ? "" : TitleUtils.getDisplayTitle(song));
+     _album = TextEditingController(text: song.album ?? "");
+     _artist = TextEditingController(text: artistText);
+     _albumArtist = TextEditingController();
+@@ -434,9 +541,11 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+ 
+   Future<void> _save() async {
+     setState(() => _isSaving = true);
+-    
++
+     try {
+-      final songsToEdit = widget.isAlbumEdit ? (widget.albumSongs ?? []) : [widget.song ?? widget.provider.currentSong!];
++      final songsToEdit = widget.isAlbumEdit
++          ? (widget.albumSongs ?? [])
++          : [widget.song ?? widget.provider.currentSong!];
+ 
+       List<Picture> pics = [];
+       Uint8List? coverBytesForCache;
+@@ -457,7 +566,7 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+ 
+       for (int i = 0; i < songsToEdit.length; i++) {
+         final currentSong = songsToEdit[i];
+-        
++
+         List<Picture> currentPics = List.from(pics);
+         String? originalTitle;
+         int? originalDuration;
+@@ -472,8 +581,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+             }
+           }
+         } catch (_) {}
+-        
+-        final newTitle = (!widget.isAlbumEdit && _title.text.trim().isNotEmpty) ? _title.text.trim() : originalTitle;
++
++        final newTitle = (!widget.isAlbumEdit && _title.text.trim().isNotEmpty)
++            ? _title.text.trim()
++            : originalTitle;
+ 
+         final tag = Tag(
+           title: newTitle,
+@@ -490,9 +601,15 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+         await widget.provider.updateSongMetadata(
+           currentSong,
+           newTitle: newTitle ?? currentSong.title,
+-          newArtist: _artist.text.trim().isEmpty ? TitleUtils.getDisplayArtist(currentSong.artist) : _artist.text.trim(),
+-          newAlbum: _album.text.trim().isEmpty ? currentSong.album : _album.text.trim(),
+-          newGenre: _genre.text.trim().isEmpty ? currentSong.genre : _genre.text.trim(),
++          newArtist: _artist.text.trim().isEmpty
++              ? TitleUtils.getDisplayArtist(currentSong.artist)
++              : _artist.text.trim(),
++          newAlbum: _album.text.trim().isEmpty
++              ? currentSong.album
++              : _album.text.trim(),
++          newGenre: _genre.text.trim().isEmpty
++              ? currentSong.genre
++              : _genre.text.trim(),
+           newCoverBytes: coverBytesForCache,
+         );
+       }
+@@ -500,7 +617,10 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+       if (mounted) {
+         Navigator.pop(context);
+         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+-            content: Text(widget.isAlbumEdit ? "Álbum actualizado correctamente." : "Etiquetas guardadas.",
++            content: Text(
++                widget.isAlbumEdit
++                    ? "Álbum actualizado correctamente."
++                    : "Etiquetas guardadas.",
+                 style: const TextStyle(color: Colors.white)),
+             backgroundColor: Colors.green));
+       }
+@@ -515,7 +635,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+     }
+   }
+ 
+-  Widget _field(TextEditingController ctrl, String label, {bool enabled = true}) {
++  Widget _field(TextEditingController ctrl, String label,
++      {bool enabled = true}) {
+     return Padding(
+       padding: const EdgeInsets.only(bottom: 4.0),
+       child: TextField(
+@@ -545,7 +666,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+ 
+     return AlertDialog(
+       backgroundColor: const Color(0xFF2A2A2A),
+-      title: Text(widget.isAlbumEdit ? "Editar Álbum Masivo" : "Editor de etiquetas",
++      title: Text(
++          widget.isAlbumEdit ? "Editar Álbum Masivo" : "Editor de etiquetas",
+           style: const TextStyle(color: Colors.white, fontSize: 22)),
+       contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+       content: SizedBox(
+@@ -557,7 +679,8 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+               if (_isSaving)
+                 const Padding(
+                   padding: EdgeInsets.only(bottom: 20),
+-                  child: Center(child: CircularProgressIndicator(color: Colors.white)),
++                  child: Center(
++                      child: CircularProgressIndicator(color: Colors.white)),
+                 ),
+               // Cover art picker
+               GestureDetector(
+@@ -589,14 +712,15 @@ class _EditTagDialogState extends State<_EditTagDialog> {
+                       : null,
+                 ),
+               ),
+-              if (!widget.isAlbumEdit) _field(_title, "Título", enabled: !_isSaving),
++              if (!widget.isAlbumEdit)
++                _field(_title, "Título", enabled: !_isSaving),
+               _field(_album, "Álbum", enabled: !_isSaving),
+               _field(_artist, "Artista", enabled: !_isSaving),
+               _field(_albumArtist, "Artista del álbum", enabled: !_isSaving),
+               _field(_composer, "Compositor", enabled: !_isSaving),
+               _field(_genre, "Género", enabled: !_isSaving),
+               _field(_year, "Año", enabled: !_isSaving),
+-              
++
+               if (!widget.isAlbumEdit)
+                 _field(_track, "Track (Ej: 4)", enabled: !_isSaving),
+               const SizedBox(height: 8),
+diff --git a/lib/widgets/queue_bottom_sheet.dart b/lib/widgets/queue_bottom_sheet.dart
+index 53023ac..a296b18 100644
+--- a/lib/widgets/queue_bottom_sheet.dart
++++ b/lib/widgets/queue_bottom_sheet.dart
+@@ -114,7 +114,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
+                     TitleUtils.getDisplayArtist(song.artist),
+                     style: TextStyle(
+                         color: isPlaying
+-                            ? AppTheme.primaryColor.withOpacity(0.7)
++                            ? AppTheme.primaryColor.withValues(alpha: 0.7)
+                             : Colors.white54,
+                         fontSize: 13),
+                     maxLines: 1,
+diff --git a/lib/widgets/smart_artwork.dart b/lib/widgets/smart_artwork.dart
+index a739bc2..9adc870 100644
+--- a/lib/widgets/smart_artwork.dart
++++ b/lib/widgets/smart_artwork.dart
+@@ -1,3 +1,5 @@
++import 'dart:io';
++
+ import 'package:flutter/material.dart';
+ import 'package:flutter/services.dart';
+ import 'package:on_audio_query/on_audio_query.dart';
+@@ -78,11 +80,17 @@ class _SmartArtworkState extends State<SmartArtwork> {
+       Uint8List? bytes;
+       final querySize = _querySizeForWidget();
+ 
+-      if (isLarge) {
+-        bytes = await _mediaChannel.invokeMethod<Uint8List>(
+-          'extractEmbeddedArtwork',
+-          {'filePath': widget.songPath},
+-        );
++      bytes = await _mediaChannel.invokeMethod<Uint8List>(
++        'extractEmbeddedArtwork',
++        {'filePath': widget.songPath},
++      );
++
++      if (bytes == null || bytes.isEmpty) {
++        bytes = await _loadPreferredFolderArtwork();
++      }
++
++      if (bytes == null || bytes.isEmpty) {
++        bytes = await _loadFolderArtwork();
+       }
+ 
+       if (bytes == null || bytes.isEmpty) {
+@@ -94,13 +102,6 @@ class _SmartArtworkState extends State<SmartArtwork> {
+         );
+       }
+ 
+-      if (!isLarge && (bytes == null || bytes.isEmpty)) {
+-        bytes = await _mediaChannel.invokeMethod<Uint8List>(
+-          'extractEmbeddedArtwork',
+-          {'filePath': widget.songPath},
+-        );
+-      }
+-
+       _remember(cacheKey, bytes);
+ 
+       if (mounted && requestId == _requestId) {
+@@ -117,6 +118,84 @@ class _SmartArtworkState extends State<SmartArtwork> {
+     }
+   }
+ 
++  Future<Uint8List?> _loadPreferredFolderArtwork() {
++    return _loadFolderArtworkInternal(preferredOnly: true);
++  }
++
++  Future<Uint8List?> _loadFolderArtwork() async {
++    return _loadFolderArtworkInternal(preferredOnly: false);
++  }
++
++  Future<Uint8List?> _loadFolderArtworkInternal(
++      {required bool preferredOnly}) async {
++    final normalizedPath = widget.songPath.replaceAll('\\', '/');
++    final lastSeparator = normalizedPath.lastIndexOf('/');
++    if (lastSeparator <= 0) return null;
++
++    final dir = Directory(normalizedPath.substring(0, lastSeparator));
++    if (!await dir.exists()) return null;
++
++    const extensions = ['jpg', 'jpeg', 'png', 'webp'];
++    final preferredNames = preferredOnly
++        ? const ['folder']
++        : const ['folder', 'cover', 'front', 'album', 'albumart'];
++    for (final name in preferredNames) {
++      for (final ext in extensions) {
++        final bytes = await _readArtworkFileIfValid('${dir.path}/$name.$ext');
++        if (bytes != null) return bytes;
++      }
++    }
++
++    if (preferredOnly) {
++      await for (final entity in dir.list(followLinks: false)) {
++        if (entity is! File) continue;
++        final fileName = entity.path.replaceAll('\\', '/').split('/').last;
++        final dot = fileName.lastIndexOf('.');
++        if (dot <= 0 || dot == fileName.length - 1) continue;
++        final base = fileName.substring(0, dot).toLowerCase();
++        final ext = fileName.substring(dot + 1).toLowerCase();
++        if (base != 'folder' || !extensions.contains(ext)) continue;
++        final length = await entity.length();
++        if (length <= 0 || length > 20 * 1024 * 1024) continue;
++        return entity.readAsBytes();
++      }
++      return null;
++    }
++
++    const names = {'folder', 'cover', 'front', 'album', 'albumart'};
++    const allExtensions = {
++      'jpg',
++      'jpeg',
++      'png',
++      'webp',
++    };
++
++    await for (final entity in dir.list(followLinks: false)) {
++      if (entity is! File) continue;
++      final fileName = entity.path.replaceAll('\\', '/').split('/').last;
++      final dot = fileName.lastIndexOf('.');
++      if (dot <= 0 || dot == fileName.length - 1) continue;
++
++      final base = fileName.substring(0, dot).toLowerCase();
++      final ext = fileName.substring(dot + 1).toLowerCase();
++      if (!names.contains(base) || !allExtensions.contains(ext)) continue;
++
++      final length = await entity.length();
++      if (length <= 0 || length > 20 * 1024 * 1024) continue;
++      return entity.readAsBytes();
++    }
++
++    return null;
++  }
++
++  Future<Uint8List?> _readArtworkFileIfValid(String filePath) async {
++    final file = File(filePath);
++    if (!await file.exists()) return null;
++    final length = await file.length();
++    if (length <= 0 || length > 20 * 1024 * 1024) return null;
++    return file.readAsBytes();
++  }
++
+   static void _remember(String key, Uint8List? bytes) {
+     if (_artworkCache.length >= _maxCacheEntries &&
+         !_artworkCache.containsKey(key)) {
+diff --git a/lib/widgets/wide_card.dart b/lib/widgets/wide_card.dart
+index 5e92ea2..8debfdf 100644
+--- a/lib/widgets/wide_card.dart
++++ b/lib/widgets/wide_card.dart
+@@ -70,7 +70,7 @@ class _WideCardState extends State<WideCard>
+                 : null,
+             boxShadow: [
+               BoxShadow(
+-                color: Colors.black.withOpacity(0.5),
++                color: Colors.black.withValues(alpha: 0.5),
+                 blurRadius: 10,
+                 offset: const Offset(0, 4),
+               ),
+diff --git a/test/widget_test.dart b/test/widget_test.dart
+index e69de29..ab73b3a 100644
+--- a/test/widget_test.dart
++++ b/test/widget_test.dart
+@@ -0,0 +1 @@
++void main() {}

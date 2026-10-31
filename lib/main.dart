@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 
 late AudioHandler _audioHandler;
 late bool _initialAutoMode;
+const bool _enableDevicePreview = bool.fromEnvironment('ENABLE_DEVICE_PREVIEW');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,7 +56,7 @@ Future<void> main() async {
 
   runApp(
     DevicePreview(
-      enabled: !kReleaseMode,
+      enabled: !kReleaseMode && _enableDevicePreview,
       builder: (context) => const MyApp(),
     ),
   );

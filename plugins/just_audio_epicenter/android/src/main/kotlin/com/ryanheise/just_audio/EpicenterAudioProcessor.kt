@@ -7,14 +7,65 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 object EpicenterProcessorController {
-    val processor = EpicenterAudioProcessor()
+    private val processors = linkedSetOf<EpicenterAudioProcessor>()
+    @Volatile private var enabled = false
+    @Volatile private var sweepFreq = 45f
+    @Volatile private var width = 50f
+    @Volatile private var intensity = 50f
+    @Volatile private var volume = 100f
+    @Volatile private var peakProtectionEnabled = true
 
-    fun setEpicenterEnabled(enabled: Boolean) = processor.setEpicenterEnabled(enabled)
-    fun setSweepFreq(value: Float) = processor.setSweepFreq(value)
-    fun setWidth(value: Float) = processor.setWidth(value)
-    fun setIntensity(value: Float) = processor.setIntensity(value)
-    fun setVolume(value: Float) = processor.setVolume(value)
-    fun setPeakProtectionEnabled(enabled: Boolean) = processor.setPeakProtectionEnabled(enabled)
+    @Synchronized
+    fun createProcessor(): EpicenterAudioProcessor = EpicenterAudioProcessor().also {
+        it.setEpicenterEnabled(enabled)
+        it.setSweepFreq(sweepFreq)
+        it.setWidth(width)
+        it.setIntensity(intensity)
+        it.setVolume(volume)
+        it.setPeakProtectionEnabled(peakProtectionEnabled)
+        processors += it
+    }
+
+    @Synchronized
+    fun releaseProcessor(processor: EpicenterAudioProcessor) {
+        processors -= processor
+    }
+
+    @Synchronized
+    fun setEpicenterEnabled(value: Boolean) {
+        enabled = value
+        processors.forEach { it.setEpicenterEnabled(value) }
+    }
+
+    @Synchronized
+    fun setSweepFreq(value: Float) {
+        sweepFreq = value
+        processors.forEach { it.setSweepFreq(value) }
+    }
+
+    @Synchronized
+    fun setWidth(value: Float) {
+        width = value
+        processors.forEach { it.setWidth(value) }
+    }
+
+    @Synchronized
+    fun setIntensity(value: Float) {
+        intensity = value
+        processors.forEach { it.setIntensity(value) }
+    }
+
+    @Synchronized
+    fun setVolume(value: Float) {
+        volume = value
+        processors.forEach { it.setVolume(value) }
+    }
+
+    @Synchronized
+    fun setPeakProtectionEnabled(value: Boolean) {
+        peakProtectionEnabled = value
+        processors.forEach { it.setPeakProtectionEnabled(value) }
+    }
 }
 
 class EpicenterAudioProcessor : BaseAudioProcessor() {
