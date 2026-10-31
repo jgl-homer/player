@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
-import '../theme/app_theme.dart';
 import '../utils/title_utils.dart';
 import '../widgets/smart_artwork.dart';
 import '../widgets/library_sort_menu.dart';
 import '../widgets/mini_player.dart';
-import '../widgets/options_menu.dart';
+import '../widgets/song_list_tile.dart';
+import '../widgets/library_action_button.dart';
 import '../utils/song_sorting.dart';
 import 'album_detail_screen.dart';
 
@@ -175,7 +175,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: _ActionButton(
+                            child: LibraryActionButton(
                               icon: Icons.play_arrow,
                               label: 'REPRODUCIR TODO',
                               onTap: () => audioProvider.playArtistSongs(
@@ -185,7 +185,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: _ActionButton(
+                            child: LibraryActionButton(
                               icon: Icons.shuffle,
                               label: 'ALEATORIO',
                               onTap: () {
@@ -277,37 +277,11 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                       final s = filteredSongs[i];
                       final isPlaying = audioProvider.currentSong?.id == s.id;
                       final duration = Duration(milliseconds: s.duration ?? 0);
-                      return ListTile(
-                        leading: SmartArtwork(
-                          albumId: s.albumId ?? 0,
-                          songPath: s.data,
-                          size: 48,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        title: Text(
-                          TitleUtils.getDisplayTitle(s),
-                          style: TextStyle(
-                              color: isPlaying
-                                  ? AppTheme.primaryColor
-                                  : Colors.white,
-                              fontWeight: isPlaying
-                                  ? FontWeight.bold
-                                  : FontWeight.normal),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${TitleUtils.getDisplayAlbum(s)}  •  ${_fmt(duration)}',
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 12),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.more_vert, color: Colors.grey),
-                          onPressed: () =>
-                              showOptionsMenu(context, audioProvider, song: s),
-                        ),
+                      return SongListTile(
+                        song: s,
+                        isSelected: isPlaying,
+                        subtitleText:
+                            '${TitleUtils.getDisplayAlbum(s)} • ${_fmt(duration)}',
                         onTap: () => audioProvider.playArtistSongs(
                             filteredSongs, i,
                             artistName: widget.artistName),
@@ -453,42 +427,6 @@ class _AlbumCollageCell extends StatelessWidget {
         albumId: songs.first.albumId ?? 0,
         songPath: songs.first.data,
         size: constraints.maxWidth,
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ActionButton(
-      {required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: const Color(0xFF2A2A2A),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            const SizedBox(width: 6),
-            Text(label,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5)),
-          ],
-        ),
       ),
     );
   }

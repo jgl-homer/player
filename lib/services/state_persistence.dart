@@ -29,6 +29,7 @@ class StatePersistence {
   static const String _playlistsKey = 'saved_playlists_v1';
   static const String _lyricsSourceKey = 'lyrics_source_v1';
   static const String _lyricsVisibleKey = 'lyrics_visible_v1';
+  static const String _automaticLyricsKey = 'automatic_lyrics_v1';
   static const String _autoModeKey = 'auto_mode_enabled';
   static const String _legacyAutoModeKey = 'modo_auto';
   static const String _epicenterEnabledKey = 'epicenter_enabled';
@@ -493,6 +494,16 @@ class StatePersistence {
   static Future<void> saveLyricsVisible(bool visible) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_lyricsVisibleKey, visible);
+  }
+
+  static Future<bool> loadAutomaticLyrics() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_automaticLyricsKey) ?? true;
+  }
+
+  static Future<void> saveAutomaticLyrics(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_automaticLyricsKey, enabled);
   }
 
   // Enabled tabs persistence (ordered list of tab IDs)

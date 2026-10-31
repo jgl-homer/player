@@ -295,22 +295,20 @@ class MainActivity : AudioServiceActivity() {
         val artworkDir = File(cacheDir, "artwork_cache")
         if (!artworkDir.exists()) artworkDir.mkdirs()
 
-        val artworkFile = File(artworkDir, "artwork_$safeId.jpg")
+        val prefix = "artwork_${safeId}_"
+        artworkDir.listFiles()
+            ?.filter { it.name.startsWith(prefix) }
+            ?.forEach { it.delete() }
+        val artworkFile = File(
+            artworkDir,
+            "$prefix${bytes.contentHashCode()}.img"
+        )
         artworkFile.writeBytes(bytes)
 
-        val uri = FileProvider.getUriForFile(
-            this,
-            "$packageName.fileprovider",
-            artworkFile
-        )
-
-        grantUriPermission(
-            "com.android.systemui",
-            uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION
-        )
-
-        return uri.toString()
+        // audio_service runs inside this app and can read the cache file
+        // directly. A file URI makes the Dart side attach artCacheFile, so the
+        // service decodes the bitmap before publishing MediaSession metadata.
+        return artworkFile.toURI().toString()
     }
 
     private fun registerMediaObserver() {

@@ -15,6 +15,13 @@ void main() {
     expect(await StatePersistence.loadLyricsSource(), LyricsSource.embedded);
   });
 
+  test('automatic lyrics preference defaults on and persists', () async {
+    SharedPreferences.setMockInitialValues({});
+    expect(await StatePersistence.loadAutomaticLyrics(), isTrue);
+    await StatePersistence.saveAutomaticLyrics(false);
+    expect(await StatePersistence.loadAutomaticLyrics(), isFalse);
+  });
+
   test('tone controls default to transparent and persist bounded values',
       () async {
     SharedPreferences.setMockInitialValues({});

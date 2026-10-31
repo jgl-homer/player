@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../playlist_detail_screen.dart';
 import '../../widgets/count_banner.dart';
+import '../../widgets/library_list_tile.dart';
 import '../../theme/app_theme.dart';
 
 class PlaylistsTab extends StatelessWidget {
@@ -207,11 +208,23 @@ class PlaylistsTab extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final name = playlists[index];
                     final songs = audioProvider.songsForPlaylist(name);
-                    return ListTile(
-                      leading:
-                          Icon(Icons.queue_music, color: AppTheme.primaryColor),
-                      title: Text(name),
-                      subtitle: Text('${songs.length} canciones'),
+                    return LibraryListTile(
+                      leading: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.queue_music,
+                          color: AppTheme.primaryColor,
+                        ),
+                      ),
+                      title: name,
+                      subtitle: '${songs.length} canciones',
                       onTap: () {
                         Navigator.push(
                           context,

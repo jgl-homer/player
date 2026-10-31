@@ -159,14 +159,25 @@ class _PlayerModalContent extends StatefulWidget {
 
 class _PlayerModalContentState extends State<_PlayerModalContent> {
   Future<LyricsResult?>? _lyricsFuture;
-  int? _lastLyricsSongId;
-  LyricsSource? _lastLyricsSource;
+  String? _lyricsRequestKey;
+  int _lyricsRequestRevision = 0;
 
-  void _ensureLyricsLoaded(SongModel song, LyricsSource source) {
-    if (_lastLyricsSongId != song.id || _lastLyricsSource != source) {
-      _lastLyricsSongId = song.id;
-      _lastLyricsSource = source;
-      _lyricsFuture = LyricsService.load(song, source);
+  void _ensureLyricsLoaded(
+      SongModel song, LyricsSource source, bool automaticLyrics) {
+    final requestKey = [
+      song.id,
+      song.data,
+      source.name,
+      automaticLyrics,
+    ].join('|');
+    if (_lyricsRequestKey != requestKey) {
+      _lyricsRequestKey = requestKey;
+      _lyricsRequestRevision++;
+      _lyricsFuture = LyricsService.load(
+        song,
+        source,
+        automatic: automaticLyrics,
+      );
     }
   }
 
@@ -1474,19 +1485,79 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
   }
 
   Widget _buildLyricsSection(SongModel song, AudioProvider audioProvider) {
-    _ensureLyricsLoaded(song, audioProvider.lyricsSource);
+    _ensureLyricsLoaded(
+      song,
+      audioProvider.lyricsSource,
+      audioProvider.automaticLyrics,
+    );
+    final viewKey = '$_lyricsRequestKey|$_lyricsRequestRevision';
     return FutureBuilder<LyricsResult?>(
+      key: ValueKey(viewKey),
       future: _lyricsFuture,
       builder: (context, snapshot) {
-        final result = snapshot.data;
-        if (result?.hasTimestamps != true || result!.lines.isEmpty) {
-          return const SizedBox.shrink();
-        }
+        final finished = snapshot.connectionState == ConnectionState.done;
+        // FutureBuilder retains the previous snapshot while a new future is
+        // pending. Ignore it, but preserve the lyrics slot while the current
+        // song is being resolved.
+        final result = finished ? snapshot.data : null;
         return Padding(
           padding: const EdgeInsets.only(bottom: 6.0),
-          child: _timestampedLyrics(
-            result.lines,
-            audioProvider.positionStream,
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                const SizedBox(width: 36),
+                Expanded(
+                  child: !finished
+                      ? const SizedBox.shrink()
+                      : result == null
+                          ? const Center(
+                              child: Text(
+                                'No se encontraron letras',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white38),
+                              ),
+                            )
+                          : result.hasTimestamps && result.lines.isNotEmpty
+                              ? _timestampedLyrics(
+                                  result.lines,
+                                  audioProvider.positionStream,
+                                )
+                              : SingleChildScrollView(
+                                  child: Text(
+                                    result.text,
+                                    textAlign: TextAlign.center,
+                                    style:
+                                        const TextStyle(color: Colors.white70),
+                                  ),
+                                ),
+                ),
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    tooltip: 'Actualizar letra',
+                    padding: EdgeInsets.zero,
+                    iconSize: 20,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      setState(() {
+                        _lyricsRequestRevision++;
+                        _lyricsFuture = LyricsService.refresh(
+                          song,
+                          audioProvider.lyricsSource,
+                          automatic: true,
+                        );
+                      });
+                    },
+                    icon: Icon(
+                      Icons.refresh_rounded,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },

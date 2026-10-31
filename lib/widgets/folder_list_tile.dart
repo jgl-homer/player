@@ -7,6 +7,7 @@ import '../../providers/audio_provider.dart';
 import '../../services/state_persistence.dart';
 import '../../theme/app_theme.dart';
 import 'folder_info_modal.dart';
+import 'library_list_tile.dart';
 
 class FolderListTile extends StatelessWidget {
   final String folderName;
@@ -24,33 +25,18 @@ class FolderListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final int songCount = songs.length;
     final colors = Theme.of(context).colorScheme;
-    return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+    return LibraryListTile(
       leading: Container(
-        height: 50,
-        width: 50,
+        height: 56,
+        width: 56,
         decoration: BoxDecoration(
           color: colors.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8.0),
         ),
         child: Icon(Icons.folder, color: colors.onSurfaceVariant, size: 30),
       ),
-      title: Text(
-        folderName,
-        style: TextStyle(
-          color: colors.onSurface,
-          fontWeight: FontWeight.w500,
-          fontSize: 16,
-        ),
-      ),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4.0),
-        child: Text(
-          "$songCount Canciones",
-          style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
-        ),
-      ),
+      title: folderName,
+      subtitle: "$songCount Canciones",
       trailing: PopupMenuButton<String>(
         icon: Icon(Icons.more_vert, color: colors.onSurfaceVariant),
         color: colors.surface,

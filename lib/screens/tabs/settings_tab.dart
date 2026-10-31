@@ -10,9 +10,14 @@ import '../../widgets/epicenter_engine_selector.dart';
 import '../../l10n/app_strings.dart';
 import '../../theme/app_theme.dart';
 
-class SettingsTab extends StatelessWidget {
+class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key});
 
+  @override
+  State<SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends State<SettingsTab> {
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
@@ -402,6 +407,18 @@ class SettingsTab extends StatelessWidget {
                   activeThumbColor: AppTheme.primaryColor,
                   activeTrackColor: AppTheme.primaryColor,
                 ),
+                SwitchListTile(
+                  title: const Text('Letras automáticas',
+                      style: TextStyle(color: Colors.white)),
+                  subtitle: const Text(
+                    'Consulta internet solo para la canción actual cuando no está en caché.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  value: audioProvider.automaticLyrics,
+                  onChanged: audioProvider.setAutomaticLyrics,
+                  activeThumbColor: AppTheme.primaryColor,
+                  activeTrackColor: AppTheme.primaryColor,
+                ),
                 ListTile(
                   leading:
                       Icon(Icons.lyrics_outlined, color: AppTheme.primaryColor),
@@ -409,7 +426,7 @@ class SettingsTab extends StatelessWidget {
                       style: TextStyle(color: Colors.white)),
                   subtitle: Text(
                     audioProvider.lyricsSource == LyricsSource.internet
-                        ? 'Predeterminado: busca letras sincronizadas en internet mediante LRCLIB.'
+                        ? 'Busca primero en LiriQo y usa LRCLIB como respaldo.'
                         : 'Requiere letras incrustadas con marcas de tiempo sincronizadas con la canción.',
                     style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
@@ -432,6 +449,69 @@ class SettingsTab extends StatelessWidget {
                       if (value != null) audioProvider.setLyricsSource(value);
                     },
                   ),
+                ),
+                ListTile(
+                  leading: Icon(Icons.manage_search_rounded,
+                      color: AppTheme.primaryColor),
+                  title: const Text('Buscar otra letra'),
+                  subtitle: const Text(
+                      'Descarta la copia guardada y consulta de nuevo.'),
+                  enabled: audioProvider.currentSong != null,
+                  onTap: audioProvider.currentSong == null
+                      ? null
+                      : () async {
+                          final result = await LyricsService.refresh(
+                            audioProvider.currentSong!,
+                            audioProvider.lyricsSource,
+                            automatic: true,
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(result == null
+                                ? 'No se encontró otra letra.'
+                                : 'Letra actualizada desde ${result.provider}.'),
+                          ));
+                        },
+                ),
+                ListTile(
+                  leading:
+                      Icon(Icons.storage_rounded, color: AppTheme.primaryColor),
+                  title: const Text('Caché de letras'),
+                  subtitle: FutureBuilder<int>(
+                    future: LyricsService.cacheSizeBytes(),
+                    builder: (context, snapshot) => Text(
+                      snapshot.hasData
+                          ? _formatBytes(snapshot.data!)
+                          : 'Calculando…',
+                    ),
+                  ),
+                  trailing: const Icon(Icons.delete_outline_rounded),
+                  onTap: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Borrar caché de letras'),
+                        content: const Text(
+                          'Se borrarán únicamente las letras descargadas. La biblioteca y el análisis de audio no cambian.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Cancelar'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('Borrar'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await LyricsService.clearCache();
+                      if (mounted) setState(() {});
+                    }
+                  },
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -500,6 +580,12 @@ class SettingsTab extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
   String _toneControlsSubtitle(AudioProvider audioProvider) {

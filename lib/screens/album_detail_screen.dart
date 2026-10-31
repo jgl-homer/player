@@ -3,11 +3,12 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../utils/title_utils.dart';
 import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
-import '../theme/app_theme.dart';
 import '../widgets/options_menu.dart';
 import '../widgets/smart_artwork.dart';
 import '../widgets/library_sort_menu.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/song_list_tile.dart';
+import '../widgets/library_action_button.dart';
 import '../utils/song_sorting.dart';
 
 const _albumSongSortOptions = <LibrarySortOption>[
@@ -48,6 +49,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final m = (d.inMinutes % 60).toString().padLeft(2, '0');
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
     return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  String _trackNumber(SongModel song, int index) {
+    final rawTrack = song.track ?? 0;
+    final track = rawTrack >= 1000 ? rawTrack % 1000 : rawTrack;
+    final number = track > 0 ? track : index + 1;
+    return number.toString();
   }
 
   @override
@@ -173,7 +181,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: _ActionButton(
+                          child: LibraryActionButton(
                             icon: Icons.play_arrow,
                             label: 'REPRODUCIR TODO',
                             onTap: () => audioProvider.playAlbumSongs(songs, 0,
@@ -182,7 +190,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _ActionButton(
+                          child: LibraryActionButton(
                             icon: Icons.shuffle,
                             label: 'ALEATORIO',
                             onTap: () {
@@ -207,36 +215,11 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                       final duration =
                           Duration(milliseconds: song.duration ?? 0);
 
-                      return ListTile(
-                        leading: SmartArtwork(
-                          albumId: song.albumId ?? albumId,
-                          songPath: song.data,
-                          size: 48,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        title: Text(
-                          TitleUtils.getDisplayTitle(song),
-                          style: TextStyle(
-                            color: isPlaying
-                                ? AppTheme.primaryColor
-                                : Colors.white,
-                            fontWeight:
-                                isPlaying ? FontWeight.bold : FontWeight.normal,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          _formatDuration(duration),
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 12),
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.more_vert, color: Colors.grey),
-                          onPressed: () => showOptionsMenu(
-                              context, audioProvider,
-                              song: song),
-                        ),
+                      return SongListTile(
+                        song: song,
+                        isSelected: isPlaying,
+                        leadingLabel: _trackNumber(song, index),
+                        subtitleText: _formatDuration(duration),
                         onTap: () => audioProvider.playAlbumSongs(songs, index,
                             albumId: albumId),
                       );
@@ -250,42 +233,6 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           ),
           if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
         ],
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ActionButton(
-      {required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: const Color(0xFF2A2A2A),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            const SizedBox(width: 6),
-            Text(label,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5)),
-          ],
-        ),
       ),
     );
   }

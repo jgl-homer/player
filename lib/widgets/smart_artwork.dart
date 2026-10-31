@@ -24,6 +24,7 @@ class SmartArtwork extends StatefulWidget {
 
 class _SmartArtworkState extends State<SmartArtwork> {
   static const _mediaChannel = MethodChannel('com.jglhomer.player/media_utils');
+  static const _fallbackArtworkAsset = 'assets/icon/music_note_fallback.png';
   static const int _maxCacheEntries = 120;
 
   static final Map<String, Uint8List?> _artworkCache = {};
@@ -163,23 +164,11 @@ class _SmartArtworkState extends State<SmartArtwork> {
     return img;
   }
 
-  Widget _placeholder(double s) => Container(
+  Widget _placeholder(double s) => Image.asset(
+        _fallbackArtworkAsset,
         width: s,
         height: s,
-        decoration: BoxDecoration(
-          color: Colors.grey[850],
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.grey[800]!, Colors.grey[900]!],
-          ),
-        ),
-        child: Center(
-          child: Icon(
-            widget.type == ArtworkType.ALBUM ? Icons.album : Icons.music_note,
-            color: Colors.grey[600],
-            size: s * 0.35,
-          ),
-        ),
+        fit: BoxFit.cover,
+        filterQuality: s > 200 ? FilterQuality.high : FilterQuality.medium,
       );
 }

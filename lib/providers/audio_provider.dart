@@ -38,7 +38,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const String _cachedSongsKey = 'cached_library_songs_v1';
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
   static const String _fallbackArtworkAsset =
-      'assets/icon/music_note_fallback.png';
+      'assets/icon/music_note_fallback_notification.png';
   static const String _androidTrackNumberKey =
       'android.media.metadata.TRACK_NUMBER';
   static const String _androidTotalTracksKey =
@@ -76,6 +76,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Map<String, List<String>> _savedPlaylists = {};
   LyricsSource _lyricsSource = LyricsSource.internet;
   bool _lyricsVisible = true;
+  bool _automaticLyrics = true;
   DateTime? _lastTapTime;
   Timer? _libraryRefreshDebounce;
   Timer? _saveDebounce; // Bug #3: debounce para _savePlaybackState
@@ -156,6 +157,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       Map.unmodifiable(_savedPlaylists);
   LyricsSource get lyricsSource => _lyricsSource;
   bool get lyricsVisible => _lyricsVisible;
+  bool get automaticLyrics => _automaticLyrics;
   bool get isSyncing => _isSyncing;
   int get recentSongsLimit => _recentSongsLimit;
   int get minimumSongDurationSeconds => _minimumSongDurationSeconds;
@@ -2835,6 +2837,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _loadPlaybackState() async {
     _lyricsSource = await StatePersistence.loadLyricsSource();
     _lyricsVisible = await StatePersistence.loadLyricsVisible();
+    _automaticLyrics = await StatePersistence.loadAutomaticLyrics();
     _favoriteIds = await StatePersistence.loadFavorites();
     final state = await StatePersistence.loadPlaybackState();
     final mode = state['mode'] as PlaybackMode;
@@ -3003,8 +3006,14 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setLyricsSource(LyricsSource source) async {
     if (_lyricsSource == source) return;
     _lyricsSource = source;
-    LyricsService.clearCache();
     await StatePersistence.saveLyricsSource(source);
+    notifyListeners();
+  }
+
+  Future<void> setAutomaticLyrics(bool enabled) async {
+    if (_automaticLyrics == enabled) return;
+    _automaticLyrics = enabled;
+    await StatePersistence.saveAutomaticLyrics(enabled);
     notifyListeners();
   }
 

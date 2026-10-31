@@ -7,6 +7,7 @@ import '../../../utils/title_utils.dart';
 import '../artist_detail_screen.dart';
 import '../../../widgets/smart_artwork.dart';
 import '../../../widgets/count_banner.dart';
+import '../../../widgets/library_list_tile.dart';
 
 class ArtistsTab extends StatelessWidget {
   const ArtistsTab({super.key});
@@ -65,30 +66,22 @@ class ArtistsTab extends StatelessWidget {
               final artistSongs = entry.value;
               final first = artistSongs.first;
 
-              return ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              return LibraryListTile(
                 leading: ClipRRect(
                   borderRadius: BorderRadius.circular(40),
                   child: SmartArtwork(
                     albumId: first.albumId ?? 0,
                     songPath: first.data,
-                    size: 50,
+                    size: 56,
                     borderRadius: BorderRadius.circular(40),
                   ),
                 ),
-                title: Text(
-                  artistName,
-                  style: const TextStyle(
-                      color: Colors.white, fontWeight: FontWeight.w500),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                title: artistName,
+                subtitle: '${artistSongs.length} canciones',
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
-                subtitle: Text(
-                  '${artistSongs.length} canciones',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-                trailing: const Icon(Icons.chevron_right, color: Colors.grey),
                 onTap: () {
                   Navigator.push(
                     context,

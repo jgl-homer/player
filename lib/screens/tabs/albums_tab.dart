@@ -6,6 +6,7 @@ import '../../../providers/audio_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/title_utils.dart';
 import '../../../widgets/count_banner.dart';
+import '../../../widgets/library_list_tile.dart';
 import '../../../widgets/smart_artwork.dart';
 import '../album_detail_screen.dart';
 
@@ -63,40 +64,33 @@ class AlbumsTab extends StatelessWidget {
             itemCount: albums.length,
             itemBuilder: (context, index) {
               final album = albums[index];
-              return ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              return LibraryListTile(
                 leading: ClipRRect(
-                  borderRadius: BorderRadius.circular(4.0),
+                  borderRadius: BorderRadius.circular(5),
                   child: album.artworkId == null
                       ? Container(
-                          height: 50,
-                          width: 50,
-                          color: Colors.grey[800],
-                          child: const Icon(Icons.album, color: Colors.grey),
+                          height: 56,
+                          width: 56,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                          child: Icon(
+                            Icons.album,
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                         )
                       : SmartArtwork(
                           albumId: album.artworkId!,
                           songPath: album.songs.first.data,
                           type: ArtworkType.ALBUM,
-                          size: 50,
+                          size: 56,
+                          borderRadius: BorderRadius.circular(5),
                         ),
                 ),
-                title: Text(
-                  album.albumName,
-                  style: const TextStyle(
-                    color: AppTheme.textMain,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  "${album.artistName} • ${album.songs.length} Canciones",
-                  style: const TextStyle(color: AppTheme.textSecondary),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                title: album.albumName,
+                subtitle:
+                    "${album.artistName} • ${album.songs.length} Canciones",
                 onTap: () {
                   Navigator.push(
                     context,

@@ -15,6 +15,8 @@ class SongListTile extends StatelessWidget {
   final bool isSelected;
   final bool showTrailing;
   final String? subtitleSuffix;
+  final String? subtitleText;
+  final String? leadingLabel;
 
   // Selección múltiple
   final bool isSelectionMode;
@@ -29,6 +31,8 @@ class SongListTile extends StatelessWidget {
     this.isSelected = false,
     this.showTrailing = true,
     this.subtitleSuffix,
+    this.subtitleText,
+    this.leadingLabel,
     this.isSelectionMode = false,
     this.isChecked = false,
     this.onLongPress,
@@ -45,6 +49,15 @@ class SongListTile extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     // Bug #5 fix: usa TitleUtils.getDisplayArtist para cubrir <unknown>, null, undefined, etc.
     final String displayArtist = TitleUtils.getDisplayArtist(song.artist);
+    final artwork = SmartArtwork(
+      albumId: song.albumId ?? song.id,
+      songPath: song.data,
+      type: ArtworkType.AUDIO,
+      size: 56,
+      borderRadius: BorderRadius.circular(5.0),
+    );
+    final subtitle = subtitleText ??
+        "$displayArtist • ${_formatDuration(song.duration)}${subtitleSuffix == null ? '' : ' • $subtitleSuffix'}";
 
     return GestureDetector(
       onLongPress: onLongPress,
@@ -82,16 +95,36 @@ class SongListTile extends StatelessWidget {
                   ),
                 ),
               )
-            : ClipRRect(
-                borderRadius: BorderRadius.circular(5.0),
-                child: SmartArtwork(
-                  albumId: song.id,
-                  songPath: song.data,
-                  type: ArtworkType.AUDIO,
-                  size: 56,
-                  borderRadius: BorderRadius.circular(5.0),
-                ),
-              ),
+            : leadingLabel == null
+                ? artwork
+                : SizedBox(
+                    width: 88,
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 24,
+                          child: Text(
+                            leadingLabel!,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? AppTheme.primaryColor
+                                  : colors.onSurfaceVariant,
+                              fontSize: 12,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        artwork,
+                      ],
+                    ),
+                  ),
         title: Text(
           displayTitle,
           maxLines: 1,
@@ -107,7 +140,7 @@ class SongListTile extends StatelessWidget {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 2.0),
           child: Text(
-            "$displayArtist • ${_formatDuration(song.duration)}${subtitleSuffix == null ? '' : ' • $subtitleSuffix'}",
+            subtitle,
             style: TextStyle(color: colors.onSurfaceVariant, fontSize: 13),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

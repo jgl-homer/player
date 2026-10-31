@@ -2,12 +2,21 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 class LibraryDatabase {
-  LibraryDatabase._();
+  final DatabaseFactory _factory;
+  final String? databasePath;
+
+  LibraryDatabase._({DatabaseFactory? factory, this.databasePath})
+      : _factory = factory ?? databaseFactory;
+
+  LibraryDatabase.forTesting({
+    required DatabaseFactory factory,
+    required String databasePath,
+  }) : this._(factory: factory, databasePath: databasePath);
 
   static final LibraryDatabase instance = LibraryDatabase._();
 
   static const String _databaseName = 'library_index.db';
-  static const int _databaseVersion = 3;
+  static const int _databaseVersion = 4;
   static const String tableLibraryIndex = 'library_index';
 
   Database? _database;
@@ -19,21 +28,23 @@ class LibraryDatabase {
   }
 
   Future<Database> _openDatabase() async {
-    final databasesPath = await getDatabasesPath();
-    final path = p.join(databasesPath, _databaseName);
+    final databasesPath = await _factory.getDatabasesPath();
+    final path = databasePath ?? p.join(databasesPath, _databaseName);
 
-    return openDatabase(
+    return _factory.openDatabase(
       path,
-      version: _databaseVersion,
-      onConfigure: (db) async {
-        await db.execute('PRAGMA foreign_keys = ON');
-      },
-      onCreate: (db, version) async {
-        await _createSchema(db);
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        await _runMigrations(db, oldVersion, newVersion);
-      },
+      options: OpenDatabaseOptions(
+        version: _databaseVersion,
+        onConfigure: (db) async {
+          await db.execute('PRAGMA foreign_keys = ON');
+        },
+        onCreate: (db, version) async {
+          await _createSchema(db);
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          await _runMigrations(db, oldVersion, newVersion);
+        },
+      ),
     );
   }
 
@@ -48,6 +59,8 @@ class LibraryDatabase {
         title TEXT,
         artist TEXT,
         album TEXT,
+        album_id INTEGER,
+        track_number INTEGER,
         duration INTEGER,
         bitrate INTEGER,
         format TEXT,
@@ -72,27 +85,32 @@ class LibraryDatabase {
     int newVersion,
   ) async {
     if (oldVersion < 2) {
-      await db.execute('DROP TABLE IF EXISTS $tableLibraryIndex');
-      await _createSchema(db);
-      return;
+      await _addColumnIfMissing(db, 'size_bytes', 'INTEGER');
+      await _addColumnIfMissing(db, 'date_modified', 'INTEGER');
+      await _addColumnIfMissing(db, 'folder_path', 'TEXT');
+      await _addColumnIfMissing(db, 'display_name', 'TEXT');
     }
     if (oldVersion < 3) {
-      await db.execute(
-        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_track_gain REAL',
-      );
-      await db.execute(
-        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_track_peak REAL',
-      );
-      await db.execute(
-        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_album_gain REAL',
-      );
-      await db.execute(
-        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_album_peak REAL',
-      );
-      await db.execute(
-        'ALTER TABLE $tableLibraryIndex ADD COLUMN replaygain_scanned INTEGER NOT NULL DEFAULT 0',
-      );
+      await _addColumnIfMissing(db, 'replaygain_track_gain', 'REAL');
+      await _addColumnIfMissing(db, 'replaygain_track_peak', 'REAL');
+      await _addColumnIfMissing(db, 'replaygain_album_gain', 'REAL');
+      await _addColumnIfMissing(db, 'replaygain_album_peak', 'REAL');
+      await _addColumnIfMissing(
+          db, 'replaygain_scanned', 'INTEGER NOT NULL DEFAULT 0');
     }
+    if (oldVersion < 4) {
+      await _addColumnIfMissing(db, 'album_id', 'INTEGER');
+      await _addColumnIfMissing(db, 'track_number', 'INTEGER');
+    }
+  }
+
+  Future<void> _addColumnIfMissing(
+      Database db, String column, String declaration) async {
+    final columns = await db.rawQuery('PRAGMA table_info($tableLibraryIndex)');
+    if (columns.any((row) => row['name'] == column)) return;
+    await db.execute(
+      'ALTER TABLE $tableLibraryIndex ADD COLUMN $column $declaration',
+    );
   }
 
   Future<void> close() async {
@@ -120,6 +138,8 @@ class LibraryDatabase {
       "title": songInfo["title"],
       "artist": songInfo["artist"],
       "album": songInfo["album"],
+      "album_id": songInfo["album_id"],
+      "track_number": songInfo["track"],
       "duration": songInfo["duration"],
       "bitrate":
           null, // not natively provided by on_audio_query in this map without extra flags
@@ -138,6 +158,8 @@ class LibraryDatabase {
       "title": row['title'],
       "artist": row['artist'],
       "album": row['album'],
+      "album_id": row['album_id'],
+      "track": row['track_number'],
       "duration": row['duration'],
       "file_extension": row['format'],
       "_display_name": row['display_name'],
@@ -208,6 +230,8 @@ class LibraryDatabase {
         'title',
         'artist',
         'album',
+        'album_id',
+        'track_number',
         'duration',
         'format',
         'display_name',

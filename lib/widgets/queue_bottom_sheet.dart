@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../utils/title_utils.dart';
+import '../utils/duration_utils.dart';
 import '../theme/app_theme.dart';
 import 'smart_artwork.dart';
 import '../providers/audio_provider.dart';
@@ -38,11 +39,12 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final queue = audioProvider.currentPlaybackOrder;
+    final colors = Theme.of(context).colorScheme;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.only(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(25),
           topRight: Radius.circular(25),
         ),
@@ -59,16 +61,16 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
             ),
           ),
           const SizedBox(height: 20),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Icon(Icons.queue_music, color: Colors.white, size: 28),
-                SizedBox(width: 12),
+                Icon(Icons.queue_music, color: colors.onSurface, size: 28),
+                const SizedBox(width: 12),
                 Text(
                   'Cola de reproducción',
                   style: TextStyle(
-                      color: Colors.white,
+                      color: colors.onSurface,
                       fontSize: 20,
                       fontWeight: FontWeight.bold),
                 ),
@@ -96,33 +98,34 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                   key: ValueKey(
                     '${song.id}_${song.data}_${audioProvider.queueIndexForPlaybackOrder(index)}',
                   ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  leading: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: SmartArtwork(
-                      albumId: song.id,
-                      songPath: song.data,
-                      type: ArtworkType.AUDIO,
-                      size: 50,
-                    ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  leading: SmartArtwork(
+                    albumId: song.albumId ?? song.id,
+                    songPath: song.data,
+                    type: ArtworkType.AUDIO,
+                    size: 56,
+                    borderRadius: BorderRadius.circular(5),
                   ),
                   title: Text(
                     TitleUtils.getDisplayTitle(song),
                     style: TextStyle(
-                      color: isPlaying ? AppTheme.primaryColor : Colors.white,
-                      fontWeight:
-                          isPlaying ? FontWeight.bold : FontWeight.normal,
+                      color:
+                          isPlaying ? AppTheme.primaryColor : colors.onSurface,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text(
-                    TitleUtils.getDisplayArtist(song.artist),
+                    '${TitleUtils.getDisplayArtist(song.artist)} • ${DurationUtils.formatMilliseconds(song.duration)}',
                     style: TextStyle(
                         color: isPlaying
-                            ? AppTheme.primaryColor.withOpacity(0.7)
-                            : Colors.white54,
+                            ? AppTheme.primaryColor.withValues(alpha: 0.7)
+                            : colors.onSurfaceVariant,
                         fontSize: 13),
                     maxLines: 1,
                   ),
@@ -134,14 +137,14 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                             color: AppTheme.primaryColor, size: 20),
                       ReorderableDragStartListener(
                         index: index,
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 12,
                           ),
                           child: Icon(
                             Icons.drag_handle_rounded,
-                            color: Colors.white54,
+                            color: colors.onSurfaceVariant,
                             size: 22,
                           ),
                         ),
@@ -149,8 +152,8 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                       // Botón de eliminación — solo quita de la cola activa,
                       // nunca borra el archivo físico del almacenamiento.
                       IconButton(
-                        icon: const Icon(Icons.delete_outline,
-                            color: Colors.white38),
+                        icon: Icon(Icons.delete_outline,
+                            color: colors.onSurfaceVariant),
                         tooltip: 'Quitar de la cola',
                         onPressed: () => audioProvider.removeFromQueue(
                           audioProvider.queueIndexForPlaybackOrder(index),
