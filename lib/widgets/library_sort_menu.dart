@@ -56,14 +56,14 @@ class LibrarySortMenu extends StatelessWidget {
   ) async {
     final chosen = await showModalBottomSheet<String>(
       context: context,
-      backgroundColor: const Color(0xFF222222),
-      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      showDragHandle: false,
       isScrollControlled: true,
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.82,
       ),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) => SafeArea(
         top: false,
@@ -71,79 +71,183 @@ class LibrarySortMenu extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 4, 24, 18),
-              child: Text(
-                'Ordenar por',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                margin: const EdgeInsets.only(top: 12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(99),
                 ),
               ),
             ),
-            const Divider(height: 1, color: Colors.white12),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .primary
+                          .withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(Icons.tune_rounded,
+                        color: Theme.of(context).colorScheme.primary),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Ordenar biblioteca',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'Elige cómo quieres ver tus canciones',
+                          style: TextStyle(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (showIgnoreArticles)
-              SwitchListTile(
-                value: ignoreArticles,
-                onChanged: (enabled) {
-                  onIgnoreArticlesChanged?.call(enabled);
-                  Navigator.pop(sheetContext);
-                },
-                secondary: const Icon(
-                  Icons.format_clear_rounded,
-                  color: Colors.white70,
-                ),
-                title: const Text(
-                  'Ignorar artículos',
-                  style: TextStyle(color: Colors.white),
-                ),
-                subtitle: const Text(
-                  'El, La, Los, Las, Un, Una, A, An, The…',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest
+                        .withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: SwitchListTile(
+                    value: ignoreArticles,
+                    onChanged: (enabled) {
+                      onIgnoreArticlesChanged?.call(enabled);
+                      Navigator.pop(sheetContext);
+                    },
+                    secondary: Icon(
+                      Icons.format_clear_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(
+                      'Ignorar artículos',
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurface),
+                    ),
+                    subtitle: Text(
+                      'El, La, Los, Las, Un, Una, A, An, The…',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                    activeThumbColor: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
               ),
-            if (showIgnoreArticles)
-              const Divider(height: 1, color: Colors.white12),
             Flexible(
               child: ListView.builder(
                 shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 18),
                 itemCount: options.length,
                 itemBuilder: (context, index) {
                   final option = options[index];
                   final isSelected = option.matches(value);
                   final isDescending = option.reverseValue == value;
-                  final color = isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.white70;
-                  return ListTile(
-                    minTileHeight: 58,
-                    leading: Icon(
-                      isSelected
-                          ? (isDescending
-                              ? Icons.arrow_downward_rounded
-                              : Icons.arrow_upward_rounded)
-                          : option.icon,
-                      color: color,
-                      size: 25,
-                    ),
-                    title: Text(
-                      option.label,
-                      style: TextStyle(
-                        color: isSelected ? color : Colors.white,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.normal,
+                  final colors = Theme.of(context).colorScheme;
+                  final color =
+                      isSelected ? colors.primary : colors.onSurfaceVariant;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Material(
+                      color: isSelected
+                          ? colors.primary.withValues(alpha: 0.12)
+                          : colors.surfaceContainerHighest
+                              .withValues(alpha: 0.38),
+                      borderRadius: BorderRadius.circular(16),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () {
+                          final nextValue =
+                              isSelected && option.reverseValue != null
+                                  ? (isDescending
+                                      ? option.value
+                                      : option.reverseValue!)
+                                  : option.value;
+                          Navigator.pop(sheetContext, nextValue);
+                        },
+                        child: Container(
+                          constraints: const BoxConstraints(minHeight: 62),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 9),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isSelected
+                                  ? colors.primary.withValues(alpha: 0.55)
+                                  : Colors.transparent,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 42,
+                                height: 42,
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.13),
+                                  borderRadius: BorderRadius.circular(13),
+                                ),
+                                child:
+                                    Icon(option.icon, color: color, size: 22),
+                              ),
+                              const SizedBox(width: 13),
+                              Expanded(
+                                child: Text(
+                                  option.label,
+                                  style: TextStyle(
+                                    color: isSelected
+                                        ? colors.primary
+                                        : colors.onSurface,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (isSelected)
+                                Icon(
+                                  isDescending
+                                      ? Icons.south_rounded
+                                      : Icons.north_rounded,
+                                  color: colors.primary,
+                                  size: 20,
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                    selected: isSelected,
-                    selectedTileColor: Colors.white.withValues(alpha: 0.06),
-                    onTap: () {
-                      final nextValue = isSelected &&
-                              option.reverseValue != null
-                          ? (isDescending ? option.value : option.reverseValue!)
-                          : option.value;
-                      Navigator.pop(sheetContext, nextValue);
-                    },
                   );
                 },
               ),

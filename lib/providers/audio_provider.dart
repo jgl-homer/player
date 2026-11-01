@@ -73,6 +73,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const _mediaSessionButtonDebounce = Duration(milliseconds: 750);
   SongModel? _currentSong;
   Set<int> _favoriteIds = {};
+  Map<int, int> _favoriteAddedAt = {};
   Map<String, List<String>> _savedPlaylists = {};
   LyricsSource _lyricsSource = LyricsSource.internet;
   bool _lyricsVisible = true;
@@ -153,6 +154,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Stream<Duration> get positionStream => _playback.positionStream;
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
+  int favoriteAddedAt(int songId) => _favoriteAddedAt[songId] ?? 0;
   Map<String, List<String>> get savedPlaylists =>
       Map.unmodifiable(_savedPlaylists);
   LyricsSource get lyricsSource => _lyricsSource;
@@ -218,6 +220,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool get replayGainEnabled => _effects.replayGainEnabled;
   ReplayGainMode get replayGainMode => _effects.replayGainMode;
   bool get currentReplayGainAvailable => _effects.currentReplayGainAvailable;
+  double get volumeBoostDb => _effects.volumeBoostDb;
   double get playbackSpeed => _effects.playbackSpeed;
   double get playbackPitchSemitones => _effects.playbackPitchSemitones;
 
@@ -883,6 +886,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _globalQueue = List.from(_allSongs);
     _allAlbums = freshAlbums;
     _favoriteIds.removeWhere((id) => !freshIds.contains(id));
+    _favoriteAddedAt.removeWhere((id, _) => !freshIds.contains(id));
 
     if (_currentPlaylist.isEmpty || _playbackMode == PlaybackMode.global) {
       _currentPlaylist = _globalQueue;
@@ -1136,6 +1140,9 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _effects.setReplayGainMode(mode, _currentSong);
 
   Future<void> resetToneControls() => _effects.resetToneControls();
+
+  Future<void> setVolumeBoostDb(double gainDb) =>
+      _effects.setVolumeBoostDb(gainDb);
 
   Future<void> setLibrarySortMode(String tabId, String mode) async {
     if (_librarySortModes[tabId] == mode) return;
@@ -2085,12 +2092,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool isFavorite(int songId) => _favoriteIds.contains(songId);
 
   Future<void> toggleFavorite(SongModel song) async {
-    _favoriteIds.contains(song.id)
-        ? _favoriteIds.remove(song.id)
-        : _favoriteIds.add(song.id);
+    if (_favoriteIds.remove(song.id)) {
+      _favoriteAddedAt.remove(song.id);
+    } else {
+      _favoriteIds.add(song.id);
+      _favoriteAddedAt[song.id] = DateTime.now().millisecondsSinceEpoch;
+    }
     notifyListeners();
-    await StatePersistence.saveFavorites(_favoriteIds);
+    await _saveFavoritesState();
   }
+
+  Future<void> _saveFavoritesState() => Future.wait([
+        StatePersistence.saveFavorites(_favoriteIds),
+        StatePersistence.saveFavoriteAddedAt(_favoriteAddedAt),
+      ]);
 
   Future<void> createPlaylist(String name, List<SongModel> songs) async {
     final trimmedName = name.trim();
@@ -2177,10 +2192,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<int> importFavoritesM3u8(File file) async {
     final imported = await _songsFromM3u8(file);
     if (imported.isEmpty) return 0;
+    var timestamp = DateTime.now().millisecondsSinceEpoch;
     for (final song in imported) {
       _favoriteIds.add(song.id);
+      _favoriteAddedAt.putIfAbsent(song.id, () => timestamp++);
     }
-    await StatePersistence.saveFavorites(_favoriteIds);
+    await _saveFavoritesState();
     notifyListeners();
     return imported.length;
   }
@@ -2478,6 +2495,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _folderQueue.removeWhere((s) => s.id == song.id);
         _currentPlaylist.removeWhere((s) => s.id == song.id);
         _favoriteIds.remove(song.id);
+        _favoriteAddedAt.remove(song.id);
 
         if (_currentPlaylist.isEmpty) {
           await stop();
@@ -2509,7 +2527,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           );
         }
 
-        await StatePersistence.saveFavorites(_favoriteIds);
+        await _saveFavoritesState();
         await _saveLibraryCache();
         _ignoreMediaChangesUntil =
             DateTime.now().add(const Duration(seconds: 3));
@@ -2839,6 +2857,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _lyricsVisible = await StatePersistence.loadLyricsVisible();
     _automaticLyrics = await StatePersistence.loadAutomaticLyrics();
     _favoriteIds = await StatePersistence.loadFavorites();
+    _favoriteAddedAt = await StatePersistence.loadFavoriteAddedAt()
+      ..removeWhere((id, _) => !_favoriteIds.contains(id));
     final state = await StatePersistence.loadPlaybackState();
     final mode = state['mode'] as PlaybackMode;
     final folderPath = state['folderPath'] as String?;

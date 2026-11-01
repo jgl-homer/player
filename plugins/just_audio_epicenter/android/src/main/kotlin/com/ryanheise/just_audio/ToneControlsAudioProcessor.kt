@@ -27,12 +27,14 @@ object ToneControlsProcessorController {
         replayGainEnabled: Boolean,
         replayGainDb: Float,
         replayPeak: Float,
+        volumeBoostDb: Float = 0f,
     ) = processor.setControls(
         equalizerEnabled,
         bandGainsDb,
         replayGainEnabled,
         replayGainDb,
         replayPeak,
+        volumeBoostDb,
     )
 }
 
@@ -43,6 +45,7 @@ class ToneControlsAudioProcessor : BaseAudioProcessor() {
         val replayGainEnabled: Boolean = false,
         val replayGainDb: Float = 0f,
         val replayPeak: Float = 0f,
+        val volumeBoostDb: Float = 0f,
         val revision: Int = 0,
     )
 
@@ -75,6 +78,7 @@ class ToneControlsAudioProcessor : BaseAudioProcessor() {
         replayGainEnabled: Boolean,
         replayGainDb: Float,
         replayPeak: Float,
+        volumeBoostDb: Float = 0f,
     ) {
         val safeBands = FloatArray(TONE_BAND_COUNT)
         for (index in safeBands.indices) {
@@ -91,6 +95,8 @@ class ToneControlsAudioProcessor : BaseAudioProcessor() {
                 ?.coerceIn(-24f, 12f) ?: 0f,
             replayPeak = replayPeak.takeIf { it.isFinite() && it > 0f }
                 ?.coerceAtMost(8f) ?: 0f,
+            volumeBoostDb = volumeBoostDb.takeIf { it.isFinite() }
+                ?.coerceIn(0f, 6.0206f) ?: 0f,
             revision = previous.revision + 1,
         )
     }
@@ -252,10 +258,11 @@ class ToneControlsAudioProcessor : BaseAudioProcessor() {
             replayDb = min(replayDb, peakSafeDb)
         }
         val hasReplayGain = state.replayGainEnabled && abs(replayDb) > 0.001f
+        val hasVolumeBoost = state.volumeBoostDb > 0.001f
         val automaticEqHeadroomDb = maxPositiveEqDb * 0.75f
-        inputGainTarget = 10.0.pow(((replayDb - automaticEqHeadroomDb) / 20f).toDouble())
+        inputGainTarget = 10.0.pow(((replayDb + state.volumeBoostDb - automaticEqHeadroomDb) / 20f).toDouble())
             .toFloat()
-        processingRequested = hasEq || hasReplayGain
+        processingRequested = hasEq || hasReplayGain || hasVolumeBoost
         wetTarget = if (processingRequested) 1f else 0f
         if (processingRequested) bypassed = false
     }

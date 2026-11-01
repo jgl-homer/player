@@ -29,6 +29,7 @@ void main() {
     expect(await StatePersistence.loadEqualizerBandGains(), [0, 0, 0, 0, 0]);
     expect(await StatePersistence.loadReplayGainEnabled(), isFalse);
     expect(await StatePersistence.loadReplayGainMode(), ReplayGainMode.track);
+    expect(await StatePersistence.loadVolumeBoostDb(), 0.0);
 
     await StatePersistence.saveEqualizerSettings(
       enabled: true,
@@ -42,6 +43,8 @@ void main() {
     expect(await StatePersistence.loadEqualizerBandGains(), [6, 2, 0, -2, -6]);
     expect(await StatePersistence.loadReplayGainEnabled(), isTrue);
     expect(await StatePersistence.loadReplayGainMode(), ReplayGainMode.album);
+    await StatePersistence.saveVolumeBoostDb(50);
+    expect(await StatePersistence.loadVolumeBoostDb(), closeTo(6.0206, 0.0001));
   });
 
   test('library sorting and playback rate persist with safe bounds', () async {
@@ -94,6 +97,18 @@ void main() {
         await StatePersistence.loadHiddenSongPaths(), {'/music/private.mp3'});
     expect(await StatePersistence.loadHiddenFolderPaths(), {'/music/hidden'});
     expect(await StatePersistence.loadCrossfadeSeconds(), 12);
+  });
+
+  test('favorite addition timestamps persist and reject malformed data',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    await StatePersistence.saveFavoriteAddedAt({4: 1000, 9: 2000});
+    expect(await StatePersistence.loadFavoriteAddedAt(), {4: 1000, 9: 2000});
+
+    SharedPreferences.setMockInitialValues({
+      'favorite_added_at_v1': '{"bad":"value"}',
+    });
+    expect(await StatePersistence.loadFavoriteAddedAt(), isEmpty);
   });
 
   test('engine selection persists independently of tuning and enabled state',

@@ -64,8 +64,18 @@ class FavoritesTab extends StatelessWidget {
               TitleUtils.getDisplayTitle(b), TitleUtils.getDisplayTitle(a)),
           'artist_asc' => compareText(TitleUtils.getDisplayArtist(a.artist),
               TitleUtils.getDisplayArtist(b.artist)),
-          'newest' => (b.dateModified ?? 0).compareTo(a.dateModified ?? 0),
-          'oldest' => (a.dateModified ?? 0).compareTo(b.dateModified ?? 0),
+          'file_name_asc' => compareText(
+              a.data.replaceAll('\\', '/').split('/').last,
+              b.data.replaceAll('\\', '/').split('/').last),
+          'file_name_desc' => compareText(
+              b.data.replaceAll('\\', '/').split('/').last,
+              a.data.replaceAll('\\', '/').split('/').last),
+          'favorite_added_desc' => audioProvider
+              .favoriteAddedAt(b.id)
+              .compareTo(audioProvider.favoriteAddedAt(a.id)),
+          'favorite_added_asc' => audioProvider
+              .favoriteAddedAt(a.id)
+              .compareTo(audioProvider.favoriteAddedAt(b.id)),
           _ => compareText(
               TitleUtils.getDisplayTitle(a), TitleUtils.getDisplayTitle(b)),
         };

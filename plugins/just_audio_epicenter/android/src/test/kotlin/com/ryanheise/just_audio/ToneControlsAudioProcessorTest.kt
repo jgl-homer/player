@@ -44,6 +44,19 @@ class ToneControlsAudioProcessorTest {
     }
 
     @Test
+    fun volumeBoostReachesTwoHundredPercentAndLimiterProtectsPeaks() {
+        val processor = configured(C.ENCODING_PCM_FLOAT)
+        processor.setControls(false, FloatArray(5), false, 0f, 0f, 6.0206f)
+        var quiet = FloatArray(2048)
+        repeat(60) { quiet = processFloat(processor, 1024, 0.2f, 0.2f) }
+        assertEquals(0.4f, quiet[quiet.size - 1], 0.006f)
+
+        var loud = FloatArray(2048)
+        repeat(60) { loud = processFloat(processor, 1024, 0.8f, 0.8f) }
+        assertTrue(abs(loud[loud.size - 1]) <= 0.981f)
+    }
+
+    @Test
     fun limiterIsStereoLinkedAndStaysBelowCeiling() {
         val processor = configured(C.ENCODING_PCM_FLOAT)
         processor.setControls(false, FloatArray(5), true, 12f, 0f)

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import android.widget.RemoteViews
 
 class MusicWidgetProvider : AppWidgetProvider() {
@@ -18,6 +19,7 @@ class MusicWidgetProvider : AppWidgetProvider() {
         const val ACTION_PLAY_PAUSE = "com.jglhomer.player.WIDGET_PLAY_PAUSE"
         const val ACTION_NEXT = "com.jglhomer.player.WIDGET_NEXT"
         const val PREFS_NAME = "HomeWidgetPreferences"
+        private const val MAX_ARTWORK_SIZE = 384
 
         fun updateWidget(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
@@ -59,12 +61,20 @@ class MusicWidgetProvider : AppWidgetProvider() {
         try {
             val artPath = prefs.getString("artPath", null)
             if (artPath != null) {
-                val bitmap: Bitmap = BitmapFactory.decodeFile(artPath)
-                views.setImageViewBitmap(R.id.widget_artwork, bitmap)
+                val bitmap = decodeWidgetArtwork(artPath)
+                if (bitmap != null) {
+                    views.setImageViewBitmap(R.id.widget_artwork, bitmap)
+                } else {
+                    views.setImageViewResource(R.id.widget_artwork, R.mipmap.ic_launcher)
+                }
             } else {
                 views.setImageViewResource(R.id.widget_artwork, R.mipmap.ic_launcher)
             }
-        } catch (e: Exception) {
+        } catch (error: Exception) {
+            Log.w("MusicWidget", "No se pudo preparar la carátula", error)
+            views.setImageViewResource(R.id.widget_artwork, R.mipmap.ic_launcher)
+        } catch (error: OutOfMemoryError) {
+            Log.w("MusicWidget", "Carátula demasiado grande", error)
             views.setImageViewResource(R.id.widget_artwork, R.mipmap.ic_launcher)
         }
 
@@ -92,6 +102,58 @@ class MusicWidgetProvider : AppWidgetProvider() {
         views.setOnClickPendingIntent(R.id.widget_title, openPending)
         views.setOnClickPendingIntent(R.id.widget_artwork, openPending)
 
-        manager.updateAppWidget(widgetId, views)
+        try {
+            manager.updateAppWidget(widgetId, views)
+        } catch (error: IllegalArgumentException) {
+            // Algunos fabricantes imponen un límite especialmente bajo a los
+            // bitmaps de RemoteViews. Reintentar sin portada mantiene vivo el
+            // receptor y evita que Android cierre toda la aplicación.
+            Log.w("MusicWidget", "El widget rechazó la carátula; usando respaldo", error)
+            val fallback = RemoteViews(context.packageName, R.layout.widget_layout).apply {
+                setTextViewText(R.id.widget_title, title)
+                setTextViewText(R.id.widget_artist, artist)
+                setImageViewResource(R.id.widget_artwork, R.mipmap.ic_launcher)
+                setImageViewResource(R.id.widget_btn_play_pause, playIcon)
+                setOnClickPendingIntent(R.id.widget_btn_previous, makePendingIntent(ACTION_PREVIOUS))
+                setOnClickPendingIntent(R.id.widget_btn_play_pause, makePendingIntent(ACTION_PLAY_PAUSE))
+                setOnClickPendingIntent(R.id.widget_btn_next, makePendingIntent(ACTION_NEXT))
+                setOnClickPendingIntent(R.id.widget_title, openPending)
+                setOnClickPendingIntent(R.id.widget_artwork, openPending)
+            }
+            manager.updateAppWidget(widgetId, fallback)
+        }
+    }
+
+    private fun decodeWidgetArtwork(path: String): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        var sampleSize = 1
+        while (bounds.outWidth / sampleSize > MAX_ARTWORK_SIZE * 2 ||
+            bounds.outHeight / sampleSize > MAX_ARTWORK_SIZE * 2
+        ) {
+            sampleSize *= 2
+        }
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = BitmapFactory.decodeFile(path, options) ?: return null
+        if (decoded.width <= MAX_ARTWORK_SIZE && decoded.height <= MAX_ARTWORK_SIZE) {
+            return decoded
+        }
+        val scale = minOf(
+            MAX_ARTWORK_SIZE.toFloat() / decoded.width,
+            MAX_ARTWORK_SIZE.toFloat() / decoded.height,
+        )
+        val scaled = Bitmap.createScaledBitmap(
+            decoded,
+            (decoded.width * scale).toInt().coerceAtLeast(1),
+            (decoded.height * scale).toInt().coerceAtLeast(1),
+            true,
+        )
+        if (scaled !== decoded) decoded.recycle()
+        return scaled
     }
 }

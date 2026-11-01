@@ -360,6 +360,7 @@ class MainActivity : AudioServiceActivity() {
             replayGainEnabled = params["replayGainEnabled"] as? Boolean ?: false,
             replayGainDb = (params["replayGainDb"] as? Number)?.toFloat() ?: 0f,
             replayPeak = (params["replayPeak"] as? Number)?.toFloat() ?: 0f,
+            volumeBoostDb = (params["volumeBoostDb"] as? Number)?.toFloat() ?: 0f,
         )
     }
     private fun deleteMedia(id: Long, result: MethodChannel.Result) {

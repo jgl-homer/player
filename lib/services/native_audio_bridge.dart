@@ -78,6 +78,7 @@ class NativeAudioBridge {
     required bool replayGainEnabled,
     required double replayGainDb,
     required double replayPeak,
+    required double volumeBoostDb,
   }) {
     return _channel.invokeMethod<void>('set_tone_controls', {
       'equalizerEnabled': equalizerEnabled,
@@ -85,6 +86,7 @@ class NativeAudioBridge {
       'replayGainEnabled': replayGainEnabled,
       'replayGainDb': replayGainDb,
       'replayPeak': replayPeak,
+      'volumeBoostDb': volumeBoostDb,
     });
   }
 

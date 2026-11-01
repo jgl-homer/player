@@ -117,8 +117,12 @@ const _librarySortConfigs = <String, _LibrarySortConfig>{
       LibrarySortOption('title_asc', 'Título', Icons.title_rounded,
           reverseValue: 'title_desc'),
       LibrarySortOption('artist_asc', 'Artista', Icons.person_outline_rounded),
-      LibrarySortOption('newest', 'Fecha modificada', Icons.schedule_rounded,
-          reverseValue: 'oldest'),
+      LibrarySortOption('file_name_asc', 'Nombre de archivo',
+          Icons.insert_drive_file_outlined,
+          reverseValue: 'file_name_desc'),
+      LibrarySortOption('favorite_added_desc', 'Última adición',
+          Icons.playlist_add_check_rounded,
+          reverseValue: 'favorite_added_asc'),
     ],
   ),
   'albums': _LibrarySortConfig(
@@ -207,6 +211,17 @@ class HomeScreen extends StatelessWidget {
                 height: 40,
               ),
               actions: [
+                IconButton(
+                  tooltip: audioProvider.isShuffle
+                      ? 'Mezcla inteligente activa'
+                      : 'Mezcla inteligente',
+                  icon: Icon(
+                    Icons.auto_awesome_rounded,
+                    color:
+                        audioProvider.isShuffle ? AppTheme.primaryColor : null,
+                  ),
+                  onPressed: audioProvider.toggleShuffle,
+                ),
                 _ActiveTabSortMenu(
                   activeDefs: activeDefs,
                   audioProvider: audioProvider,

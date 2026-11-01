@@ -67,12 +67,43 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
               children: [
                 Icon(Icons.queue_music, color: colors.onSurface, size: 28),
                 const SizedBox(width: 12),
-                Text(
-                  'Cola de reproducción',
-                  style: TextStyle(
-                      color: colors.onSurface,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    'Cola de reproducción',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: colors.onSurface,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+                StreamBuilder<Duration>(
+                  stream: audioProvider.positionStream,
+                  initialData: audioProvider.currentPosition,
+                  builder: (context, snapshot) {
+                    final index = audioProvider.currentPlaybackOrderIndex;
+                    if (queue.isEmpty || index < 0 || index >= queue.length) {
+                      return const SizedBox.shrink();
+                    }
+                    final positionMs = snapshot.data?.inMilliseconds ?? 0;
+                    final currentDurationMs = queue[index].duration ?? 0;
+                    var remainingMs = (currentDurationMs - positionMs)
+                        .clamp(0, currentDurationMs);
+                    for (var i = index + 1; i < queue.length; i++) {
+                      remainingMs += queue[i].duration ?? 0;
+                    }
+                    final remainingTracks = queue.length - index - 1;
+                    return Text(
+                      '$remainingTracks restantes · ${DurationUtils.formatMilliseconds(remainingMs)}',
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

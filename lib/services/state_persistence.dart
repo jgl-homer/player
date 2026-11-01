@@ -26,6 +26,7 @@ class StatePersistence {
   static const String _shuffleKey = 'playback_shuffle';
   static const String _loopModeKey = 'playback_loop_mode';
   static const String _favoritesKey = 'favorites';
+  static const String _favoriteAddedAtKey = 'favorite_added_at_v1';
   static const String _playlistsKey = 'saved_playlists_v1';
   static const String _lyricsSourceKey = 'lyrics_source_v1';
   static const String _lyricsVisibleKey = 'lyrics_visible_v1';
@@ -41,6 +42,7 @@ class StatePersistence {
   static const String _equalizerBandsKey = 'equalizer_bands_v1';
   static const String _replayGainEnabledKey = 'replay_gain_enabled_v1';
   static const String _replayGainModeKey = 'replay_gain_mode_v1';
+  static const String _volumeBoostDbKey = 'volume_boost_db_v1';
   static const String _librarySortModesKey = 'library_sort_modes_v1';
   static const String _playbackSpeedKey = 'playback_speed_v1';
   static const String _playbackPitchKey = 'playback_pitch_semitones_v1';
@@ -204,6 +206,18 @@ class StatePersistence {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_replayGainEnabledKey, enabled);
     await prefs.setString(_replayGainModeKey, mode.name);
+  }
+
+  static Future<double> loadVolumeBoostDb() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getDouble(_volumeBoostDbKey) ?? 0.0;
+    return value.isFinite ? value.clamp(0.0, 6.0206) : 0.0;
+  }
+
+  static Future<void> saveVolumeBoostDb(double gainDb) async {
+    final prefs = await SharedPreferences.getInstance();
+    final safeValue = gainDb.isFinite ? gainDb.clamp(0.0, 6.0206) : 0.0;
+    await prefs.setDouble(_volumeBoostDbKey, safeValue);
   }
 
   static Future<Map<String, String>> loadLibrarySortModes() async {
@@ -450,6 +464,37 @@ class StatePersistence {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
         _favoritesKey, favorites.map((id) => id.toString()).toList());
+  }
+
+  static Future<Map<int, int>> loadFavoriteAddedAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_favoriteAddedAtKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      final result = <int, int>{};
+      for (final entry in decoded.entries) {
+        final id = int.tryParse(entry.key.toString());
+        final timestamp = entry.value is int
+            ? entry.value as int
+            : int.tryParse(entry.value.toString());
+        if (id != null && timestamp != null && timestamp >= 0) {
+          result[id] = timestamp;
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveFavoriteAddedAt(Map<int, int> timestamps) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _favoriteAddedAtKey,
+      jsonEncode(timestamps.map((id, value) => MapEntry('$id', value))),
+    );
   }
 
   static Future<Map<String, List<String>>> loadPlaylists() async {

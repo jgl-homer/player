@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -112,6 +114,66 @@ class _SettingsTabState extends State<SettingsTab> {
                         ),
                       );
                     }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () => _showAccentColorWheel(context, appSettings),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: SweepGradient(
+                                colors: [
+                                  Colors.red,
+                                  Colors.yellow,
+                                  Colors.green,
+                                  Colors.cyan,
+                                  Colors.blue,
+                                  Colors.purple,
+                                  Colors.red,
+                                ],
+                              ),
+                            ),
+                            child: const Icon(Icons.colorize_rounded,
+                                color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Círculo de color',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600)),
+                                Text('Elige cualquier tono para toda la app',
+                                    style: TextStyle(
+                                        color: Colors.grey, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right_rounded,
+                              color: Colors.white54),
+                        ],
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 18),
                   ListTile(
@@ -582,6 +644,25 @@ class _SettingsTabState extends State<SettingsTab> {
     );
   }
 
+  Future<void> _showAccentColorWheel(
+    BuildContext context,
+    AppSettingsProvider appSettings,
+  ) async {
+    final selected = await showModalBottomSheet<Color>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _AccentColorWheel(
+        initialColor: appSettings.accentColor,
+      ),
+    );
+    if (selected != null) await appSettings.setAccentColor(selected);
+  }
+
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
@@ -647,6 +728,233 @@ class _SettingsTabState extends State<SettingsTab> {
       ),
     );
   }
+}
+
+class _AccentColorWheel extends StatefulWidget {
+  const _AccentColorWheel({required this.initialColor});
+
+  final Color initialColor;
+
+  @override
+  State<_AccentColorWheel> createState() => _AccentColorWheelState();
+}
+
+class _AccentColorWheelState extends State<_AccentColorWheel> {
+  late HSVColor _selectedColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedColor = HSVColor.fromColor(widget.initialColor);
+  }
+
+  void _updateColor(Offset position, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final delta = position - center;
+    final radius = size.shortestSide / 2;
+    final saturation = (delta.distance / radius).clamp(0.0, 1.0);
+    var angle = atan2(delta.dy, delta.dx);
+    if (angle < 0) angle += 2 * pi;
+
+    setState(() {
+      _selectedColor = HSVColor.fromAHSV(
+        1,
+        angle * 180 / pi,
+        saturation,
+        _selectedColor.value,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selected = _selectedColor.toColor();
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected,
+                    border: Border.all(color: colorScheme.onSurface, width: 2),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Círculo de color',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                      Text(
+                        'Arrastra el punto para elegir el tono',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Center(
+              child: SizedBox.square(
+                dimension: min(MediaQuery.sizeOf(context).width - 64, 290),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = Size.square(constraints.maxWidth);
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanDown: (details) =>
+                          _updateColor(details.localPosition, size),
+                      onPanUpdate: (details) =>
+                          _updateColor(details.localPosition, size),
+                      onTapDown: (details) =>
+                          _updateColor(details.localPosition, size),
+                      child: CustomPaint(
+                        painter: _HueSaturationWheelPainter(_selectedColor),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.brightness_low, color: colorScheme.onSurfaceVariant),
+                Expanded(
+                  child: Slider(
+                    value: _selectedColor.value,
+                    min: 0.25,
+                    max: 1,
+                    activeColor: selected,
+                    onChanged: (value) => setState(() {
+                      _selectedColor = _selectedColor.withValue(value);
+                    }),
+                  ),
+                ),
+                Icon(Icons.brightness_high, color: selected),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: selected,
+                      foregroundColor:
+                          ThemeData.estimateBrightnessForColor(selected) ==
+                                  Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                    ),
+                    onPressed: () => Navigator.pop(context, selected),
+                    child: const Text('Aplicar'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HueSaturationWheelPainter extends CustomPainter {
+  const _HueSaturationWheelPainter(this.color);
+
+  final HSVColor color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide / 2;
+    final bounds = Rect.fromCircle(center: center, radius: radius);
+
+    canvas.save();
+    canvas.clipPath(Path()..addOval(bounds));
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = const SweepGradient(
+          colors: [
+            Colors.red,
+            Colors.yellow,
+            Colors.green,
+            Colors.cyan,
+            Colors.blue,
+            Colors.purple,
+            Colors.red,
+          ],
+        ).createShader(bounds),
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = const RadialGradient(
+          colors: [Colors.white, Color(0x00FFFFFF)],
+        ).createShader(bounds),
+    );
+    if (color.value < 1) {
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()..color = Colors.black.withValues(alpha: 1 - color.value),
+      );
+    }
+    canvas.restore();
+
+    final angle = color.hue * pi / 180;
+    final marker =
+        center + Offset(cos(angle), sin(angle)) * (radius * color.saturation);
+    canvas.drawCircle(marker, 10, Paint()..color = Colors.black54);
+    canvas.drawCircle(
+      marker,
+      8,
+      Paint()
+        ..color = color.toColor()
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(
+      marker,
+      9,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HueSaturationWheelPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 class _LibraryStat extends StatelessWidget {
@@ -882,6 +1190,37 @@ class _ToneControlsPanel extends StatelessWidget {
     final selectedPreset = _matchingPreset(audioProvider.equalizerBandGains);
     return Column(
       children: [
+        ListTile(
+          title: const Text('Amplificación de volumen',
+              style: TextStyle(color: Colors.white)),
+          subtitle: const Text(
+            'Sube hasta 200% como VLC. El limitador evita saturación digital.',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          trailing: Text(
+            '${(pow(10, audioProvider.volumeBoostDb / 20) * 100).round()}%',
+            style: TextStyle(
+              color: audioProvider.volumeBoostDb > 0.01
+                  ? AppTheme.primaryColor
+                  : Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Slider(
+            value: audioProvider.volumeBoostDb.clamp(0.0, 6.0206),
+            min: 0,
+            max: 6.0206,
+            divisions: 20,
+            activeColor: AppTheme.primaryColor,
+            label:
+                '${(pow(10, audioProvider.volumeBoostDb / 20) * 100).round()}%',
+            onChanged: audioProvider.setVolumeBoostDb,
+          ),
+        ),
+        const Divider(color: Colors.white12, height: 1),
         SwitchListTile(
           title:
               const Text('ReplayGain', style: TextStyle(color: Colors.white)),
@@ -997,7 +1336,7 @@ class _ToneControlsPanel extends StatelessWidget {
               onPressed: audioProvider.resetToneControls,
               icon: const Icon(Icons.restore, color: Colors.orangeAccent),
               label: const Text(
-                'Restablecer ReplayGain y EQ',
+                'Restablecer volumen, ReplayGain y EQ',
                 style: TextStyle(color: Colors.orangeAccent),
               ),
               style: OutlinedButton.styleFrom(

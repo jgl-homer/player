@@ -39,6 +39,7 @@ class AudioEffectsController extends ChangeNotifier {
   double _activeReplayGainDb = 0;
   double _activeReplayPeak = 0;
   bool _currentReplayGainAvailable = false;
+  double _volumeBoostDb = 0;
   int _replayGainRequestSerial = 0;
 
   double _playbackSpeed = 1.0;
@@ -69,6 +70,7 @@ class AudioEffectsController extends ChangeNotifier {
   bool get replayGainEnabled => _replayGainEnabled;
   ReplayGainMode get replayGainMode => _replayGainMode;
   bool get currentReplayGainAvailable => _currentReplayGainAvailable;
+  double get volumeBoostDb => _volumeBoostDb;
 
   double get playbackSpeed => _playbackSpeed;
   double get playbackPitchSemitones => _playbackPitchSemitones;
@@ -82,6 +84,7 @@ class AudioEffectsController extends ChangeNotifier {
     _equalizerBandGains = await StatePersistence.loadEqualizerBandGains();
     _replayGainEnabled = await StatePersistence.loadReplayGainEnabled();
     _replayGainMode = await StatePersistence.loadReplayGainMode();
+    _volumeBoostDb = await StatePersistence.loadVolumeBoostDb();
     _playbackSpeed = await StatePersistence.loadPlaybackSpeed();
     _playbackPitchSemitones =
         await StatePersistence.loadPlaybackPitchSemitones();
@@ -320,6 +323,7 @@ class AudioEffectsController extends ChangeNotifier {
     _activeReplayGainDb = 0;
     _activeReplayPeak = 0;
     _currentReplayGainAvailable = false;
+    _volumeBoostDb = 0;
     _replayGainRequestSerial++;
 
     await Future.wait([
@@ -331,9 +335,19 @@ class AudioEffectsController extends ChangeNotifier {
         enabled: false,
         mode: ReplayGainMode.track,
       ),
+      StatePersistence.saveVolumeBoostDb(0),
     ]);
     await _sendToneControls();
     notifyListeners();
+  }
+
+  Future<void> setVolumeBoostDb(double gainDb) async {
+    final normalized = gainDb.clamp(0.0, 6.0206).toDouble();
+    if ((_volumeBoostDb - normalized).abs() < 0.001) return;
+    _volumeBoostDb = normalized;
+    notifyListeners();
+    await StatePersistence.saveVolumeBoostDb(normalized);
+    await _sendToneControls();
   }
 
   Future<void> setPlaybackSpeed(double speed) async {
@@ -427,6 +441,7 @@ class AudioEffectsController extends ChangeNotifier {
       replayGainEnabled: _replayGainEnabled,
       replayGainDb: _activeReplayGainDb,
       replayPeak: _activeReplayPeak,
+      volumeBoostDb: _volumeBoostDb,
     );
   }
 
