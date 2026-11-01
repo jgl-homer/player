@@ -27,7 +27,6 @@ import android.media.AudioDeviceInfo
 import android.media.AudioDeviceCallback
 import java.io.File
 import java.util.concurrent.Executors
-import com.jglhomer.player.autodj.AutoDjMethodChannel
 
 class MainActivity : AudioServiceActivity() {
     private val TAG = "MainActivity"
@@ -46,18 +45,12 @@ class MainActivity : AudioServiceActivity() {
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var audioDeviceCallback: AudioDeviceCallback? = null
     private val metadataExecutor = Executors.newSingleThreadExecutor()
-    private var autoDjMethodChannel: AutoDjMethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         this.myFlutterEngine = flutterEngine
 
         widgetMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL)
-        autoDjMethodChannel = AutoDjMethodChannel(
-            applicationContext,
-            flutterEngine.dartExecutor.binaryMessenger,
-        )
-
         mediaMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         mediaMethodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
@@ -438,8 +431,6 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
-        autoDjMethodChannel?.dispose()
-        autoDjMethodChannel = null
         mediaObserver?.let { contentResolver.unregisterContentObserver(it) }
         mediaObserver = null
         bluetoothReceiver?.let {

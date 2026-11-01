@@ -16,7 +16,6 @@ import '../widgets/song_info_modal.dart';
 import '../screens/artist_detail_screen.dart';
 import '../screens/album_detail_screen.dart';
 import '../services/lyrics_service.dart';
-import '../autodj/widgets/autodj_visual_indicator.dart';
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -123,7 +122,6 @@ class MiniPlayer extends StatelessWidget {
                   ],
                 ),
               ),
-              AutoDjVisualIndicator(controller: audioProvider.autoDj),
               StreamBuilder<DurationState>(
                 stream: audioProvider.durationStateStream,
                 builder: (context, snapshot) {

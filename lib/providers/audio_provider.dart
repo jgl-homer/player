@@ -28,14 +28,12 @@ import '../services/playback_engine.dart';
 import '../services/playback_queue_policy.dart';
 import '../services/replay_gain_repository.dart';
 import '../utils/title_utils.dart';
-import '../autodj/services/autodj_controller.dart';
 
 class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   late final PlaybackEngine _playback;
   late final NativeAudioBridge _nativeAudio;
   late final AudioEffectsController _effects;
-  late final AutoDjController _autoDj;
   final PlaybackQueuePolicy _queuePolicy = const PlaybackQueuePolicy();
   static const String _cachedSongsKey = 'cached_library_songs_v1';
   static const String _cachedAlbumsKey = 'cached_library_albums_v1';
@@ -104,10 +102,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _disposed = false;
   bool _navigationBusy = false;
   Future<void> Function()? _pendingNavigationAction;
-  final Random _autoDjRandom = Random();
-  final List<int> _recentAutoDjSongIds = [];
-  final Map<String, String> _autoDjNextByCurrentPath = {};
-  bool _insertingAutoDjTrack = false;
   List<String>? _folderPathsCache;
   Map<String, List<SongModel>>? _songsByFolderCache;
 
@@ -164,7 +158,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Duration get currentPosition => _playback.position;
   Stream<bool> get playingStream => _playback.playingStream;
   Stream<Duration> get positionStream => _playback.positionStream;
-  AutoDjController get autoDj => _autoDj;
   OnAudioQuery get audioQuery => _audioQuery;
   Set<int> get favoriteIds => _favoriteIds;
   int favoriteAddedAt(int songId) => _favoriteAddedAt[songId] ?? 0;
@@ -249,10 +242,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }) : _isAutoModeEnabled = initialAutoMode {
     _nativeAudio = NativeAudioBridge();
     _playback = PlaybackEngine(handler);
-    _autoDj = AutoDjController(
-      primary: _playback.player,
-      selectNextTrack: _selectGlobalAutoDjNext,
-    );
     _effects = AudioEffectsController(
       playback: _playback,
       nativeAudio: _nativeAudio,
@@ -381,98 +370,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    _autoDj.updateLibrary(_allSongs.map((song) => song.data));
     if (!_disposed) _listenToPlayer();
-  }
-
-  Future<AutoDjQueueSelection?> _selectGlobalAutoDjNext(
-    String currentPath,
-  ) async {
-    if (_insertingAutoDjTrack || _allSongs.length < 2) {
-      return _autoDjQueueSnapshot(currentPath);
-    }
-
-    var currentIndex =
-        _currentPlaylist.indexWhere((song) => song.data == currentPath);
-    if (currentIndex < 0) return null;
-
-    final rememberedPath = _autoDjNextByCurrentPath[currentPath];
-    if (rememberedPath != null &&
-        currentIndex == 0 &&
-        _currentPlaylist.length == 2 &&
-        currentIndex + 1 < _currentPlaylist.length &&
-        _currentPlaylist[currentIndex + 1].data == rememberedPath) {
-      return _autoDjQueueSnapshot(currentPath);
-    }
-
-    // AutoDJ owns a small independent queue. Keep the currently playing song,
-    // discard the browsing/folder queue, then append only the candidate it
-    // selected from the complete library.
-    final currentSong = _currentPlaylist[currentIndex];
-    _currentPlaylist = [currentSong];
-    _unshuffledPlaylist = const [];
-    _currentIndex = 0;
-    _currentSong = currentSong;
-    currentIndex = 0;
-    if (_playback.shuffleModeEnabled) {
-      await _playback.setShuffleModeEnabled(false);
-    }
-    _shuffle = false;
-    await _replacePlaybackQueue(
-      position: _playback.position,
-      shouldPlay: _playback.playing,
-    );
-
-    final candidates = _allSongs.where((song) {
-      if (song.data == currentPath || _recentAutoDjSongIds.contains(song.id)) {
-        return false;
-      }
-      if (_hiddenSongPaths.contains(song.data)) return false;
-      final normalized = song.data.replaceAll('\\', '/').toLowerCase();
-      return !_hiddenFolderPaths.any((folder) {
-        final hidden = folder.replaceAll('\\', '/').toLowerCase();
-        return normalized == hidden || normalized.startsWith('$hidden/');
-      });
-    }).toList(growable: false);
-    if (candidates.isEmpty) return _autoDjQueueSnapshot(currentPath);
-
-    final selected = candidates[_autoDjRandom.nextInt(candidates.length)];
-    _insertingAutoDjTrack = true;
-    try {
-      const insertIndex = 1;
-      _currentPlaylist.insert(insertIndex, selected);
-      _currentIndex = currentIndex;
-      _currentSong = _currentPlaylist[currentIndex];
-      _autoDjNextByCurrentPath[currentPath] = selected.data;
-      _recentAutoDjSongIds.add(selected.id);
-      if (_recentAutoDjSongIds.length > 24) {
-        _recentAutoDjSongIds.removeAt(0);
-      }
-      await _playback.insertQueueItems(
-        insertIndex,
-        [
-          _fastMediaItemFromSong(
-            selected,
-            queueIndex: insertIndex,
-            queueLength: _currentPlaylist.length,
-          ),
-        ],
-      );
-      notifyListeners();
-      return _autoDjQueueSnapshot(currentPath);
-    } finally {
-      _insertingAutoDjTrack = false;
-    }
-  }
-
-  AutoDjQueueSelection? _autoDjQueueSnapshot(String currentPath) {
-    final index =
-        _currentPlaylist.indexWhere((song) => song.data == currentPath);
-    if (index < 0) return null;
-    return AutoDjQueueSelection(
-      _currentPlaylist.map((song) => song.data).toList(growable: false),
-      index,
-    );
   }
 
   void _listenToPlayer() {
@@ -554,10 +452,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
           songPath: _currentSong!.data,
           trackId: _currentSong!.id,
           positionMs: _playback.position.inMilliseconds,
-        );
-        _autoDj.updateQueue(
-          _currentPlaylist.map((song) => song.data).toList(growable: false),
-          _currentIndex,
         );
         notifyListeners();
 
@@ -722,7 +616,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _isSyncing = false;
       _indexingCurrentTitle = null;
       _isLoading = false;
-      _autoDj.updateLibrary(_allSongs.map((song) => song.data));
       // Bug #1 fix: siempre notificar para garantizar que los spinners
       // desaparezcan aunque no haya cambios en la biblioteca.
       notifyListeners();
@@ -1639,7 +1532,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> togglePlayPause() async {
     if (_playback.playing) {
-      await _autoDj.cancelActiveTransition();
       await _playback.pause();
       await savePlaybackStateImmediate();
     } else {
@@ -1652,7 +1544,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // Guardar la pista activa y la posición actual antes de detener el reproductor
     final pos = _playback.position.inMilliseconds;
     await savePlaybackStateImmediate(customPositionMs: pos);
-    await _autoDj.cancelActiveTransition();
     await _playback.stop();
     await _updateHomeWidget();
     notifyListeners();
@@ -1660,13 +1551,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> next() => _runNavigation(() async {
         try {
-          if (_autoDj.settings.enabled &&
-              _autoDj.settings.manualTransitionEffects &&
-              _autoDj.preparedPlan != null &&
-              !_autoDj.isMixing) {
-            await _autoDj.mixNow();
-            return;
-          }
           if (_playback.hasNext) {
             await _playback.skipToNext();
             unawaited(_updateHomeWidget());
@@ -2483,7 +2367,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _maybeStartCrossfade(Duration position) {
-    if (_autoDj.settings.enabled) return;
     if (_crossfadeSeconds <= 0 || !_playback.playing || _currentSong == null) {
       return;
     }
@@ -3237,7 +3120,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _effects.removeListener(notifyListeners);
     _effects.dispose();
     _nativeAudio.detachCallbacks();
-    _autoDj.dispose();
     super.dispose();
   }
 }

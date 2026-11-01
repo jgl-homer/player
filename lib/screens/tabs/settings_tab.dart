@@ -11,7 +11,6 @@ import '../../services/lyrics_service.dart';
 import '../../widgets/epicenter_engine_selector.dart';
 import '../../l10n/app_strings.dart';
 import '../../theme/app_theme.dart';
-import '../../autodj/widgets/autodj_settings_section.dart';
 
 class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key});
@@ -206,24 +205,6 @@ class _SettingsTabState extends State<SettingsTab> {
             title: 'Pestañas visibles',
             subtitle: '${audioProvider.enabledTabs.length} activas',
             child: _TabsSelector(audioProvider: audioProvider),
-          ),
-          const SizedBox(height: 10),
-          AnimatedBuilder(
-            animation: audioProvider.autoDj,
-            builder: (context, _) => _SettingsSection(
-              storageKey: 'settings_smart_mix',
-              icon: Icons.auto_awesome_rounded,
-              title: 'Mezcla inteligente',
-              subtitle: audioProvider.autoDj.settings.enabled
-                  ? '${audioProvider.autoDj.analysisCount} canciones analizadas'
-                  : 'Desactivada',
-              child: AutoDjSettingsSection(
-                controller: audioProvider.autoDj,
-                libraryPaths: audioProvider.allSongs
-                    .map((song) => song.data)
-                    .toList(growable: false),
-              ),
-            ),
           ),
           const SizedBox(height: 10),
           _SettingsSection(

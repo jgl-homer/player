@@ -114,8 +114,6 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
     private Map<String, Object> pendingPlaybackEvent;
 
     private ExoPlayer player;
-    private final TransitionEffectAudioProcessor transitionEffectProcessor =
-        new TransitionEffectAudioProcessor();
     private Integer audioSessionId;
     private Integer errorCode;
     private String errorMessage;
@@ -885,8 +883,7 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
         Log.d(TAG, "Tone controls and Epicenter AudioProcessors injected");
         return new AudioProcessor[] {
             ToneControlsProcessorController.INSTANCE.getProcessor(),
-            EpicenterProcessorController.INSTANCE.getProcessor(),
-            transitionEffectProcessor
+            EpicenterProcessorController.INSTANCE.getProcessor()
         };
     }
     private void ensurePlayerInitialized() {
@@ -1134,18 +1131,6 @@ public class AudioPlayer implements MethodCallHandler, Player.Listener, Metadata
 
     public void setVolume(final float volume) {
         player.setVolume(volume);
-    }
-
-    public void beginTransitionEffect(String effect, String role, float intensity) {
-        transitionEffectProcessor.begin(effect, role, intensity);
-    }
-
-    public void updateTransitionEffect(float progress) {
-        transitionEffectProcessor.update(progress);
-    }
-
-    public void endTransitionEffect() {
-        transitionEffectProcessor.end();
     }
 
     public void setSpeed(final float speed) {
