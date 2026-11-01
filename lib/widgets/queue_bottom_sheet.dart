@@ -40,6 +40,13 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
     final audioProvider = Provider.of<AudioProvider>(context);
     final queue = audioProvider.currentPlaybackOrder;
     final colors = Theme.of(context).colorScheme;
+    final currentOrderIndex = audioProvider.currentPlaybackOrderIndex;
+    var followingDurationMs = 0;
+    if (currentOrderIndex >= 0 && currentOrderIndex < queue.length) {
+      for (var i = currentOrderIndex + 1; i < queue.length; i++) {
+        followingDurationMs += queue[i].duration ?? 0;
+      }
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -90,9 +97,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                     final currentDurationMs = queue[index].duration ?? 0;
                     var remainingMs = (currentDurationMs - positionMs)
                         .clamp(0, currentDurationMs);
-                    for (var i = index + 1; i < queue.length; i++) {
-                      remainingMs += queue[i].duration ?? 0;
-                    }
+                    remainingMs += followingDurationMs;
                     final remainingTracks = queue.length - index - 1;
                     return Text(
                       '$remainingTracks restantes · ${DurationUtils.formatMilliseconds(remainingMs)}',

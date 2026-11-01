@@ -93,7 +93,12 @@ class AutoDjAnalyzer {
           results.add(await analyze(path, force: force));
         } on PlatformException catch (error) {
           if (error.code == 'CANCELLED' && _cancelled) break;
-          rethrow;
+          // A damaged or unsupported track must not stop indexing the rest of
+          // a large library. Foreground analyze() still reports its own error.
+        } on FileSystemException {
+          // The library may change while a long background scan is running.
+        } on ArgumentError {
+          // Skip paths that disappeared or are no longer regular files.
         }
       }
       _progress.add(AutoDjAnalysisProgress(

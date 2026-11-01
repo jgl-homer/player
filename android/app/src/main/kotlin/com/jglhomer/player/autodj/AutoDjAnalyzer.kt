@@ -21,6 +21,7 @@ class AutoDjAnalyzer(private val context: Context) {
 
     fun cancel() {
         cancelled.set(true)
+        FFmpegKit.cancel()
     }
 
     fun analyze(
@@ -93,6 +94,7 @@ class AutoDjAnalyzer(private val context: Context) {
             "-f", "s16le", quote(output.absolutePath),
         ).joinToString(" ")
         val session = FFmpegKit.execute(command)
+        if (cancelled.get()) throw AnalysisCancelledException()
         check(ReturnCode.isSuccess(session.returnCode)) {
             "FFmpeg decode failed: ${session.failStackTrace ?: session.output}"
         }

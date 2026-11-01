@@ -3,6 +3,7 @@ package com.jglhomer.player.autodj
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
@@ -10,7 +11,12 @@ import java.util.concurrent.Future
 
 class AutoDjMethodChannel(context: Context, messenger: BinaryMessenger) {
     private val analyzer = AutoDjAnalyzer(context.applicationContext)
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newSingleThreadExecutor { task ->
+        Thread({
+            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+            task.run()
+        }, "player-autodj-analysis").apply { isDaemon = true }
+    }
     private val mainHandler = Handler(Looper.getMainLooper())
     private val channel = MethodChannel(messenger, CHANNEL)
     @Volatile private var activeTask: Future<*>? = null

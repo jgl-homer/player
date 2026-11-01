@@ -137,21 +137,21 @@ class _FoldersTabState extends State<FoldersTab> {
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
-    final allSongs = audioProvider.allSongs;
     final sortMode = audioProvider.librarySortMode('folders', 'name_asc');
-    final songCounts = <String, int>{};
-    for (final song in allSongs) {
-      final folder = path.dirname(song.data);
-      songCounts[folder] = (songCounts[folder] ?? 0) + 1;
-    }
     final folderPaths = List<String>.from(audioProvider.sortedFolderPaths)
       ..sort((a, b) {
         final nameA = path.basename(a).toLowerCase();
         final nameB = path.basename(b).toLowerCase();
         return switch (sortMode) {
           'name_desc' => nameB.compareTo(nameA),
-          'songs_desc' => (songCounts[b] ?? 0).compareTo(songCounts[a] ?? 0),
-          'songs_asc' => (songCounts[a] ?? 0).compareTo(songCounts[b] ?? 0),
+          'songs_desc' => audioProvider
+              .songsInFolder(b)
+              .length
+              .compareTo(audioProvider.songsInFolder(a).length),
+          'songs_asc' => audioProvider
+              .songsInFolder(a)
+              .length
+              .compareTo(audioProvider.songsInFolder(b).length),
           _ => nameA.compareTo(nameB),
         };
       });
@@ -174,14 +174,7 @@ class _FoldersTabState extends State<FoldersTab> {
                   itemBuilder: (context, index) {
                     final folderPath = folderPaths[index];
                     final folderName = folderPath.split('/').last;
-                    final folderSongs = allSongs
-                        .where((song) =>
-                            song.data.startsWith('$folderPath/') ||
-                            song.data.startsWith('$folderPath\\'))
-                        .where((song) {
-                      final songDir = path.dirname(song.data);
-                      return songDir == folderPath;
-                    }).toList();
+                    final folderSongs = audioProvider.songsInFolder(folderPath);
 
                     if (folderSongs.isEmpty) return const SizedBox.shrink();
 

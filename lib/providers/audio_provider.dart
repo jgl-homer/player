@@ -104,6 +104,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _disposed = false;
   bool _navigationBusy = false;
   Future<void> Function()? _pendingNavigationAction;
+  final Random _autoDjRandom = Random();
+  final List<int> _recentAutoDjSongIds = [];
+  final Map<String, String> _autoDjNextByCurrentPath = {};
+  bool _insertingAutoDjTrack = false;
+  List<String>? _folderPathsCache;
+  Map<String, List<SongModel>>? _songsByFolderCache;
 
   // Bug #9: Estado de selección múltiple
   final Set<int> _selectedSongIds = {};
@@ -122,16 +128,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     return indices;
   }
 
-  List<SongModel> get currentPlaybackOrder => _visibleQueueIndices
-      .map((index) => _currentPlaylist[index])
-      .toList(growable: false);
+  List<SongModel> get currentPlaybackOrder => !_shuffle
+      ? _currentPlaylist
+      : _visibleQueueIndices
+          .map((index) => _currentPlaylist[index])
+          .toList(growable: false);
 
   int get currentPlaybackOrderIndex {
+    if (!_shuffle) return _currentIndex;
     final index = _visibleQueueIndices.indexOf(_currentIndex);
     return index == -1 ? _currentIndex : index;
   }
 
   int queueIndexForPlaybackOrder(int index) {
+    if (!_shuffle) return index;
     final indices = _visibleQueueIndices;
     return index >= 0 && index < indices.length ? indices[index] : index;
   }
@@ -239,7 +249,10 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   }) : _isAutoModeEnabled = initialAutoMode {
     _nativeAudio = NativeAudioBridge();
     _playback = PlaybackEngine(handler);
-    _autoDj = AutoDjController(primary: _playback.player);
+    _autoDj = AutoDjController(
+      primary: _playback.player,
+      selectNextTrack: _selectGlobalAutoDjNext,
+    );
     _effects = AudioEffectsController(
       playback: _playback,
       nativeAudio: _nativeAudio,
@@ -368,7 +381,98 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
+    _autoDj.updateLibrary(_allSongs.map((song) => song.data));
     if (!_disposed) _listenToPlayer();
+  }
+
+  Future<AutoDjQueueSelection?> _selectGlobalAutoDjNext(
+    String currentPath,
+  ) async {
+    if (_insertingAutoDjTrack || _allSongs.length < 2) {
+      return _autoDjQueueSnapshot(currentPath);
+    }
+
+    var currentIndex =
+        _currentPlaylist.indexWhere((song) => song.data == currentPath);
+    if (currentIndex < 0) return null;
+
+    final rememberedPath = _autoDjNextByCurrentPath[currentPath];
+    if (rememberedPath != null &&
+        currentIndex == 0 &&
+        _currentPlaylist.length == 2 &&
+        currentIndex + 1 < _currentPlaylist.length &&
+        _currentPlaylist[currentIndex + 1].data == rememberedPath) {
+      return _autoDjQueueSnapshot(currentPath);
+    }
+
+    // AutoDJ owns a small independent queue. Keep the currently playing song,
+    // discard the browsing/folder queue, then append only the candidate it
+    // selected from the complete library.
+    final currentSong = _currentPlaylist[currentIndex];
+    _currentPlaylist = [currentSong];
+    _unshuffledPlaylist = const [];
+    _currentIndex = 0;
+    _currentSong = currentSong;
+    currentIndex = 0;
+    if (_playback.shuffleModeEnabled) {
+      await _playback.setShuffleModeEnabled(false);
+    }
+    _shuffle = false;
+    await _replacePlaybackQueue(
+      position: _playback.position,
+      shouldPlay: _playback.playing,
+    );
+
+    final candidates = _allSongs.where((song) {
+      if (song.data == currentPath || _recentAutoDjSongIds.contains(song.id)) {
+        return false;
+      }
+      if (_hiddenSongPaths.contains(song.data)) return false;
+      final normalized = song.data.replaceAll('\\', '/').toLowerCase();
+      return !_hiddenFolderPaths.any((folder) {
+        final hidden = folder.replaceAll('\\', '/').toLowerCase();
+        return normalized == hidden || normalized.startsWith('$hidden/');
+      });
+    }).toList(growable: false);
+    if (candidates.isEmpty) return _autoDjQueueSnapshot(currentPath);
+
+    final selected = candidates[_autoDjRandom.nextInt(candidates.length)];
+    _insertingAutoDjTrack = true;
+    try {
+      const insertIndex = 1;
+      _currentPlaylist.insert(insertIndex, selected);
+      _currentIndex = currentIndex;
+      _currentSong = _currentPlaylist[currentIndex];
+      _autoDjNextByCurrentPath[currentPath] = selected.data;
+      _recentAutoDjSongIds.add(selected.id);
+      if (_recentAutoDjSongIds.length > 24) {
+        _recentAutoDjSongIds.removeAt(0);
+      }
+      await _playback.insertQueueItems(
+        insertIndex,
+        [
+          _fastMediaItemFromSong(
+            selected,
+            queueIndex: insertIndex,
+            queueLength: _currentPlaylist.length,
+          ),
+        ],
+      );
+      notifyListeners();
+      return _autoDjQueueSnapshot(currentPath);
+    } finally {
+      _insertingAutoDjTrack = false;
+    }
+  }
+
+  AutoDjQueueSelection? _autoDjQueueSnapshot(String currentPath) {
+    final index =
+        _currentPlaylist.indexWhere((song) => song.data == currentPath);
+    if (index < 0) return null;
+    return AutoDjQueueSelection(
+      _currentPlaylist.map((song) => song.data).toList(growable: false),
+      index,
+    );
   }
 
   void _listenToPlayer() {
@@ -446,7 +550,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
             }
           }
         }
-        await savePlaybackStateImmediate();
+        await StatePersistence.savePlaybackCheckpoint(
+          songPath: _currentSong!.data,
+          trackId: _currentSong!.id,
+          positionMs: _playback.position.inMilliseconds,
+        );
         _autoDj.updateQueue(
           _currentPlaylist.map((song) => song.data).toList(growable: false),
           _currentIndex,
@@ -538,9 +646,11 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     // Guardado continuo de posición cada 2 segundos mientras se reproduce directamente,
     // para que al cerrar la app (sin pausa) se recupere el segundo exacto.
-    _positionSaveTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    _positionSaveTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (_playback.playing && _currentSong != null) {
-        savePlaybackStateImmediate();
+        unawaited(StatePersistence.savePlaybackPosition(
+          _playback.position.inMilliseconds,
+        ));
       }
     });
   }
@@ -612,6 +722,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _isSyncing = false;
       _indexingCurrentTitle = null;
       _isLoading = false;
+      _autoDj.updateLibrary(_allSongs.map((song) => song.data));
       // Bug #1 fix: siempre notificar para garantizar que los spinners
       // desaparezcan aunque no haya cambios en la biblioteca.
       notifyListeners();
@@ -760,6 +871,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     for (var i = 0; i < _allSongs.length; i++) {
       _songIndexByPath[_allSongs[i].data] = i;
     }
+    _folderPathsCache = null;
+    _songsByFolderCache = null;
   }
 
   Future<void> _indexSongsToDatabase() async {
@@ -1823,8 +1936,26 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   // --- Folder Management ---
 
-  List<String> get sortedFolderPaths =>
-      StorageScanner.filterFolderPaths(_allSongs);
+  void _ensureFolderCache() {
+    if (_folderPathsCache != null && _songsByFolderCache != null) return;
+    final byFolder = <String, List<SongModel>>{};
+    for (final song in _allSongs) {
+      final folder = _getParentPath(song);
+      (byFolder[folder] ??= <SongModel>[]).add(song);
+    }
+    _songsByFolderCache = byFolder;
+    _folderPathsCache = StorageScanner.filterFolderPaths(_allSongs);
+  }
+
+  List<String> get sortedFolderPaths {
+    _ensureFolderCache();
+    return _folderPathsCache!;
+  }
+
+  List<SongModel> songsInFolder(String folderPath) {
+    _ensureFolderCache();
+    return _songsByFolderCache![folderPath] ?? const <SongModel>[];
+  }
 
   String _normalizeFolderPath(String filePath) {
     var normalized = filePath.replaceAll('\\', '/');

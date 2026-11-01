@@ -1,13 +1,25 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:on_audio_query/on_audio_query.dart';
 import '../../providers/audio_provider.dart';
 import '../../widgets/song_list_tile.dart';
 import '../../widgets/count_banner.dart';
 import '../../utils/title_utils.dart';
 
-class FavoritesTab extends StatelessWidget {
+class FavoritesTab extends StatefulWidget {
   const FavoritesTab({super.key});
+
+  @override
+  State<FavoritesTab> createState() => _FavoritesTabState();
+}
+
+class _FavoritesTabState extends State<FavoritesTab> {
+  List<SongModel>? _cachedFavorites;
+  List<SongModel>? _songsSource;
+  int? _favoritesFingerprint;
+  int? _songCount;
+  String? _sortMode;
 
   Future<void> _importFavorites(
       BuildContext context, AudioProvider audioProvider) async {
@@ -53,33 +65,46 @@ class FavoritesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final sortMode = audioProvider.librarySortMode('favorites', 'title_asc');
-    final favoriteSongs = audioProvider.allSongs
-        .where((s) => audioProvider.isFavorite(s.id))
-        .toList()
-      ..sort((a, b) {
-        int compareText(String first, String second) =>
-            first.toLowerCase().compareTo(second.toLowerCase());
-        return switch (sortMode) {
-          'title_desc' => compareText(
-              TitleUtils.getDisplayTitle(b), TitleUtils.getDisplayTitle(a)),
-          'artist_asc' => compareText(TitleUtils.getDisplayArtist(a.artist),
-              TitleUtils.getDisplayArtist(b.artist)),
-          'file_name_asc' => compareText(
-              a.data.replaceAll('\\', '/').split('/').last,
-              b.data.replaceAll('\\', '/').split('/').last),
-          'file_name_desc' => compareText(
-              b.data.replaceAll('\\', '/').split('/').last,
-              a.data.replaceAll('\\', '/').split('/').last),
-          'favorite_added_desc' => audioProvider
-              .favoriteAddedAt(b.id)
-              .compareTo(audioProvider.favoriteAddedAt(a.id)),
-          'favorite_added_asc' => audioProvider
-              .favoriteAddedAt(a.id)
-              .compareTo(audioProvider.favoriteAddedAt(b.id)),
-          _ => compareText(
-              TitleUtils.getDisplayTitle(a), TitleUtils.getDisplayTitle(b)),
-        };
-      });
+    final allSongs = audioProvider.allSongs;
+    final favoriteIds = audioProvider.favoriteIds;
+    final favoritesFingerprint = Object.hashAllUnordered(favoriteIds);
+    if (!identical(_songsSource, allSongs) ||
+        _songCount != allSongs.length ||
+        _favoritesFingerprint != favoritesFingerprint ||
+        _sortMode != sortMode) {
+      _songsSource = allSongs;
+      _songCount = allSongs.length;
+      _favoritesFingerprint = favoritesFingerprint;
+      _sortMode = sortMode;
+      _cachedFavorites = allSongs
+          .where((song) => favoriteIds.contains(song.id))
+          .toList()
+        ..sort((a, b) {
+          int compareText(String first, String second) =>
+              first.toLowerCase().compareTo(second.toLowerCase());
+          return switch (sortMode) {
+            'title_desc' => compareText(
+                TitleUtils.getDisplayTitle(b), TitleUtils.getDisplayTitle(a)),
+            'artist_asc' => compareText(TitleUtils.getDisplayArtist(a.artist),
+                TitleUtils.getDisplayArtist(b.artist)),
+            'file_name_asc' => compareText(
+                a.data.replaceAll('\\', '/').split('/').last,
+                b.data.replaceAll('\\', '/').split('/').last),
+            'file_name_desc' => compareText(
+                b.data.replaceAll('\\', '/').split('/').last,
+                a.data.replaceAll('\\', '/').split('/').last),
+            'favorite_added_desc' => audioProvider
+                .favoriteAddedAt(b.id)
+                .compareTo(audioProvider.favoriteAddedAt(a.id)),
+            'favorite_added_asc' => audioProvider
+                .favoriteAddedAt(a.id)
+                .compareTo(audioProvider.favoriteAddedAt(b.id)),
+            _ => compareText(
+                TitleUtils.getDisplayTitle(a), TitleUtils.getDisplayTitle(b)),
+          };
+        });
+    }
+    final favoriteSongs = _cachedFavorites!;
 
     return Column(
       children: [

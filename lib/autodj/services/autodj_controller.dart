@@ -15,6 +15,17 @@ import 'transition_planner.dart';
 
 enum AutoDjStatus { disabled, idle, analyzing, ready, mixing, error }
 
+class AutoDjQueueSelection {
+  final List<String> paths;
+  final int currentIndex;
+
+  const AutoDjQueueSelection(this.paths, this.currentIndex);
+}
+
+typedef AutoDjNextTrackSelector = Future<AutoDjQueueSelection?> Function(
+  String currentPath,
+);
+
 class AutoDjController extends ChangeNotifier {
   static const _mediaChannel = MethodChannel('com.jglhomer.player/media_utils');
 
@@ -23,6 +34,7 @@ class AutoDjController extends ChangeNotifier {
   final AutoDjAnalyzer analyzer;
   final TransitionPlanner planner;
   final AutoDjPreferences preferences;
+  final AutoDjNextTrackSelector? selectNextTrack;
   final StreamSubscription<Duration> _positionSubscription;
   StreamSubscription<AutoDjAnalysisProgress>? _analysisProgressSubscription;
 
@@ -38,6 +50,8 @@ class AutoDjController extends ChangeNotifier {
   bool _transitionStarted = false;
   bool _disposed = false;
   bool _backgroundAnalysisRunning = false;
+  bool _selectingNextTrack = false;
+  List<String> _library = const [];
   int _analysisCount = 0;
   double _visualBpm = 0;
   double _visualEnergy = 0;
@@ -48,6 +62,7 @@ class AutoDjController extends ChangeNotifier {
     AutoDjAnalyzer? analyzer,
     TransitionPlanner? planner,
     AutoDjPreferences? preferences,
+    this.selectNextTrack,
   })  : _secondary = AudioPlayer(
           handleInterruptions: false,
           handleAudioSessionActivation: false,
@@ -110,11 +125,9 @@ class AutoDjController extends ChangeNotifier {
       if (wasEnabled) {
         await _cancelTransition();
       }
-      if (value.backgroundAnalysis && _queue.isNotEmpty) {
-        unawaited(_runBackgroundAnalysis());
-      } else {
-        unawaited(_prepareNext());
-      }
+      // Preparing the song that will actually play always has priority over
+      // the low-priority whole-library scan.
+      unawaited(_prepareNext());
     }
     notifyListeners();
   }
@@ -142,6 +155,11 @@ class AutoDjController extends ChangeNotifier {
     _queue = normalized;
     _currentIndex = currentIndex;
 
+    // The provider may replace the player queue while it inserts the global
+    // AutoDJ candidate. Let the in-flight preparation continue with the new
+    // snapshot instead of starting a second analysis.
+    if (_selectingNextTrack) return;
+
     if (_handoffTargetIndex == currentIndex) return;
     if (sameTrack && _preparedPlan != null) return;
     unawaited(_cancelTransition().then((_) {
@@ -154,17 +172,28 @@ class AutoDjController extends ChangeNotifier {
     }));
   }
 
+  void updateLibrary(Iterable<String> paths) {
+    final next = List<String>.unmodifiable(paths);
+    if (listEquals(_library, next)) return;
+    _library = next;
+    if (_library.isNotEmpty && !_backgroundAnalysisRunning) {
+      unawaited(_runBackgroundAnalysis());
+    }
+  }
+
   Future<void> _runBackgroundAnalysis() async {
-    if (_backgroundAnalysisRunning || _queue.isEmpty) return;
+    final paths = _library.isNotEmpty ? _library : _queue;
+    if (_backgroundAnalysisRunning || paths.isEmpty) return;
     _backgroundAnalysisRunning = true;
     try {
-      await analyzeLibrary(_queue);
+      await analyzer.analyzeBatch(paths);
+      _analysisCount = await analyzer.database.count();
     } catch (_) {
-      // The visible status/error already records which file failed. Playback
-      // continues and the next preparation may still use cached analyses.
+      // Background indexing is best effort. Foreground preparation cancels it
+      // whenever the next transition needs immediate analysis.
     } finally {
       _backgroundAnalysisRunning = false;
-      if (_settings.enabled) unawaited(_prepareNext());
+      notifyListeners();
     }
   }
 
@@ -215,6 +244,29 @@ class AutoDjController extends ChangeNotifier {
   }
 
   Future<void> _prepareNext() async {
+    if (_backgroundAnalysisRunning) {
+      await analyzer.cancel();
+      while (_backgroundAnalysisRunning && !_disposed) {
+        await Future<void>.delayed(const Duration(milliseconds: 25));
+      }
+    }
+    if (_settings.enabled &&
+        selectNextTrack != null &&
+        !_selectingNextTrack &&
+        _currentIndex >= 0 &&
+        _currentIndex < _queue.length) {
+      _selectingNextTrack = true;
+      try {
+        final selection = await selectNextTrack!(_queue[_currentIndex]);
+        if (selection != null) {
+          _queue = List<String>.unmodifiable(selection.paths);
+          _currentIndex = selection.currentIndex;
+        }
+      } finally {
+        _selectingNextTrack = false;
+      }
+    }
+
     final generation = ++_generation;
     _transitionStarted = false;
     _preparedPlan = null;
@@ -261,6 +313,9 @@ class AutoDjController extends ChangeNotifier {
       _preparedPlan = plan;
       _status = AutoDjStatus.ready;
       notifyListeners();
+      if (_settings.backgroundAnalysis && _library.isNotEmpty) {
+        unawaited(_runBackgroundAnalysis());
+      }
       if (primary.position.inMilliseconds >= plan.outgoingStartMs) {
         unawaited(_startTransition());
       }

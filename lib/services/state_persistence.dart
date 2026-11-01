@@ -22,6 +22,8 @@ class StatePersistence {
   static const String _songPathKey = 'current_song_path';
   static const String _trackIdKey = 'current_track_id';
   static const String _positionKey = 'position_ms';
+  static const String _playbackCheckpointRevisionKey =
+      'playback_checkpoint_revision_v1';
   static const String _playlistKey = 'playback_playlist_paths_v1';
   static const String _shuffleKey = 'playback_shuffle';
   static const String _loopModeKey = 'playback_loop_mode';
@@ -340,6 +342,7 @@ class StatePersistence {
         playlistPaths == null ? null : List<String>.from(playlistPaths);
     final write = _playbackSave.then((_) async {
       final prefs = await SharedPreferences.getInstance();
+      final revision = DateTime.now().microsecondsSinceEpoch;
       await prefs.setString(_modeKey, mode.toString());
 
       if (folderPath != null) {
@@ -368,6 +371,7 @@ class StatePersistence {
       await prefs.setInt(_positionKey, positionMs);
       await prefs.setBool(_shuffleKey, isShuffle);
       await prefs.setString(_loopModeKey, loopMode);
+      await prefs.setInt(_playbackCheckpointRevisionKey, revision);
       // One complete snapshot prevents mixed track/position/context after a kill.
       await prefs.setString(
           _playbackSnapshotKey,
@@ -381,6 +385,7 @@ class StatePersistence {
             'positionMs': positionMs,
             'isShuffle': isShuffle,
             'loopMode': loopMode,
+            'checkpointRevision': revision,
           }));
     });
     _playbackSave = write.catchError((_) {});
@@ -402,6 +407,7 @@ class StatePersistence {
             'positionMs': 0,
             'isShuffle': false,
             'loopMode': 'off',
+            'checkpointRevision': DateTime.now().microsecondsSinceEpoch,
           }));
       for (final key in [
         _songPathKey,
@@ -409,10 +415,45 @@ class StatePersistence {
         _playlistKey,
         _positionKey,
         _folderPathKey,
-        _contextIdKey
+        _contextIdKey,
+        _playbackCheckpointRevisionKey
       ]) {
         await prefs.remove(key);
       }
+    });
+    _playbackSave = write.catchError((_) {});
+    return write;
+  }
+
+  /// Lightweight checkpoint that avoids serializing a very large queue every
+  /// few seconds while playback is advancing.
+  static Future<void> savePlaybackPosition(int positionMs) {
+    final write = _playbackSave.then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_positionKey, positionMs.clamp(0, 1 << 31));
+      await prefs.setInt(
+        _playbackCheckpointRevisionKey,
+        DateTime.now().microsecondsSinceEpoch,
+      );
+    });
+    _playbackSave = write.catchError((_) {});
+    return write;
+  }
+
+  static Future<void> savePlaybackCheckpoint({
+    required String songPath,
+    int? trackId,
+    required int positionMs,
+  }) {
+    final write = _playbackSave.then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_songPathKey, songPath);
+      if (trackId != null) await prefs.setInt(_trackIdKey, trackId);
+      await prefs.setInt(_positionKey, positionMs.clamp(0, 1 << 31));
+      await prefs.setInt(
+        _playbackCheckpointRevisionKey,
+        DateTime.now().microsecondsSinceEpoch,
+      );
     });
     _playbackSave = write.catchError((_) {});
     return write;
@@ -424,6 +465,16 @@ class StatePersistence {
     if (snapshot != null) {
       try {
         final saved = Map<String, dynamic>.from(jsonDecode(snapshot) as Map);
+        final snapshotRevision = saved['checkpointRevision'] as int? ?? 0;
+        final checkpointRevision =
+            prefs.getInt(_playbackCheckpointRevisionKey) ?? 0;
+        if (checkpointRevision > snapshotRevision) {
+          saved['songPath'] =
+              prefs.getString(_songPathKey) ?? saved['songPath'];
+          saved['trackId'] = prefs.getInt(_trackIdKey) ?? saved['trackId'];
+          saved['positionMs'] =
+              prefs.getInt(_positionKey) ?? saved['positionMs'] ?? 0;
+        }
         saved['mode'] = PlaybackMode.values.firstWhere(
             (mode) => mode.toString() == saved['mode'],
             orElse: () => PlaybackMode.global);

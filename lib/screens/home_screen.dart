@@ -16,6 +16,8 @@ import 'tabs/recently_added_tab.dart';
 import 'tabs/most_played_tab.dart';
 import '../theme/app_theme.dart';
 import '../l10n/app_strings.dart';
+import '../autodj/models/autodj_settings.dart';
+import '../autodj/services/autodj_controller.dart';
 
 // ─── Metadata de cada tab ────────────────────────────────────────────────────
 class _TabDef {
@@ -224,9 +226,8 @@ class HomeScreen extends StatelessWidget {
                         Icons.auto_awesome_rounded,
                         color: enabled ? AppTheme.primaryColor : null,
                       ),
-                      onPressed: () => controller.updateSettings(
-                        controller.settings.copyWith(enabled: !enabled),
-                      ),
+                      onPressed: () =>
+                          _showSmartMixSheet(context, audioProvider),
                     );
                   },
                 ),
@@ -422,6 +423,194 @@ class HomeScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+Future<void> _showSmartMixSheet(
+  BuildContext context,
+  AudioProvider audioProvider,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Theme.of(context).colorScheme.surface,
+    showDragHandle: true,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (_) => _SmartMixSheet(audioProvider: audioProvider),
+  );
+}
+
+class _SmartMixSheet extends StatelessWidget {
+  const _SmartMixSheet({required this.audioProvider});
+
+  final AudioProvider audioProvider;
+
+  String _status(AutoDjController controller) => switch (controller.status) {
+        AutoDjStatus.disabled => 'Apagada',
+        AutoDjStatus.idle => 'Esperando la siguiente canción',
+        AutoDjStatus.analyzing => 'Analizando actual y siguiente…',
+        AutoDjStatus.ready => 'Lista para mezclar',
+        AutoDjStatus.mixing => 'Mezclando ahora…',
+        AutoDjStatus.error => 'No se pudo preparar la mezcla',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final controller = audioProvider.autoDj;
+
+    return SafeArea(
+      top: false,
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          final enabled = controller.settings.enabled;
+          final canMixNow = enabled &&
+              controller.preparedPlan != null &&
+              !controller.isMixing &&
+              audioProvider.isPlaying;
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 2, 20, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: enabled
+                            ? AppTheme.primaryColor.withValues(alpha: 0.18)
+                            : colorScheme.surfaceContainerHighest,
+                      ),
+                      child: Icon(
+                        Icons.auto_awesome_rounded,
+                        color: enabled
+                            ? AppTheme.primaryColor
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Mezcla inteligente',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            _status(controller),
+                            style: TextStyle(
+                              color: controller.status == AutoDjStatus.error
+                                  ? colorScheme.error
+                                  : colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: enabled,
+                      onChanged: (value) {
+                        final current = controller.settings;
+                        controller.updateSettings(
+                          current.copyWith(
+                            enabled: value,
+                            backgroundAnalysis: value,
+                            playDuration: value &&
+                                    current.playDuration ==
+                                        AutoDjPlayDuration.full
+                                ? AutoDjPlayDuration.automatic
+                                : current.playDuration,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text(
+                    'Abre una cola independiente y elige la siguiente canción '
+                    'entre toda tu biblioteca. Sólo agrega una rola a la vez; '
+                    'el análisis se guarda en segundo plano.',
+                    style: TextStyle(height: 1.35),
+                  ),
+                ),
+                if (controller.error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'No se pudo analizar esta mezcla. Prueba con otra canción.',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: colorScheme.error, fontSize: 12),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: canMixNow
+                        ? () async {
+                            await controller.mixNow();
+                            if (!context.mounted) return;
+                            if (controller.status == AutoDjStatus.error) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text(
+                                      'No se pudo iniciar la mezcla.'),
+                                ),
+                              );
+                            }
+                          }
+                        : null,
+                    icon: const Icon(Icons.multitrack_audio_rounded),
+                    label: Text(
+                      controller.isMixing
+                          ? 'Mezclando…'
+                          : 'Mezclar ahora con la siguiente',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Center(
+                  child: Text(
+                    !enabled
+                        ? 'Actívala para preparar la siguiente canción.'
+                        : !audioProvider.isPlaying
+                            ? 'Reproduce una canción para mezclar ahora.'
+                            : controller.preparedPlan == null
+                                ? 'Espera mientras termina el análisis.'
+                                : 'También cambiará sola en el punto detectado.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }

@@ -97,6 +97,9 @@ class PlaybackEngine {
     );
   }
 
+  Future<void> insertQueueItems(int index, List<MediaItem> items) =>
+      _handler.insertQueueItems(index, items);
+
   void detachCallbacks() {
     _handler.onToggleFavorite = null;
     _handler.onPlayRequested = null;

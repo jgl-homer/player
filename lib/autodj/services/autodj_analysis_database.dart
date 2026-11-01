@@ -21,7 +21,9 @@ class AutoDjAnalysisDatabase {
       p.join(root, _databaseName),
       version: _databaseVersion,
       onConfigure: (database) async {
-        await database.execute('PRAGMA journal_mode=WAL');
+        // PRAGMA journal_mode returns a row on Android, so sqflite rejects it
+        // through execute(). rawQuery is the supported path for this pragma.
+        await database.rawQuery('PRAGMA journal_mode=WAL');
       },
       onCreate: (database, version) async {
         await database.execute('''
