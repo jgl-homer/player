@@ -50,7 +50,8 @@ class _SmoothPageTransitionsBuilder extends PageTransitionsBuilder {
 }
 
 class AppTheme {
-  static Color primaryColor = const Color(0xFFFFD500);
+  static const Color alpineBlue = Color(0xFF008CFF);
+  static Color primaryColor = alpineBlue;
   static const Color backgroundColor = Colors.black;
   static const Color surfaceColor =
       Color(0xFF121212); // Slightly lighter black for miniplayer

@@ -10,39 +10,52 @@ import '../../../widgets/library_list_tile.dart';
 import '../../../widgets/smart_artwork.dart';
 import '../album_detail_screen.dart';
 
-class AlbumsTab extends StatelessWidget {
+class AlbumsTab extends StatefulWidget {
   const AlbumsTab({super.key});
+
+  @override
+  State<AlbumsTab> createState() => _AlbumsTabState();
+}
+
+class _AlbumsTabState extends State<AlbumsTab> {
+  int? _libraryRevision;
+  String? _cachedSortMode;
+  List<_AlbumLibraryEntry> _cachedAlbums = const [];
 
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final sortMode = audioProvider.librarySortMode('albums', 'album_asc');
-    final albumsByKey = <String, List<SongModel>>{};
-
-    for (final song in audioProvider.allSongs) {
-      albumsByKey.putIfAbsent(TitleUtils.getAlbumKey(song), () => []).add(song);
+    if (_libraryRevision != audioProvider.libraryRevision ||
+        _cachedSortMode != sortMode) {
+      _libraryRevision = audioProvider.libraryRevision;
+      _cachedSortMode = sortMode;
+      final albumsByKey = <String, List<SongModel>>{};
+      for (final song in audioProvider.allSongs) {
+        (albumsByKey[TitleUtils.getAlbumKey(song)] ??= <SongModel>[]).add(song);
+      }
+      _cachedAlbums = albumsByKey.values
+          .map((songs) => _AlbumLibraryEntry(
+                albumName: TitleUtils.getDisplayAlbum(songs.first),
+                artistName: TitleUtils.getDisplayArtist(songs.first.artist),
+                artworkId: songs.first.albumId,
+                songs: songs,
+              ))
+          .toList()
+        ..sort((a, b) {
+          final albumA = a.albumName.toLowerCase();
+          final albumB = b.albumName.toLowerCase();
+          return switch (sortMode) {
+            'album_desc' => albumB.compareTo(albumA),
+            'artist_asc' =>
+              a.artistName.toLowerCase().compareTo(b.artistName.toLowerCase()),
+            'songs_desc' => b.songs.length.compareTo(a.songs.length),
+            'newest' => b.newestDate.compareTo(a.newestDate),
+            _ => albumA.compareTo(albumB),
+          };
+        });
     }
-
-    final albums = albumsByKey.values
-        .map((songs) => _AlbumLibraryEntry(
-              albumName: TitleUtils.getDisplayAlbum(songs.first),
-              artistName: TitleUtils.getDisplayArtist(songs.first.artist),
-              artworkId: songs.first.albumId,
-              songs: songs,
-            ))
-        .toList()
-      ..sort((a, b) {
-        final albumA = a.albumName.toLowerCase();
-        final albumB = b.albumName.toLowerCase();
-        return switch (sortMode) {
-          'album_desc' => albumB.compareTo(albumA),
-          'artist_asc' =>
-            a.artistName.toLowerCase().compareTo(b.artistName.toLowerCase()),
-          'songs_desc' => b.songs.length.compareTo(a.songs.length),
-          'newest' => b.newestDate.compareTo(a.newestDate),
-          _ => albumA.compareTo(albumB),
-        };
-      });
+    final albums = _cachedAlbums;
 
     if (albums.isEmpty) {
       return const Center(

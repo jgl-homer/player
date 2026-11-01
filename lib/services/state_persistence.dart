@@ -54,6 +54,8 @@ class StatePersistence {
   static const String _crossfadeSecondsKey = 'crossfade_seconds_v1';
   static const String _themeModeKey = 'theme_mode_v1';
   static const String _accentColorKey = 'accent_color_v1';
+  static const String _alpineBlueDefaultMigrationKey =
+      'alpine_blue_default_migration_v1';
   static const String _languageCodeKey = 'language_code_v1';
 
   static Future<bool> loadAutoMode() async {
@@ -758,7 +760,17 @@ class StatePersistence {
 
   static Future<int> loadAccentColor() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_accentColorKey) ?? 0xFFFFD500;
+    final savedColor = prefs.getInt(_accentColorKey);
+    final migrated = prefs.getBool(_alpineBlueDefaultMigrationKey) ?? false;
+    if (!migrated) {
+      await prefs.setBool(_alpineBlueDefaultMigrationKey, true);
+      if (savedColor == null || savedColor == 0xFFFFD500) {
+        const alpineBlue = 0xFF008CFF;
+        await prefs.setInt(_accentColorKey, alpineBlue);
+        return alpineBlue;
+      }
+    }
+    return savedColor ?? 0xFF008CFF;
   }
 
   static Future<void> saveAccentColor(int value) async {

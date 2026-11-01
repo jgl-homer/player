@@ -106,4 +106,20 @@ void main() {
     expect(shuffled.first.artist, 'A');
     expect(shuffled[1].artist, isNot('A'));
   });
+
+  test('smart shuffle stays linear when a huge library has one artist', () {
+    final songs = List.generate(20000, (index) => song(index + 1, 'A'));
+    final stopwatch = Stopwatch()..start();
+
+    final shuffled = policy.buildSmartShuffleQueue(
+      songs,
+      10000,
+      random: Random(9),
+    );
+
+    stopwatch.stop();
+    expect(shuffled.length, songs.length);
+    expect(shuffled.first.id, 10001);
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
+  }, timeout: const Timeout(Duration(seconds: 5)));
 }

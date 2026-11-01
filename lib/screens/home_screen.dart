@@ -470,7 +470,7 @@ class _InitialIndexingView extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFFFFD500), width: 2),
+              border: Border.all(color: AppTheme.primaryColor, width: 2),
             ),
             child: Text(
               hasTotal ? '${(progress * 100).round()}%' : '...',
@@ -498,7 +498,7 @@ class _InitialIndexingView extends StatelessWidget {
               child: LinearProgressIndicator(
                 value: hasTotal ? progress : null,
                 minHeight: 4,
-                color: const Color(0xFFFFD500),
+                color: AppTheme.primaryColor,
                 backgroundColor: const Color(0xFF303030),
               ),
             ),
@@ -570,7 +570,7 @@ class _InlineIndexingBar extends StatelessWidget {
             child: LinearProgressIndicator(
               value: hasTotal ? progress : null,
               minHeight: 3,
-              color: const Color(0xFFFFD500),
+              color: AppTheme.primaryColor,
               backgroundColor: const Color(0xFF303030),
             ),
           ),
@@ -590,12 +590,12 @@ class _SyncingBanner extends StatelessWidget {
       color: const Color(0xFF101010),
       child: Row(
         children: [
-          const SizedBox(
+          SizedBox(
             width: 12,
             height: 12,
             child: CircularProgressIndicator(
               strokeWidth: 1.5,
-              color: Color(0xFFFFD500),
+              color: AppTheme.primaryColor,
             ),
           ),
           const SizedBox(width: 10),

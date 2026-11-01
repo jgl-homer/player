@@ -38,9 +38,20 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
-    final queue = audioProvider.currentPlaybackOrder;
+    final shuffledIndices = audioProvider.isShuffle
+        ? audioProvider.currentPlaybackOrderIndices
+        : null;
+    final queue = shuffledIndices == null
+        ? audioProvider.currentPlaylist
+        : List<SongModel>.generate(
+            shuffledIndices.length,
+            (index) => audioProvider.currentPlaylist[shuffledIndices[index]],
+            growable: false,
+          );
     final colors = Theme.of(context).colorScheme;
-    final currentOrderIndex = audioProvider.currentPlaybackOrderIndex;
+    final currentOrderIndex = shuffledIndices == null
+        ? audioProvider.currentIndex
+        : shuffledIndices.indexOf(audioProvider.currentIndex);
     var followingDurationMs = 0;
     if (currentOrderIndex >= 0 && currentOrderIndex < queue.length) {
       for (var i = currentOrderIndex + 1; i < queue.length; i++) {
@@ -89,7 +100,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                   stream: audioProvider.positionStream,
                   initialData: audioProvider.currentPosition,
                   builder: (context, snapshot) {
-                    final index = audioProvider.currentPlaybackOrderIndex;
+                    final index = currentOrderIndex;
                     if (queue.isEmpty || index < 0 || index >= queue.length) {
                       return const SizedBox.shrink();
                     }
@@ -126,13 +137,14 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
               },
               itemBuilder: (context, index) {
                 final song = queue[index];
+                final queueIndex = shuffledIndices?[index] ?? index;
                 final currentSong = audioProvider.currentSong;
                 final isPlaying =
                     currentSong != null && song.data == currentSong.data;
 
                 return ListTile(
                   key: ValueKey(
-                    '${song.id}_${song.data}_${audioProvider.queueIndexForPlaybackOrder(index)}',
+                    '${song.id}_${song.data}_$queueIndex',
                   ),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -192,15 +204,13 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                             color: colors.onSurfaceVariant),
                         tooltip: 'Quitar de la cola',
                         onPressed: () => audioProvider.removeFromQueue(
-                          audioProvider.queueIndexForPlaybackOrder(index),
+                          queueIndex,
                         ),
                       ),
                     ],
                   ),
                   onTap: () {
-                    audioProvider.skipToIndex(
-                      audioProvider.queueIndexForPlaybackOrder(index),
-                    );
+                    audioProvider.skipToIndex(queueIndex);
                   },
                 );
               },

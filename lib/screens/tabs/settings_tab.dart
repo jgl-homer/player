@@ -84,6 +84,7 @@ class _SettingsTabState extends State<SettingsTab> {
                     spacing: 12,
                     runSpacing: 12,
                     children: const [
+                      AppTheme.alpineBlue,
                       Color(0xFFFFD500),
                       Color(0xFF00E5FF),
                       Color(0xFF64FFDA),

@@ -24,6 +24,8 @@ class _SongsTabState extends State<SongsTab> {
   List<SongModel>? _songsSource;
   String? _sortMode;
   bool? _ignoreArticles;
+  int? _libraryRevision;
+  Map<String, int> _letterIndexMap = const {};
 
   @override
   void dispose() {
@@ -31,7 +33,7 @@ class _SongsTabState extends State<SongsTab> {
     super.dispose();
   }
 
-  Map<String, int> _getLetterIndexMap(List<SongModel> songs) {
+  Map<String, int> _buildLetterIndexMap(List<SongModel> songs) {
     Map<String, int> map = {};
     for (int i = 0; i < songs.length; i++) {
       String title = TitleUtils.getDisplayTitle(songs[i]).trim();
@@ -48,7 +50,7 @@ class _SongsTabState extends State<SongsTab> {
   }
 
   void _scrollToLetter(String letter, List<SongModel> songs) {
-    final map = _getLetterIndexMap(songs);
+    final map = _letterIndexMap;
     int? index;
 
     if (map.containsKey(letter)) {
@@ -100,9 +102,11 @@ class _SongsTabState extends State<SongsTab> {
     );
     final ignoreArticles = audioProvider.librarySortIgnoresArticles('songs');
     if (!identical(_songsSource, sourceSongs) ||
+        _libraryRevision != audioProvider.libraryRevision ||
         _sortMode != sortMode ||
         _ignoreArticles != ignoreArticles) {
       _songsSource = sourceSongs;
+      _libraryRevision = audioProvider.libraryRevision;
       _sortMode = sortMode;
       _ignoreArticles = ignoreArticles;
       _sortedSongs = List<SongModel>.from(sourceSongs)
@@ -112,6 +116,7 @@ class _SongsTabState extends State<SongsTab> {
               sortMode,
               ignoreArticles: ignoreArticles,
             ));
+      _letterIndexMap = _buildLetterIndexMap(_sortedSongs!);
     }
     final songs = _sortedSongs!;
 

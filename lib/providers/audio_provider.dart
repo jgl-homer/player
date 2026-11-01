@@ -90,6 +90,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Map<String, int> _playCounts = {};
   Set<String> _hiddenSongPaths = {};
   Set<String> _hiddenFolderPaths = {};
+  Set<String> _normalizedHiddenSongPaths = {};
+  Set<String> _normalizedHiddenFolderPaths = {};
   String? _countedPlaybackPath;
   String? _crossfadeTriggeredPath;
   bool _crossfadeFadingOut = false;
@@ -104,14 +106,20 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> Function()? _pendingNavigationAction;
   List<String>? _folderPathsCache;
   Map<String, List<SongModel>>? _songsByFolderCache;
+  int _libraryRevision = 0;
+  int _artistCountCache = 0;
+  int _albumCountCache = 0;
+  List<SongModel>? _mostPlayedSongsCache;
 
   // Bug #9: Estado de selección múltiple
   final Set<int> _selectedSongIds = {};
 
   // Getters
   List<SongModel> get allSongs => _allSongs;
+  int get libraryRevision => _libraryRevision;
   List<AlbumModel> get allAlbums => _allAlbums;
   List<SongModel> get currentPlaylist => _currentPlaylist;
+  List<int> get currentPlaybackOrderIndices => _visibleQueueIndices;
   List<int> get _visibleQueueIndices {
     final indices = _playback.effectiveIndices;
     if (!_shuffle ||
@@ -175,6 +183,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
   Set<String> get hiddenFolderPaths => Set.unmodifiable(_hiddenFolderPaths);
   int playCountFor(SongModel song) => _playCounts[song.data] ?? 0;
   List<SongModel> get mostPlayedSongs {
+    final cached = _mostPlayedSongsCache;
+    if (cached != null) return cached;
     final songs = _allSongs.where((song) => playCountFor(song) > 0).toList();
     songs.sort((a, b) {
       final byCount = playCountFor(b).compareTo(playCountFor(a));
@@ -184,15 +194,12 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
               .toLowerCase()
               .compareTo(TitleUtils.getDisplayTitle(b).toLowerCase());
     });
-    return songs;
+    return _mostPlayedSongsCache = songs;
   }
 
   int get songCount => _allSongs.length;
-  int get artistCount => _allSongs
-      .map((song) => TitleUtils.getDisplayArtist(song.artist))
-      .toSet()
-      .length;
-  int get albumCount => _allSongs.map(TitleUtils.getAlbumKey).toSet().length;
+  int get artistCount => _artistCountCache;
+  int get albumCount => _albumCountCache;
   String get queuePositionLabel {
     if (_currentPlaylist.isEmpty || _currentSong == null) return '0/0';
     final safeIndex = _currentIndex.clamp(0, _currentPlaylist.length - 1);
@@ -306,6 +313,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     _playCounts = await StatePersistence.loadPlayCounts();
     _hiddenSongPaths = await StatePersistence.loadHiddenSongPaths();
     _hiddenFolderPaths = await StatePersistence.loadHiddenFolderPaths();
+    _rebuildHiddenPathCache();
     _activeTabId = await StatePersistence.loadActiveTab() ?? _activeTabId;
     // Load enabled tabs preference
     try {
@@ -595,7 +603,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         final freshAlbums = await _audioQuery.queryAlbums();
         await _applyFreshLibrary(freshSongs, freshAlbums);
         await _indexSongsToDatabase();
-        await _saveLibraryCache();
+        await _clearLegacyLibraryCache();
         // Reportamos inserción de todos como primer índice
         result = SyncResult(freshSongs, [], {});
       } else {
@@ -653,7 +661,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       final upserts = [...diff.toInsert, ...diff.toUpdate];
       final enrichedUpserts = await _enrichWmaMetadataForIndexing(upserts);
       await LibraryDatabase.instance.upsertSongsBatched(
-        enrichedUpserts.map((s) => s.getMap).toList(),
+        enrichedUpserts.map((s) => s.getMap),
       );
       final enrichedByPath = {
         for (final song in enrichedUpserts) song.data: song,
@@ -684,33 +692,19 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     if (diff.toDelete.isNotEmpty) {
       structureChanged = true;
-      final indicesToRemove = diff.toDelete
-          .map((path) => _songIndexByPath[path])
-          .whereType<int>()
-          .toList()
-        ..sort(
-            (a, b) => b.compareTo(a)); // descendente para no desplazar índices
-      for (final idx in indicesToRemove) {
-        if (idx >= 0 && idx < _allSongs.length) _allSongs.removeAt(idx);
-      }
+      _allSongs.removeWhere((song) => diff.toDelete.contains(song.data));
     }
 
     if (diff.toInsert.isNotEmpty) {
       structureChanged = true;
-      for (final song in diff.toInsert) {
-        // Búsqueda binaria para insertar en posición correcta (lista ya ordenada)
-        int lo = 0, hi = _allSongs.length - 1;
-        final name = song.displayName.toLowerCase();
-        while (lo <= hi) {
-          final mid = lo + (hi - lo) ~/ 2;
-          if (_allSongs[mid].displayName.toLowerCase().compareTo(name) < 0) {
-            lo = mid + 1;
-          } else {
-            hi = mid - 1;
-          }
-        }
-        _allSongs.insert(lo, song);
-      }
+      _allSongs.addAll(diff.toInsert);
+      _allSongs.sort((a, b) {
+        final byName =
+            a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+        return byName != 0
+            ? byName
+            : a.data.toLowerCase().compareTo(b.data.toLowerCase());
+      });
     }
 
     if (structureChanged) {
@@ -761,9 +755,18 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void _rebuildSongIndex() {
     _songIndexByPath.clear();
+    final artists = <String>{};
+    final albums = <String>{};
     for (var i = 0; i < _allSongs.length; i++) {
-      _songIndexByPath[_allSongs[i].data] = i;
+      final song = _allSongs[i];
+      _songIndexByPath[song.data] = i;
+      artists.add(TitleUtils.getDisplayArtist(song.artist));
+      albums.add(TitleUtils.getAlbumKey(song));
     }
+    _artistCountCache = artists.length;
+    _albumCountCache = albums.length;
+    _libraryRevision++;
+    _mostPlayedSongsCache = null;
     _folderPathsCache = null;
     _songsByFolderCache = null;
   }
@@ -774,7 +777,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     // We already have fresh _allSongs from _applyFreshLibrary
     // Persist to SQLite
     await LibraryDatabase.instance.upsertSongsBatched(
-      _allSongs.map((s) => s.getMap).toList(),
+      _allSongs.map((s) => s.getMap),
     );
   }
 
@@ -904,6 +907,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     if (_currentPlaylist.isEmpty || _playbackMode == PlaybackMode.global) {
       _currentPlaylist = _globalQueue;
+      unawaited(_clearLegacyLibraryCache());
     } else if (_playbackMode == PlaybackMode.folder &&
         _activeFolderPath != null) {
       _currentPlaylist = _allSongs
@@ -1029,6 +1033,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
       _rebuildSongIndex();
       _globalQueue = List.from(_allSongs);
       _currentPlaylist = _globalQueue;
+      unawaited(_clearLegacyLibraryCache());
 
       stopwatch.stop();
       debugPrint(
@@ -1080,21 +1085,21 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _saveLibraryCache() async {
+  Future<void> _clearLegacyLibraryCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _cachedSongsKey,
-        jsonEncode(_allSongs.map((song) => song.getMap).toList()),
-      );
-      await prefs.setString(
-        _cachedAlbumsKey,
-        jsonEncode(_allAlbums.map((album) => album.getMap).toList()),
-      );
+      await Future.wait([
+        prefs.remove(_cachedSongsKey),
+        prefs.remove(_cachedAlbumsKey),
+      ]);
     } catch (e) {
-      debugPrint('Error saving cached library: $e');
+      debugPrint('Error clearing legacy library cache: $e');
     }
   }
+
+  // Kept for the folder contract; the SQLite index is authoritative now, so
+  // the legacy JSON "save" only removes stale duplicate data.
+  Future<void> _saveLibraryCache() => _clearLegacyLibraryCache();
 
   // --- FX Methods ---
 
@@ -2302,39 +2307,59 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> clearPlayCounts() async {
     _playCounts.clear();
+    _mostPlayedSongsCache = null;
     _countedPlaybackPath = null;
     await StatePersistence.savePlayCounts(_playCounts);
     notifyListeners();
   }
 
   bool _isSongVisible(SongModel song) {
-    return !StorageScanner.isPathHidden(
-      song.data,
-      hiddenSongs: _hiddenSongPaths,
-      hiddenFolders: _hiddenFolderPaths,
+    final path = _normalizeHiddenPath(song.data);
+    if (_normalizedHiddenSongPaths.contains(path)) return false;
+    return !_normalizedHiddenFolderPaths.any(
+      (folder) => path == folder || path.startsWith('$folder/'),
     );
+  }
+
+  String _normalizeHiddenPath(String value) {
+    var normalized = value.replaceAll('\\', '/').toLowerCase();
+    while (normalized.endsWith('/')) {
+      normalized = normalized.substring(0, normalized.length - 1);
+    }
+    return normalized;
+  }
+
+  void _rebuildHiddenPathCache() {
+    _normalizedHiddenSongPaths =
+        _hiddenSongPaths.map(_normalizeHiddenPath).toSet();
+    _normalizedHiddenFolderPaths =
+        _hiddenFolderPaths.map(_normalizeHiddenPath).toSet();
   }
 
   Future<void> hideSong(SongModel song) async {
     _hiddenSongPaths.add(song.data);
+    _rebuildHiddenPathCache();
     await StatePersistence.saveHiddenSongPaths(_hiddenSongPaths);
     await refreshLibrary();
   }
 
   Future<void> restoreHiddenSong(String songPath) async {
     _hiddenSongPaths.remove(songPath);
+    _rebuildHiddenPathCache();
     await StatePersistence.saveHiddenSongPaths(_hiddenSongPaths);
     await refreshLibrary();
   }
 
   Future<void> hideFolder(String folderPath) async {
     _hiddenFolderPaths.add(folderPath);
+    _rebuildHiddenPathCache();
     await StatePersistence.saveHiddenFolderPaths(_hiddenFolderPaths);
     await refreshLibrary();
   }
 
   Future<void> restoreHiddenFolder(String folderPath) async {
     _hiddenFolderPaths.remove(folderPath);
+    _rebuildHiddenPathCache();
     await StatePersistence.saveHiddenFolderPaths(_hiddenFolderPaths);
     await refreshLibrary();
   }
@@ -2362,6 +2387,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (position.inMilliseconds < thresholdMs) return;
     _countedPlaybackPath = song.data;
     _playCounts[song.data] = (_playCounts[song.data] ?? 0) + 1;
+    _mostPlayedSongsCache = null;
     unawaited(StatePersistence.savePlayCounts(_playCounts));
     notifyListeners();
   }
@@ -2494,9 +2520,8 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     _rebuildSongIndex();
 
-    // 4. Guardar en la base de datos SQLite y caché en segundo plano
+    // 4. Guardar en SQLite. La biblioteca ya no se duplica como JSON.
     unawaited(LibraryDatabase.instance.upsertSongs([updatedSong.getMap]));
-    unawaited(_saveLibraryCache());
 
     // 5. Actualizar MediaItem en vivo en audio_service y notificación del sistema
     final updatedMediaItem = await _songToMediaItem(
@@ -2560,7 +2585,6 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         }
 
         await _saveFavoritesState();
-        await _saveLibraryCache();
         _ignoreMediaChangesUntil =
             DateTime.now().add(const Duration(seconds: 3));
         notifyListeners();
@@ -2863,7 +2887,13 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         contextId: _activeContextId,
         songPath: _currentSong!.data,
         trackId: _currentSong!.id,
-        playlistPaths: _currentPlaylist.map((s) => s.data).toList(),
+        // Global and folder queues are reconstructed from the SQLite library.
+        // Persisting thousands of paths duplicated the full library on disk
+        // and allocated a large temporary list on every explicit save.
+        playlistPaths: _playbackMode == PlaybackMode.global ||
+                _playbackMode == PlaybackMode.folder
+            ? null
+            : _currentPlaylist.map((s) => s.data).toList(growable: false),
         positionMs: pos >= 0 ? pos : 0,
         isShuffle: _shuffle,
         loopMode: _loopMode == LoopMode.off
@@ -2948,7 +2978,7 @@ class AudioProvider extends ChangeNotifier with WidgetsBindingObserver {
         _playbackMode = mode;
         _activeContextId = contextId;
       }
-    } else if (playlistPaths.isNotEmpty) {
+    } else if (mode != PlaybackMode.global && playlistPaths.isNotEmpty) {
       final songMap = {for (var s in _allSongs) s.data: s};
       final reconstructed =
           playlistPaths.map((p) => songMap[p]).whereType<SongModel>().toList();

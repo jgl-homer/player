@@ -93,8 +93,9 @@ class PlaybackQueuePolicy {
         i + 1,
       );
       if (swapIndex == -1) {
-        lastArtist = songs[i].artist;
-        continue;
+        // Every remaining song has the same artist. Continuing would scan the
+        // same tail repeatedly and turn a large shuffle into O(n²).
+        break;
       }
 
       final temp = songs[i];

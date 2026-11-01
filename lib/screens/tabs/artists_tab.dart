@@ -9,33 +9,44 @@ import '../../../widgets/smart_artwork.dart';
 import '../../../widgets/count_banner.dart';
 import '../../../widgets/library_list_tile.dart';
 
-class ArtistsTab extends StatelessWidget {
+class ArtistsTab extends StatefulWidget {
   const ArtistsTab({super.key});
+
+  @override
+  State<ArtistsTab> createState() => _ArtistsTabState();
+}
+
+class _ArtistsTabState extends State<ArtistsTab> {
+  int? _libraryRevision;
+  String? _cachedSortMode;
+  List<MapEntry<String, List<SongModel>>> _cachedArtists = const [];
 
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final sortMode = audioProvider.librarySortMode('artists', 'artist_asc');
-    final songs = audioProvider.allSongs;
-
-    // Group songs by artist
-    final Map<String, List<SongModel>> byArtist = {};
-    for (final s in songs) {
-      final key = TitleUtils.getDisplayArtist(s.artist);
-      byArtist.putIfAbsent(key, () => []).add(s);
+    if (_libraryRevision != audioProvider.libraryRevision ||
+        _cachedSortMode != sortMode) {
+      _libraryRevision = audioProvider.libraryRevision;
+      _cachedSortMode = sortMode;
+      final byArtist = <String, List<SongModel>>{};
+      for (final song in audioProvider.allSongs) {
+        final key = TitleUtils.getDisplayArtist(song.artist);
+        (byArtist[key] ??= <SongModel>[]).add(song);
+      }
+      _cachedArtists = byArtist.entries.toList()
+        ..sort((a, b) {
+          final artistA = a.key.toLowerCase();
+          final artistB = b.key.toLowerCase();
+          return switch (sortMode) {
+            'artist_desc' => artistB.compareTo(artistA),
+            'songs_desc' => b.value.length.compareTo(a.value.length),
+            'songs_asc' => a.value.length.compareTo(b.value.length),
+            _ => artistA.compareTo(artistB),
+          };
+        });
     }
-
-    final artists = byArtist.entries.toList()
-      ..sort((a, b) {
-        final artistA = a.key.toLowerCase();
-        final artistB = b.key.toLowerCase();
-        return switch (sortMode) {
-          'artist_desc' => artistB.compareTo(artistA),
-          'songs_desc' => b.value.length.compareTo(a.value.length),
-          'songs_asc' => a.value.length.compareTo(b.value.length),
-          _ => artistA.compareTo(artistB),
-        };
-      });
+    final artists = _cachedArtists;
 
     if (artists.isEmpty) {
       return const Center(

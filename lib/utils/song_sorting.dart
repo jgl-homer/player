@@ -2,6 +2,9 @@ import 'package:on_audio_query/on_audio_query.dart';
 
 import 'title_utils.dart';
 
+final Map<String, String> _normalizedTextCache = <String, String>{};
+const int _normalizedTextCacheLimit = 100000;
+
 String normalizeSongSortMode(String mode) {
   return switch (mode) {
     'newest' => 'date_modified_desc',
@@ -105,7 +108,9 @@ String _sortableText(String value, bool ignoreArticles) {
 }
 
 String _text(String value) {
-  return value
+  final cached = _normalizedTextCache[value];
+  if (cached != null) return cached;
+  final normalized = value
       .trim()
       .toLowerCase()
       .replaceAll(RegExp('[áàäâã]'), 'a')
@@ -114,6 +119,11 @@ String _text(String value) {
       .replaceAll(RegExp('[óòöôõ]'), 'o')
       .replaceAll(RegExp('[úùüû]'), 'u')
       .replaceAll('ñ', 'n');
+  if (_normalizedTextCache.length >= _normalizedTextCacheLimit) {
+    _normalizedTextCache.clear();
+  }
+  _normalizedTextCache[value] = normalized;
+  return normalized;
 }
 
 String _metadataText(

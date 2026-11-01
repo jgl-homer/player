@@ -27,4 +27,17 @@ void main() {
     expect(restored.accentColor, const Color(0xFFFF5252));
     expect(restored.locale, const Locale('pt'));
   });
+
+  test('legacy yellow default migrates once to Alpine blue', () async {
+    SharedPreferences.setMockInitialValues({
+      'accent_color_v1': 0xFFFFD500,
+    });
+
+    final migrated = await AppSettingsProvider.load();
+    expect(migrated.accentColor, const Color(0xFF008CFF));
+
+    await migrated.setAccentColor(const Color(0xFFFFD500));
+    final restored = await AppSettingsProvider.load();
+    expect(restored.accentColor, const Color(0xFFFFD500));
+  });
 }

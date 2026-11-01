@@ -23,6 +23,10 @@ class _FoldersTabState extends State<FoldersTab> {
   String? _draggedLetter;
   final double _itemHeight = 82.0;
   bool _restoredNavigation = false;
+  int? _libraryRevision;
+  String? _cachedSortMode;
+  List<String> _cachedFolderPaths = const [];
+  Map<String, int> _letterIndexMap = const {};
 
   @override
   void initState() {
@@ -95,7 +99,7 @@ class _FoldersTabState extends State<FoldersTab> {
   }
 
   void _scrollToLetter(String letter, List<String> folderPaths) {
-    final map = _getLetterIndexMap(folderPaths);
+    final map = _letterIndexMap;
     int? index;
 
     if (map.containsKey(letter)) {
@@ -138,23 +142,30 @@ class _FoldersTabState extends State<FoldersTab> {
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final sortMode = audioProvider.librarySortMode('folders', 'name_asc');
-    final folderPaths = List<String>.from(audioProvider.sortedFolderPaths)
-      ..sort((a, b) {
-        final nameA = path.basename(a).toLowerCase();
-        final nameB = path.basename(b).toLowerCase();
-        return switch (sortMode) {
-          'name_desc' => nameB.compareTo(nameA),
-          'songs_desc' => audioProvider
-              .songsInFolder(b)
-              .length
-              .compareTo(audioProvider.songsInFolder(a).length),
-          'songs_asc' => audioProvider
-              .songsInFolder(a)
-              .length
-              .compareTo(audioProvider.songsInFolder(b).length),
-          _ => nameA.compareTo(nameB),
-        };
-      });
+    if (_libraryRevision != audioProvider.libraryRevision ||
+        _cachedSortMode != sortMode) {
+      _libraryRevision = audioProvider.libraryRevision;
+      _cachedSortMode = sortMode;
+      _cachedFolderPaths = List<String>.from(audioProvider.sortedFolderPaths)
+        ..sort((a, b) {
+          final nameA = path.basename(a).toLowerCase();
+          final nameB = path.basename(b).toLowerCase();
+          return switch (sortMode) {
+            'name_desc' => nameB.compareTo(nameA),
+            'songs_desc' => audioProvider
+                .songsInFolder(b)
+                .length
+                .compareTo(audioProvider.songsInFolder(a).length),
+            'songs_asc' => audioProvider
+                .songsInFolder(a)
+                .length
+                .compareTo(audioProvider.songsInFolder(b).length),
+            _ => nameA.compareTo(nameB),
+          };
+        });
+      _letterIndexMap = _getLetterIndexMap(_cachedFolderPaths);
+    }
+    final folderPaths = _cachedFolderPaths;
 
     return Column(
       children: [

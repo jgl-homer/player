@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:player/services/library_database.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -57,6 +58,43 @@ void main() {
     expect(rows.single['replaygain_track_gain'], -6.0);
     expect(rows.single.containsKey('album_id'), isTrue);
     expect(rows.single.containsKey('track_number'), isTrue);
+    await library.close();
+    await temp.delete(recursive: true);
+  });
+
+  test('batched indexing streams a large iterable without materializing it',
+      () async {
+    final temp = await Directory.systemTemp.createTemp('player_library_batch_');
+    final path = '${temp.path}/library.db';
+    final library = LibraryDatabase.forTesting(
+      factory: databaseFactoryFfi,
+      databasePath: path,
+    );
+
+    Iterable<Map<dynamic, dynamic>> rows() sync* {
+      for (var index = 0; index < 1201; index++) {
+        yield {
+          '_id': index + 1,
+          '_data': '/music/track_$index.mp3',
+          '_size': 2048,
+          'date_modified': index,
+          'title': 'Track $index',
+          'artist': 'Artist',
+          'album': 'Album',
+          'duration': 1000,
+          'file_extension': 'mp3',
+          '_display_name': 'track_$index.mp3',
+        };
+      }
+    }
+
+    await library.upsertSongsBatched(rows(), batchSize: 128);
+    final db = await library.database;
+    final count = Sqflite.firstIntValue(
+      await db.rawQuery('SELECT COUNT(*) FROM library_index'),
+    );
+    expect(count, 1201);
+
     await library.close();
     await temp.delete(recursive: true);
   });
