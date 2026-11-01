@@ -8,6 +8,7 @@ import 'package:audiotags/audiotags.dart';
 import 'package:path/path.dart' as path;
 
 import '../utils/title_utils.dart';
+import '../utils/audio_metadata_utils.dart';
 import '../services/artwork_cache_service.dart';
 import '../providers/audio_provider.dart';
 
@@ -103,29 +104,38 @@ class _SongInfoModalState extends State<SongInfoModal> {
     return "$minutes:$seconds";
   }
 
-  String _formatBitrate(String? rawBitrate) {
-    final bitrate = int.tryParse(rawBitrate ?? '');
-    if (bitrate == null || bitrate <= 0) return "~320 kb/s";
-    final kbps = (bitrate / 1000).round();
-    return "~$kbps kb/s";
+  String _formatBitrate(
+    String? rawBitrate, {
+    required int sizeBytes,
+    required int durationMs,
+  }) {
+    final kbps = resolveBitrateKbps(
+      reportedBitsPerSecond: rawBitrate,
+      sizeBytes: sizeBytes,
+      durationMs: durationMs,
+    );
+    return kbps == null ? "No disponible" : "$kbps kb/s";
   }
 
   String _formatSampleRate(String? rawRate) {
     final rate = int.tryParse(rawRate ?? '');
-    if (rate == null || rate <= 0) return "44100 Hz";
+    if (rate == null || rate <= 0) return "No disponible";
     return "$rate Hz";
   }
 
-  String _formatChannels(String? rawChannels) {
+  String _formatChannels(String? rawChannels, String? rawLayout) {
     final ch = int.tryParse(rawChannels ?? '');
-    if (ch == 1) return "Mono (1 canal)";
-    if (ch == 2) return "Stereo (2 canales)";
-    return "Stereo";
+    final layout = rawLayout?.trim().toLowerCase();
+    if (ch == 1) return "1 canal${layout == 'mono' ? ' (Mono)' : ''}";
+    if (ch == 2) return "2 canales${layout == 'stereo' ? ' (Stereo)' : ''}";
+    if (ch != null && ch > 0) return "$ch canales";
+    if (layout != null && layout.isNotEmpty) return layout;
+    return "No disponible";
   }
 
   String _formatBitsPerSample(String? rawBits) {
     final bits = int.tryParse(rawBits ?? '');
-    if (bits == null || bits <= 0) return "16 bits";
+    if (bits == null || bits <= 0) return "No aplica";
     return "$bits bits";
   }
 
@@ -273,6 +283,12 @@ class _SongInfoModalState extends State<SongInfoModal> {
                       _formatDate(song.dateAdded ?? stat?.accessed);
                   final dateModified =
                       _formatDate(stat?.modified ?? song.dateModified);
+                  final fileSize = stat?.size ?? song.size;
+                  final probedDurationMs =
+                      int.tryParse(rData['durationMs'] ?? '') ?? 0;
+                  final durationMs = probedDurationMs > 0
+                      ? probedDurationMs
+                      : (song.duration ?? 0);
 
                   final header = Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -338,18 +354,32 @@ class _SongInfoModalState extends State<SongInfoModal> {
                     _infoRowVertical("File path", song.data),
                     _infoRowHorizontal(
                         "Format", _formatFormat(rData, song.data)),
+                    _infoRowHorizontal("Size", _formatSize(fileSize)),
+                    _infoRowHorizontal("Length", _formatDuration(durationMs)),
                     _infoRowHorizontal(
-                        "Size",
-                        _formatSize(
-                            song.size > 0 ? song.size : (stat?.size ?? 0))),
-                    _infoRowHorizontal(
-                        "Length", _formatDuration(song.duration)),
-                    _infoRowHorizontal(
-                        "Bitrate", _formatBitrate(rData['bitrate'])),
+                      "Bitrate",
+                      _formatBitrate(
+                        rData['bitrate'],
+                        sizeBytes: fileSize,
+                        durationMs: durationMs,
+                      ),
+                    ),
+                    if (rData['overallBitrate'] != null &&
+                        rData['overallBitrate'] != rData['bitrate'])
+                      _infoRowHorizontal(
+                        "Overall bitrate",
+                        _formatBitrate(
+                          rData['overallBitrate'],
+                          sizeBytes: fileSize,
+                          durationMs: durationMs,
+                        ),
+                      ),
                     _infoRowHorizontal("Sampling rate",
                         _formatSampleRate(rData['sampleRate'])),
                     _infoRowHorizontal(
-                        "Channels", _formatChannels(rData['channels'])),
+                        "Channels",
+                        _formatChannels(
+                            rData['channels'], rData['channelLayout'])),
                     _infoRowHorizontal("Bits per sample",
                         _formatBitsPerSample(rData['bitsPerSample'])),
                     if (trackGain != null)

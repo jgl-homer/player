@@ -97,6 +97,7 @@ public class MediaUtils {
             metadata.put("sampleRate", sampleRate != null ? sampleRate : "");
             metadata.put("bitsPerSample", bitsPerSample != null ? bitsPerSample : "");
             metadata.put("format", format);
+            enrichTechnicalMetadata(path, metadata);
         } catch (IllegalArgumentException e) {
             Log.w("MediaUtils", "No se pudo leer metadata de: " + path, e);
         } catch (RuntimeException e) {
@@ -110,6 +111,51 @@ public class MediaUtils {
         }
 
         return metadata;
+    }
+
+    private static void enrichTechnicalMetadata(
+            String path, HashMap<String, String> metadata) {
+        try {
+            MediaInformationSession session = FFprobeKit.getMediaInformation(path);
+            MediaInformation information = session.getMediaInformation();
+            if (information == null) return;
+
+            putIfPresent(metadata, "overallBitrate", information.getBitrate(), "");
+            String durationSeconds = information.getDuration();
+            if (durationSeconds != null && !durationSeconds.isEmpty()) {
+                try {
+                    long durationMs = Math.round(Double.parseDouble(durationSeconds) * 1000.0);
+                    metadata.put("durationMs", Long.toString(durationMs));
+                } catch (NumberFormatException ignored) {
+                    // Keep the duration supplied by MediaMetadataRetriever.
+                }
+            }
+
+            if (information.getStreams() == null) return;
+            for (StreamInformation stream : information.getStreams()) {
+                if (!"audio".equals(stream.getType())) continue;
+
+                putIfPresent(metadata, "bitrate", stream.getBitrate(),
+                        metadata.get("overallBitrate"));
+                putIfPresent(metadata, "sampleRate", stream.getSampleRate(), "");
+                putIfPresent(metadata, "channelLayout", stream.getChannelLayout(), "");
+                putIfPresent(metadata, "codec", stream.getCodec(), "");
+                putIfPresent(metadata, "codecLong", stream.getCodecLong(), "");
+
+                org.json.JSONObject properties = stream.getAllProperties();
+                if (properties != null) {
+                    int channels = properties.optInt("channels", 0);
+                    if (channels > 0) metadata.put("channels", Integer.toString(channels));
+
+                    int bits = properties.optInt("bits_per_raw_sample", 0);
+                    if (bits <= 0) bits = properties.optInt("bits_per_sample", 0);
+                    if (bits > 0) metadata.put("bitsPerSample", Integer.toString(bits));
+                }
+                break;
+            }
+        } catch (Exception e) {
+            Log.w("MediaUtils", "FFprobe no pudo completar datos técnicos: " + path, e);
+        }
     }
 
     public static String getEmbeddedLyrics(String path) {

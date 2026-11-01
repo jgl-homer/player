@@ -75,8 +75,10 @@ class MainActivity : AudioServiceActivity() {
                 "extract_metadata" -> {
                     val path = call.argument<String>("path")
                     if (path != null) {
-                        val metadata = MediaUtils.getSongMetadata(path)
-                        result.success(metadata)
+                        metadataExecutor.execute {
+                            val metadata = MediaUtils.getSongMetadata(path)
+                            runOnUiThread { result.success(metadata) }
+                        }
                     } else {
                         result.error("INVALID_ARGUMENT", "Path is required", null)
                     }
