@@ -1,24 +1,37 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/audio_provider.dart';
+import '../../providers/app_settings_provider.dart';
 import '../../services/state_persistence.dart';
 import '../../services/lyrics_service.dart';
+import '../../widgets/epicenter_engine_selector.dart';
+import '../../l10n/app_strings.dart';
+import '../../theme/app_theme.dart';
 import '../../autodj/widgets/autodj_settings_section.dart';
 
-class SettingsTab extends StatelessWidget {
+class SettingsTab extends StatefulWidget {
   const SettingsTab({super.key});
 
   @override
+  State<SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends State<SettingsTab> {
+  @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
+    final appSettings = context.watch<AppSettingsProvider>();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Configuración',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        title: Text(context.tr('settings'),
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         leading: Navigator.of(context).canPop()
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
@@ -27,350 +40,1499 @@ class SettingsTab extends StatelessWidget {
             : null,
       ),
       body: ListView(
-        padding: const EdgeInsets.all(0),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 32),
         children: [
-          // ─── Sección: Pestañas ─────────────────────────────────────────
-          _SectionHeader(label: 'Pestañas visibles'),
-          _TabsSelector(audioProvider: audioProvider),
-
-          const SizedBox(height: 8),
-          const Divider(color: Colors.white10, height: 1),
-          const SizedBox(height: 8),
-
-          // ─── Sección: Reproducción ─────────────────────────────────────
-          _SectionHeader(label: 'Reproducción'),
-          SwitchListTile(
-            title: const Text('Modo automático',
-                style: TextStyle(color: Colors.white)),
-            subtitle: const Text(
-                'Activa el modo automático (cambia orientación)',
-                style: TextStyle(color: Colors.grey, fontSize: 12)),
-            value: audioProvider.isAutoModeEnabled,
-            onChanged: (v) => audioProvider.setAutoMode(v),
-            activeThumbColor: Colors.tealAccent,
-            activeTrackColor: Colors.teal.withAlpha(100),
-          ),
-          SwitchListTile(
-            title: const Text('Epicentro habilitado',
-                style: TextStyle(color: Colors.white)),
-            subtitle: const Text('Aplica el efecto epicentro al audio',
-                style: TextStyle(color: Colors.grey, fontSize: 12)),
-            value: audioProvider.isEpicenterEnabled,
-            onChanged: (v) => audioProvider.toggleEpicenter(),
-            activeThumbColor: Colors.tealAccent,
-            activeTrackColor: Colors.teal.withAlpha(100),
-          ),
-          if (audioProvider.isEpicenterEnabled) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          _SettingsSection(
+            storageKey: 'settings_appearance',
+            icon: Icons.palette_outlined,
+            title: 'Apariencia e idioma',
+            subtitle: appSettings.themeMode == ThemeMode.light
+                ? 'Modo claro'
+                : appSettings.themeMode == ThemeMode.system
+                    ? 'Según el sistema'
+                    : 'Modo oscuro',
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Intensidad de Epicentro',
-                      style: TextStyle(color: Colors.white, fontSize: 14)),
-                  const SizedBox(height: 4),
-                  const Text(
-                      'Define la cantidad y fuerza de bajo sintetizado que se añadirá a la mezcla.',
-                      style: TextStyle(color: Colors.grey, fontSize: 12)),
-                  Row(
-                    children: [
-                      const Icon(Icons.graphic_eq,
-                          color: Colors.grey, size: 20),
-                      Expanded(
-                        child: Slider(
-                          value: audioProvider.epicenterIntensity,
+                  const Text('Tema', style: TextStyle(color: Colors.white)),
+                  const SizedBox(height: 8),
+                  SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                          value: ThemeMode.dark,
+                          icon: Icon(Icons.dark_mode_outlined),
+                          label: Text('Oscuro')),
+                      ButtonSegment(
+                          value: ThemeMode.light,
+                          icon: Icon(Icons.light_mode_outlined),
+                          label: Text('Claro')),
+                      ButtonSegment(
+                          value: ThemeMode.system,
+                          icon: Icon(Icons.settings_suggest_outlined),
+                          label: Text('Sistema')),
+                    ],
+                    selected: {appSettings.themeMode},
+                    onSelectionChanged: (selection) =>
+                        appSettings.setThemeMode(selection.first),
+                  ),
+                  const SizedBox(height: 18),
+                  const Text('Color de acento',
+                      style: TextStyle(color: Colors.white)),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: const [
+                      Color(0xFFFFD500),
+                      Color(0xFF00E5FF),
+                      Color(0xFF64FFDA),
+                      Color(0xFFFF5252),
+                      Color(0xFFE040FB),
+                      Color(0xFF7C4DFF),
+                      Color(0xFFFF9100),
+                      Color(0xFF69F0AE),
+                    ].map((color) {
+                      final selected = appSettings.accentColor == color;
+                      return InkWell(
+                        onTap: () => appSettings.setAccentColor(color),
+                        borderRadius: BorderRadius.circular(24),
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: selected ? Colors.white : Colors.white24,
+                              width: selected ? 3 : 1,
+                            ),
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check, color: Colors.black)
+                              : null,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  InkWell(
+                    onTap: () => _showAccentColorWheel(context, appSettings),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: SweepGradient(
+                                colors: [
+                                  Colors.red,
+                                  Colors.yellow,
+                                  Colors.green,
+                                  Colors.cyan,
+                                  Colors.blue,
+                                  Colors.purple,
+                                  Colors.red,
+                                ],
+                              ),
+                            ),
+                            child: const Icon(Icons.colorize_rounded,
+                                color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Círculo de color',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600)),
+                                Text('Elige cualquier tono para toda la app',
+                                    style: TextStyle(
+                                        color: Colors.grey, fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.chevron_right_rounded,
+                              color: Colors.white54),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.language_outlined),
+                    title: const Text('Idioma'),
+                    trailing: DropdownButton<String>(
+                      value: appSettings.locale.languageCode,
+                      items: const [
+                        DropdownMenuItem(value: 'es', child: Text('Español')),
+                        DropdownMenuItem(value: 'en', child: Text('English')),
+                        DropdownMenuItem(value: 'pt', child: Text('Português')),
+                      ],
+                      onChanged: (code) {
+                        if (code != null) {
+                          appSettings.setLocale(Locale(code));
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _SettingsSection(
+            storageKey: 'settings_tabs',
+            icon: Icons.tune_rounded,
+            title: 'Pestañas visibles',
+            subtitle: '${audioProvider.enabledTabs.length} activas',
+            child: _TabsSelector(audioProvider: audioProvider),
+          ),
+          const SizedBox(height: 10),
+          AnimatedBuilder(
+            animation: audioProvider.autoDj,
+            builder: (context, _) => _SettingsSection(
+              storageKey: 'settings_smart_mix',
+              icon: Icons.auto_awesome_rounded,
+              title: 'Mezcla inteligente',
+              subtitle: audioProvider.autoDj.settings.enabled
+                  ? '${audioProvider.autoDj.analysisCount} canciones analizadas'
+                  : 'Desactivada',
+              child: AutoDjSettingsSection(
+                controller: audioProvider.autoDj,
+                libraryPaths: audioProvider.allSongs
+                    .map((song) => song.data)
+                    .toList(growable: false),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _SettingsSection(
+            storageKey: 'settings_bass',
+            icon: Icons.graphic_eq_rounded,
+            title: 'Restaurador de bajos / Sintetizador de bajos',
+            subtitle: audioProvider.isEpicenterEnabled
+                ? (audioProvider.epicenterEngine == EpicenterEngineMode.legacy
+                    ? 'Sintetizador 1'
+                    : 'Sintetizador 2')
+                : 'Desactivado',
+            child: Column(
+              children: [
+                SwitchListTile(
+                  title: const Text('Restaurador de bajos',
+                      style: TextStyle(color: Colors.white)),
+                  subtitle: const Text(
+                    'Activa la síntesis y restauración de graves profundos.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  value: audioProvider.isEpicenterEnabled,
+                  onChanged: (_) => audioProvider.toggleEpicenter(),
+                  activeThumbColor: AppTheme.primaryColor,
+                  activeTrackColor: AppTheme.primaryColor,
+                ),
+                if (audioProvider.isEpicenterEnabled) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: EpicenterEngineSelector(
+                      value: audioProvider.epicenterEngine,
+                      onChanged: audioProvider.setEpicenterEngine,
+                      showDescriptions: true,
+                    ),
+                  ),
+                  SwitchListTile(
+                    title: const Text('Protección un poco más estricta',
+                        style: TextStyle(color: Colors.white)),
+                    subtitle: const Text(
+                      'Baja un poco más el umbral del limitador para evitar distorsión en los picos fuertes.',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
+                    value: audioProvider.epicenterPeakProtectionEnabled,
+                    onChanged: (value) => audioProvider.updateEpicenterSettings(
+                      peakProtectionEnabled: value,
+                    ),
+                    activeThumbColor: AppTheme.primaryColor,
+                    activeTrackColor: AppTheme.primaryColor,
+                  ),
+                  Theme(
+                    data: Theme.of(context)
+                        .copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      title: Text(
+                        'Ajustes avanzados',
+                        style: TextStyle(
+                            color: AppTheme.primaryColor, fontSize: 14),
+                      ),
+                      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      children: [
+                        _BassSlider(
+                          label: 'Sweep / Center',
+                          description:
+                              'Frecuencia central donde se detecta y restaura el bajo profundo.',
+                          value: audioProvider.epicenterSweepFreq
+                              .clamp(27.0, 63.0),
+                          min: 27,
+                          max: 63,
+                          valueLabel:
+                              '${audioProvider.epicenterSweepFreq.toInt()} Hz',
+                          onChanged: (value) =>
+                              audioProvider.updateEpicenterSettings(
+                            sweepFreq: value,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        _BassSlider(
+                          label: 'Width',
+                          description:
+                              'Controla el ancho de frecuencias alrededor del centro.',
+                          value: audioProvider.epicenterWidth.clamp(0.0, 100.0),
                           min: 0,
                           max: 100,
-                          activeColor: Colors.tealAccent,
-                          inactiveColor: Colors.white24,
-                          onChanged: (v) => audioProvider
-                              .updateEpicenterSettings(intensity: v),
+                          valueLabel:
+                              '${audioProvider.epicenterWidth.toInt()}%',
+                          onChanged: (value) =>
+                              audioProvider.updateEpicenterSettings(
+                            width: value,
+                          ),
                         ),
-                      ),
-                      Text('${audioProvider.epicenterIntensity.toInt()}%',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 13)),
-                    ],
+                      ],
+                    ),
                   ),
                 ],
-              ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _resetEpicenter(context, audioProvider),
+                      icon:
+                          const Icon(Icons.restore, color: Colors.orangeAccent),
+                      label: const Text(
+                        'Restablecer sintetizador de bajos',
+                        style: TextStyle(color: Colors.orangeAccent),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.orange),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-            SwitchListTile(
-              title: const Text('Protección anti-clip',
-                  style: TextStyle(color: Colors.white)),
-              subtitle: Text(
-                audioProvider.epicenterPeakProtectionEnabled
-                    ? 'Activa el límite transparente actual del Epicentro'
-                    : 'Deja la salida como antes, sin el límite nuevo',
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-              value: audioProvider.epicenterPeakProtectionEnabled,
-              onChanged: (v) => audioProvider.updateEpicenterSettings(
-                peakProtectionEnabled: v,
-              ),
-              activeThumbColor: Colors.tealAccent,
-              activeTrackColor: Colors.teal.withAlpha(100),
-            ),
-            Theme(
-              data:
-                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                title: const Text('Ajustes Avanzados de Epicentro',
-                    style: TextStyle(color: Colors.tealAccent, fontSize: 14)),
-                childrenPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                children: [
-                  Column(
+          ),
+          const SizedBox(height: 10),
+          _SettingsSection(
+            storageKey: 'settings_tone_controls',
+            icon: Icons.equalizer_rounded,
+            title: 'ReplayGain y ecualizador',
+            subtitle: _toneControlsSubtitle(audioProvider),
+            child: _ToneControlsPanel(audioProvider: audioProvider),
+          ),
+          const SizedBox(height: 10),
+          _SettingsSection(
+            storageKey: 'settings_library',
+            icon: Icons.library_music_outlined,
+            title: 'Biblioteca',
+            subtitle:
+                '${audioProvider.songCount} canciones · ${audioProvider.artistCount} artistas · ${audioProvider.albumCount} álbumes',
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _LibraryStat(
+                        value: audioProvider.songCount,
+                        label: 'Canciones',
+                      ),
+                      _LibraryStat(
+                        value: audioProvider.artistCount,
+                        label: 'Artistas',
+                      ),
+                      _LibraryStat(
+                        value: audioProvider.albumCount,
+                        label: 'Álbumes',
+                      ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading:
+                      Icon(Icons.timer_outlined, color: AppTheme.primaryColor),
+                  title: const Text(
+                    'Ignorar audios cortos',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    audioProvider.minimumSongDurationSeconds == 0
+                        ? 'Sin límite de duración mínima.'
+                        : 'Oculta audios de menos de ${audioProvider.minimumSongDurationSeconds} segundos.',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: audioProvider.minimumSongDurationSeconds,
+                    dropdownColor: const Color(0xFF252525),
+                    underline: const SizedBox.shrink(),
+                    style: TextStyle(color: AppTheme.primaryColor),
+                    items: const [0, 5, 10, 15, 20, 30, 45, 60, 90, 120]
+                        .map(
+                          (seconds) => DropdownMenuItem(
+                            value: seconds,
+                            child: Text(seconds == 0 ? 'No' : '$seconds s'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (seconds) {
+                      if (seconds != null) {
+                        audioProvider.setMinimumSongDuration(seconds);
+                      }
+                    },
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(Icons.multitrack_audio_outlined,
+                      color: AppTheme.primaryColor),
+                  title: const Text(
+                    'Fundido entre canciones',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    audioProvider.crossfadeSeconds == 0
+                        ? 'Desactivado'
+                        : '${audioProvider.crossfadeSeconds} segundos al cambiar de canción',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  trailing: DropdownButton<int>(
+                    value: audioProvider.crossfadeSeconds,
+                    dropdownColor: const Color(0xFF252525),
+                    underline: const SizedBox.shrink(),
+                    style: TextStyle(color: AppTheme.primaryColor),
+                    items: const [0, 2, 4, 6, 8, 10, 12]
+                        .map(
+                          (seconds) => DropdownMenuItem(
+                            value: seconds,
+                            child: Text(seconds == 0 ? 'No' : '$seconds s'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (seconds) {
+                      if (seconds != null) {
+                        audioProvider.setCrossfadeSeconds(seconds);
+                      }
+                    },
+                  ),
+                ),
+                if (audioProvider.hiddenSongPaths.isNotEmpty ||
+                    audioProvider.hiddenFolderPaths.isNotEmpty)
+                  _HiddenItemsPanel(audioProvider: audioProvider),
+                ListTile(
+                  leading: const Icon(Icons.restart_alt_rounded),
+                  title: const Text('Reiniciar contador de reproducciones'),
+                  subtitle: const Text(
+                    'Borra las estadísticas de la pestaña Más reproducidas.',
+                  ),
+                  onTap: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Reiniciar reproducciones'),
+                        content: const Text(
+                            '¿Quieres borrar todos los conteos guardados?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Cancelar'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('Reiniciar'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await audioProvider.clearPlayCounts();
+                    }
+                  },
+                ),
+                SwitchListTile(
+                  title: const Text('Mostrar letras',
+                      style: TextStyle(color: Colors.white)),
+                  subtitle: const Text(
+                    'Muestra u oculta las letras en el reproductor.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  value: audioProvider.lyricsVisible,
+                  onChanged: audioProvider.setLyricsVisible,
+                  activeThumbColor: AppTheme.primaryColor,
+                  activeTrackColor: AppTheme.primaryColor,
+                ),
+                SwitchListTile(
+                  title: const Text('Letras automáticas',
+                      style: TextStyle(color: Colors.white)),
+                  subtitle: const Text(
+                    'Consulta internet solo para la canción actual cuando no está en caché.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  value: audioProvider.automaticLyrics,
+                  onChanged: audioProvider.setAutomaticLyrics,
+                  activeThumbColor: AppTheme.primaryColor,
+                  activeTrackColor: AppTheme.primaryColor,
+                ),
+                ListTile(
+                  leading:
+                      Icon(Icons.lyrics_outlined, color: AppTheme.primaryColor),
+                  title: const Text('Fuente de letras',
+                      style: TextStyle(color: Colors.white)),
+                  subtitle: Text(
+                    audioProvider.lyricsSource == LyricsSource.internet
+                        ? 'Busca primero en LiriQo y usa LRCLIB como respaldo.'
+                        : 'Requiere letras incrustadas con marcas de tiempo sincronizadas con la canción.',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  trailing: DropdownButton<LyricsSource>(
+                    value: audioProvider.lyricsSource,
+                    dropdownColor: const Color(0xFF252525),
+                    underline: const SizedBox.shrink(),
+                    style: TextStyle(color: AppTheme.primaryColor),
+                    items: const [
+                      DropdownMenuItem(
+                        value: LyricsSource.internet,
+                        child: Text('Internet'),
+                      ),
+                      DropdownMenuItem(
+                        value: LyricsSource.embedded,
+                        child: Text('Incrustadas'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) audioProvider.setLyricsSource(value);
+                    },
+                  ),
+                ),
+                ListTile(
+                  leading: Icon(Icons.manage_search_rounded,
+                      color: AppTheme.primaryColor),
+                  title: const Text('Buscar otra letra'),
+                  subtitle: const Text(
+                      'Descarta la copia guardada y consulta de nuevo.'),
+                  enabled: audioProvider.currentSong != null,
+                  onTap: audioProvider.currentSong == null
+                      ? null
+                      : () async {
+                          final result = await LyricsService.refresh(
+                            audioProvider.currentSong!,
+                            audioProvider.lyricsSource,
+                            automatic: true,
+                          );
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(result == null
+                                ? 'No se encontró otra letra.'
+                                : 'Letra actualizada desde ${result.provider}.'),
+                          ));
+                        },
+                ),
+                ListTile(
+                  leading:
+                      Icon(Icons.storage_rounded, color: AppTheme.primaryColor),
+                  title: const Text('Caché de letras'),
+                  subtitle: FutureBuilder<int>(
+                    future: LyricsService.cacheSizeBytes(),
+                    builder: (context, snapshot) => Text(
+                      snapshot.hasData
+                          ? _formatBytes(snapshot.data!)
+                          : 'Calculando…',
+                    ),
+                  ),
+                  trailing: const Icon(Icons.delete_outline_rounded),
+                  onTap: () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Borrar caché de letras'),
+                        content: const Text(
+                          'Se borrarán únicamente las letras descargadas. La biblioteca y el análisis de audio no cambian.',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(dialogContext, false),
+                            child: const Text('Cancelar'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('Borrar'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true) {
+                      await LyricsService.clearCache();
+                      if (mounted) setState(() {});
+                    }
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Sweep Freq',
+                      const Text('Canciones recientes',
                           style: TextStyle(color: Colors.white, fontSize: 14)),
-                      const SizedBox(height: 4),
                       const Text(
-                          'Ajusta la frecuencia central donde se detectará y restaurará el bajo profundo.',
-                          style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        'Ordena por fecha de modificación y define cuántas mostrar.',
+                        style: TextStyle(color: Colors.grey, fontSize: 12),
+                      ),
                       Row(
                         children: [
+                          const Icon(Icons.new_releases_outlined,
+                              color: Colors.grey, size: 20),
                           Expanded(
                             child: Slider(
-                              value: audioProvider.epicenterSweepFreq
-                                  .clamp(27.0, 63.0),
-                              min: 27,
-                              max: 63,
-                              activeColor: Colors.tealAccent,
+                              value: audioProvider.recentSongsLimit.toDouble(),
+                              min: 100,
+                              max: 10000,
+                              divisions: 99,
+                              activeColor: AppTheme.primaryColor,
                               inactiveColor: Colors.white24,
-                              onChanged: (v) => audioProvider
-                                  .updateEpicenterSettings(sweepFreq: v),
+                              onChanged: (value) =>
+                                  audioProvider.setRecentSongsLimit(
+                                (value / 100).round() * 100,
+                              ),
                             ),
                           ),
-                          Text('${audioProvider.epicenterSweepFreq.toInt()} Hz',
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 13)),
+                          Text(
+                            audioProvider.recentSongsLimit >= 1000
+                                ? '${(audioProvider.recentSongsLimit / 1000).toStringAsFixed(audioProvider.recentSongsLimit % 1000 == 0 ? 0 : 1)}k'
+                                : '${audioProvider.recentSongsLimit}',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13),
+                          ),
                         ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  Column(
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _refreshLibrary(context, audioProvider),
+                      icon: Icon(Icons.refresh, color: AppTheme.primaryColor),
+                      label: Text(
+                        'Refrescar biblioteca',
+                        style: TextStyle(color: AppTheme.primaryColor),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: AppTheme.primaryColor),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          const _AboutAppSection(),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAccentColorWheel(
+    BuildContext context,
+    AppSettingsProvider appSettings,
+  ) async {
+    final selected = await showModalBottomSheet<Color>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      isScrollControlled: true,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _AccentColorWheel(
+        initialColor: appSettings.accentColor,
+      ),
+    );
+    if (selected != null) await appSettings.setAccentColor(selected);
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  String _toneControlsSubtitle(AudioProvider audioProvider) {
+    final enabled = <String>[
+      if (audioProvider.replayGainEnabled) 'ReplayGain',
+      if (audioProvider.equalizerEnabled) 'EQ',
+    ];
+    return enabled.isEmpty ? 'Desactivado' : enabled.join(' + ');
+  }
+
+  Future<void> _refreshLibrary(
+    BuildContext context,
+    AudioProvider audioProvider,
+  ) async {
+    final result = await audioProvider.refreshLibrary();
+    if (!context.mounted) return;
+    final message = (result == null || !result.hasChanges)
+        ? 'Biblioteca ya actualizada.'
+        : 'Biblioteca actualizada con cambios.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  Future<void> _resetEpicenter(
+    BuildContext context,
+    AudioProvider audioProvider,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF222222),
+        title: const Text('Restablecer sintetizador de bajos',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          '¿Deseas restablecer los parámetros del sintetizador de bajos?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Restablecer',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await audioProvider.resetEpicenterSettingsToDefault();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Parámetros restablecidos'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
+class _AccentColorWheel extends StatefulWidget {
+  const _AccentColorWheel({required this.initialColor});
+
+  final Color initialColor;
+
+  @override
+  State<_AccentColorWheel> createState() => _AccentColorWheelState();
+}
+
+class _AccentColorWheelState extends State<_AccentColorWheel> {
+  late HSVColor _selectedColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedColor = HSVColor.fromColor(widget.initialColor);
+  }
+
+  void _updateColor(Offset position, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final delta = position - center;
+    final radius = size.shortestSide / 2;
+    final saturation = (delta.distance / radius).clamp(0.0, 1.0);
+    var angle = atan2(delta.dy, delta.dx);
+    if (angle < 0) angle += 2 * pi;
+
+    setState(() {
+      _selectedColor = HSVColor.fromAHSV(
+        1,
+        angle * 180 / pi,
+        saturation,
+        _selectedColor.value,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selected = _selectedColor.toColor();
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: selected,
+                    border: Border.all(color: colorScheme.onSurface, width: 2),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Width',
-                          style: TextStyle(color: Colors.white, fontSize: 14)),
-                      const SizedBox(height: 4),
-                      const Text(
-                          'Controla el rango de frecuencias adyacentes que afectará el efecto de bajo.',
-                          style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Slider(
-                              value: audioProvider.epicenterWidth
-                                  .clamp(0.0, 100.0),
-                              min: 0,
-                              max: 100,
-                              activeColor: Colors.tealAccent,
-                              inactiveColor: Colors.white24,
-                              onChanged: (v) => audioProvider
-                                  .updateEpicenterSettings(width: v),
+                      Text(
+                        'Círculo de color',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
                             ),
-                          ),
-                          Text('${audioProvider.epicenterWidth.toInt()}%',
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 13)),
-                        ],
+                      ),
+                      Text(
+                        'Arrastra el punto para elegir el tono',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                       ),
                     ],
                   ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Center(
+              child: SizedBox.square(
+                dimension: min(MediaQuery.sizeOf(context).width - 64, 290),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final size = Size.square(constraints.maxWidth);
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanDown: (details) =>
+                          _updateColor(details.localPosition, size),
+                      onPanUpdate: (details) =>
+                          _updateColor(details.localPosition, size),
+                      onTapDown: (details) =>
+                          _updateColor(details.localPosition, size),
+                      child: CustomPaint(
+                        painter: _HueSaturationWheelPainter(_selectedColor),
+                      ),
+                    );
+                  },
+                ),
               ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(Icons.brightness_low, color: colorScheme.onSurfaceVariant),
+                Expanded(
+                  child: Slider(
+                    value: _selectedColor.value,
+                    min: 0.25,
+                    max: 1,
+                    activeColor: selected,
+                    onChanged: (value) => setState(() {
+                      _selectedColor = _selectedColor.withValue(value);
+                    }),
+                  ),
+                ),
+                Icon(Icons.brightness_high, color: selected),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: selected,
+                      foregroundColor:
+                          ThemeData.estimateBrightnessForColor(selected) ==
+                                  Brightness.dark
+                              ? Colors.white
+                              : Colors.black,
+                    ),
+                    onPressed: () => Navigator.pop(context, selected),
+                    child: const Text('Aplicar'),
+                  ),
+                ),
+              ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
 
-          const SizedBox(height: 8),
-          const Divider(color: Colors.white10, height: 1),
-          const SizedBox(height: 8),
+class _HueSaturationWheelPainter extends CustomPainter {
+  const _HueSaturationWheelPainter(this.color);
 
-          AutoDjSettingsSection(
-            controller: audioProvider.autoDj,
-            libraryPaths: audioProvider.allSongs
-                .map((song) => song.data)
-                .toList(growable: false),
-          ),
+  final HSVColor color;
 
-          const SizedBox(height: 8),
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.shortestSide / 2;
+    final bounds = Rect.fromCircle(center: center, radius: radius);
 
-          // ─── Sección: Biblioteca ───────────────────────────────────────
-          _SectionHeader(label: 'Biblioteca'),
-          ListTile(
-            leading:
-                const Icon(Icons.lyrics_outlined, color: Colors.tealAccent),
-            title: const Text('Fuente de letras',
-                style: TextStyle(color: Colors.white)),
-            subtitle: Text(
-              audioProvider.lyricsSource == LyricsSource.embedded
-                  ? 'Leer letras incrustadas en cada archivo'
-                  : 'Buscar letras en internet mediante LRCLIB',
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            trailing: DropdownButton<LyricsSource>(
-              value: audioProvider.lyricsSource,
-              dropdownColor: const Color(0xFF252525),
-              underline: const SizedBox.shrink(),
-              style: const TextStyle(color: Colors.tealAccent),
-              items: const [
-                DropdownMenuItem(
-                  value: LyricsSource.embedded,
-                  child: Text('Incrustadas'),
-                ),
-                DropdownMenuItem(
-                  value: LyricsSource.internet,
-                  child: Text('Internet'),
-                ),
-              ],
-              onChanged: (value) {
-                if (value != null) audioProvider.setLyricsSource(value);
-              },
-            ),
+    canvas.save();
+    canvas.clipPath(Path()..addOval(bounds));
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = const SweepGradient(
+          colors: [
+            Colors.red,
+            Colors.yellow,
+            Colors.green,
+            Colors.cyan,
+            Colors.blue,
+            Colors.purple,
+            Colors.red,
+          ],
+        ).createShader(bounds),
+    );
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..shader = const RadialGradient(
+          colors: [Colors.white, Color(0x00FFFFFF)],
+        ).createShader(bounds),
+    );
+    if (color.value < 1) {
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()..color = Colors.black.withValues(alpha: 1 - color.value),
+      );
+    }
+    canvas.restore();
+
+    final angle = color.hue * pi / 180;
+    final marker =
+        center + Offset(cos(angle), sin(angle)) * (radius * color.saturation);
+    canvas.drawCircle(marker, 10, Paint()..color = Colors.black54);
+    canvas.drawCircle(
+      marker,
+      8,
+      Paint()
+        ..color = color.toColor()
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawCircle(
+      marker,
+      9,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _HueSaturationWheelPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+class _LibraryStat extends StatelessWidget {
+  final int value;
+  final String label;
+
+  const _LibraryStat({required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '$value',
+          style: TextStyle(
+            color: AppTheme.primaryColor,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
           ),
-          SwitchListTile(
-            title: const Text('Mostrar letras',
-                style: TextStyle(color: Colors.white)),
-            subtitle: const Text(
-                'Muestra u oculta el recuadro de letras en el reproductor',
-                style: TextStyle(color: Colors.grey, fontSize: 12)),
-            value: audioProvider.lyricsVisible,
-            onChanged: audioProvider.setLyricsVisible,
-            activeThumbColor: Colors.tealAccent,
-            activeTrackColor: Colors.teal,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Canciones recientes',
-                    style: TextStyle(color: Colors.white, fontSize: 14)),
-                const Text(
-                    'Ordena por fecha de modificación y define cuántas mostrar.',
-                    style: TextStyle(color: Colors.grey, fontSize: 12)),
-                Row(
-                  children: [
-                    const Icon(Icons.new_releases_outlined,
-                        color: Colors.grey, size: 20),
-                    Expanded(
-                      child: Slider(
-                        value: audioProvider.recentSongsLimit.toDouble(),
-                        min: 100,
-                        max: 10000,
-                        divisions: 99,
-                        activeColor: Colors.tealAccent,
-                        inactiveColor: Colors.white24,
-                        onChanged: (value) => audioProvider.setRecentSongsLimit(
-                          (value / 100).round() * 100,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      audioProvider.recentSongsLimit >= 1000
-                          ? '${(audioProvider.recentSongsLimit / 1000).toStringAsFixed(audioProvider.recentSongsLimit % 1000 == 0 ? 0 : 1)}k'
-                          : '${audioProvider.recentSongsLimit}',
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final result = await audioProvider.refreshLibrary();
-                if (!context.mounted) return;
-                final msg = (result == null || !result.hasChanges)
-                    ? 'Biblioteca ya actualizada.'
-                    : 'Biblioteca actualizada con cambios.';
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(msg), behavior: SnackBarBehavior.floating));
-              },
-              icon: const Icon(Icons.refresh, color: Colors.tealAccent),
-              label: const Text('Refrescar biblioteca',
-                  style: TextStyle(color: Colors.tealAccent)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.teal),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.grey, fontSize: 12),
+        ),
+      ],
+    );
+  }
+}
+
+class _HiddenItemsPanel extends StatelessWidget {
+  final AudioProvider audioProvider;
+
+  const _HiddenItemsPanel({required this.audioProvider});
+
+  @override
+  Widget build(BuildContext context) {
+    final folders = audioProvider.hiddenFolderPaths.toList()..sort();
+    final songs = audioProvider.hiddenSongPaths.toList()..sort();
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        leading:
+            Icon(Icons.visibility_off_outlined, color: AppTheme.primaryColor),
+        title: Text(
+          'Elementos ocultos (${folders.length + songs.length})',
+          style: const TextStyle(color: Colors.white),
+        ),
+        children: [
+          ...folders.map(
+            (folder) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.folder_outlined, size: 20),
+              title: Text(
+                folder.replaceAll('\\', '/').split('/').last,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle:
+                  Text(folder, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: IconButton(
+                tooltip: 'Volver a mostrar',
+                icon: const Icon(Icons.visibility_outlined),
+                onPressed: () => audioProvider.restoreHiddenFolder(folder),
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: OutlinedButton.icon(
-              onPressed: () async {
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    backgroundColor: const Color(0xFF222222),
-                    title: const Text('Restablecer epicentro',
-                        style: TextStyle(color: Colors.white)),
-                    content: const Text(
-                        '¿Deseas restablecer los parámetros del epicentro?',
-                        style: TextStyle(color: Colors.white70)),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Cancelar')),
-                      TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('Restablecer',
-                              style: TextStyle(color: Colors.redAccent))),
-                    ],
-                  ),
-                );
-                if (ok == true) {
-                  await audioProvider.resetEpicenterSettingsToDefault();
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('Parámetros restablecidos'),
-                      behavior: SnackBarBehavior.floating));
-                }
-              },
-              icon: const Icon(Icons.restore, color: Colors.orangeAccent),
-              label: const Text('Restablecer epicentro',
-                  style: TextStyle(color: Colors.orangeAccent)),
-              style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.orange),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+          ...songs.map(
+            (songPath) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.music_note_outlined, size: 20),
+              title: Text(
+                songPath.replaceAll('\\', '/').split('/').last,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle:
+                  Text(songPath, maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: IconButton(
+                tooltip: 'Volver a mostrar',
+                icon: const Icon(Icons.visibility_outlined),
+                onPressed: () => audioProvider.restoreHiddenSong(songPath),
               ),
             ),
           ),
-
-          const SizedBox(height: 32),
         ],
       ),
     );
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Header de sección
-// ────────────────────────────────────────────────────────────────────────────────
-class _SectionHeader extends StatelessWidget {
-  final String label;
-  const _SectionHeader({required this.label});
+class _AboutAppSection extends StatelessWidget {
+  static const _mediaChannel = MethodChannel('com.jglhomer.player/media_utils');
+  static const _githubProfile = 'https://github.com/jgl-homer';
+
+  const _AboutAppSection();
+
+  Future<void> _openGithub(BuildContext context) async {
+    try {
+      final opened = await _mediaChannel.invokeMethod<bool>(
+            'open_url',
+            {'url': _githubProfile},
+          ) ??
+          false;
+      if (opened || !context.mounted) return;
+    } catch (_) {
+      if (!context.mounted) return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('No se pudo abrir el perfil de GitHub.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Text(
-        label.toUpperCase(),
-        style: const TextStyle(
-          color: Colors.tealAccent,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.4,
+    return _SettingsSection(
+      storageKey: 'settings_about',
+      icon: Icons.info_outline_rounded,
+      title: 'Acerca de la app',
+      subtitle: 'Player 1.0.0',
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.asset(
+                    'assets/icon/icon.png',
+                    width: 58,
+                    height: 58,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Player',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Versión 1.0.0',
+                        style: TextStyle(color: Colors.white54, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Reproductor de música local para Android, diseñado para bibliotecas grandes y escucha sin conexión. Incluye reproducción multiformato, letras sincronizadas, ReplayGain, ecualizador y restauración de bajos.',
+              style:
+                  TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.shield_outlined,
+                    color: AppTheme.primaryColor, size: 18),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'La biblioteca y los ajustes se procesan en el dispositivo. Internet se utiliza para letras en línea y enlaces externos.',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            const Divider(color: Colors.white12, height: 1),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.code_rounded, color: AppTheme.primaryColor),
+              title: const Text(
+                'jgl-homer en GitHub',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                'github.com/jgl-homer',
+                style: TextStyle(color: AppTheme.primaryColor, fontSize: 12),
+              ),
+              trailing: const Icon(
+                Icons.open_in_new_rounded,
+                color: Colors.white54,
+                size: 19,
+              ),
+              onTap: () => _openGithub(context),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+class _ToneControlsPanel extends StatelessWidget {
+  final AudioProvider audioProvider;
+
+  const _ToneControlsPanel({required this.audioProvider});
+
+  static const _bandLabels = ['60 Hz', '230 Hz', '910 Hz', '3.6 kHz', '14 kHz'];
+  static const _presets = <String, List<double>>{
+    'Plano': [0, 0, 0, 0, 0],
+    'Bajos': [4, 2, 0, -1, 0],
+    'Voz': [-1, -1, 1.5, 2, 1],
+    'Agudos': [0, -1, 0, 2, 4],
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedPreset = _matchingPreset(audioProvider.equalizerBandGains);
+    return Column(
+      children: [
+        ListTile(
+          title: const Text('Amplificación de volumen',
+              style: TextStyle(color: Colors.white)),
+          subtitle: const Text(
+            'Sube hasta 200% como VLC. El limitador evita saturación digital.',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          trailing: Text(
+            '${(pow(10, audioProvider.volumeBoostDb / 20) * 100).round()}%',
+            style: TextStyle(
+              color: audioProvider.volumeBoostDb > 0.01
+                  ? AppTheme.primaryColor
+                  : Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: Slider(
+            value: audioProvider.volumeBoostDb.clamp(0.0, 6.0206),
+            min: 0,
+            max: 6.0206,
+            divisions: 20,
+            activeColor: AppTheme.primaryColor,
+            label:
+                '${(pow(10, audioProvider.volumeBoostDb / 20) * 100).round()}%',
+            onChanged: audioProvider.setVolumeBoostDb,
+          ),
+        ),
+        const Divider(color: Colors.white12, height: 1),
+        SwitchListTile(
+          title:
+              const Text('ReplayGain', style: TextStyle(color: Colors.white)),
+          subtitle: Text(
+            !audioProvider.replayGainEnabled
+                ? 'Iguala el volumen cuando la pista contiene etiquetas ReplayGain.'
+                : audioProvider.currentReplayGainAvailable
+                    ? 'Etiqueta detectada y aplicada con transición suave.'
+                    : 'La pista actual no contiene una etiqueta ReplayGain.',
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          value: audioProvider.replayGainEnabled,
+          onChanged: audioProvider.setReplayGainEnabled,
+          activeThumbColor: AppTheme.primaryColor,
+          activeTrackColor: AppTheme.primaryColor,
+        ),
+        if (audioProvider.replayGainEnabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Las etiquetas ya guardadas en los archivos se leen una vez y se conservan en la biblioteca.',
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<ReplayGainMode>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(
+                      value: ReplayGainMode.track,
+                      label: Text('Por pista'),
+                    ),
+                    ButtonSegment(
+                      value: ReplayGainMode.album,
+                      label: Text('Por álbum'),
+                    ),
+                  ],
+                  selected: {audioProvider.replayGainMode},
+                  onSelectionChanged: (selection) =>
+                      audioProvider.setReplayGainMode(selection.single),
+                ),
+              ],
+            ),
+          ),
+        const Divider(color: Colors.white12, height: 1),
+        SwitchListTile(
+          title: const Text('Ecualizador de 5 bandas',
+              style: TextStyle(color: Colors.white)),
+          subtitle: const Text(
+            'Ajuste moderado de ±6 dB con headroom automático.',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          value: audioProvider.equalizerEnabled,
+          onChanged: audioProvider.setEqualizerEnabled,
+          activeThumbColor: AppTheme.primaryColor,
+          activeTrackColor: AppTheme.primaryColor,
+        ),
+        if (audioProvider.equalizerEnabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Text('Preset',
+                        style: TextStyle(color: Colors.white, fontSize: 14)),
+                    const Spacer(),
+                    DropdownButton<String>(
+                      value: selectedPreset,
+                      dropdownColor: const Color(0xFF252525),
+                      underline: const SizedBox.shrink(),
+                      style: TextStyle(color: AppTheme.primaryColor),
+                      items: [
+                        ..._presets.keys.map(
+                          (name) => DropdownMenuItem(
+                            value: name,
+                            child: Text(name),
+                          ),
+                        ),
+                        if (selectedPreset == 'Personalizado')
+                          const DropdownMenuItem(
+                            value: 'Personalizado',
+                            enabled: false,
+                            child: Text('Personalizado'),
+                          ),
+                      ],
+                      onChanged: (name) {
+                        final preset = _presets[name];
+                        if (preset != null) {
+                          audioProvider.setEqualizerPreset(preset);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                for (var index = 0; index < _bandLabels.length; index++)
+                  _EqualizerBandSlider(
+                    label: _bandLabels[index],
+                    value: audioProvider.equalizerBandGains[index],
+                    onChanged: (value) =>
+                        audioProvider.setEqualizerBandGain(index, value),
+                  ),
+              ],
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: audioProvider.resetToneControls,
+              icon: const Icon(Icons.restore, color: Colors.orangeAccent),
+              label: const Text(
+                'Restablecer volumen, ReplayGain y EQ',
+                style: TextStyle(color: Colors.orangeAccent),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.orange),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _matchingPreset(List<double> gains) {
+    for (final entry in _presets.entries) {
+      var matches = true;
+      for (var index = 0; index < entry.value.length; index++) {
+        if ((entry.value[index] - gains[index]).abs() >= 0.01) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) return entry.key;
+    }
+    return 'Personalizado';
+  }
+}
+
+class _EqualizerBandSlider extends StatelessWidget {
+  final String label;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  const _EqualizerBandSlider({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final formatted = value == 0
+        ? '0 dB'
+        : '${value > 0 ? '+' : ''}${value.toStringAsFixed(1)} dB';
+    return Row(
+      children: [
+        SizedBox(
+          width: 58,
+          child: Text(label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        ),
+        Expanded(
+          child: Slider(
+            value: value.clamp(-6.0, 6.0),
+            min: -6,
+            max: 6,
+            divisions: 24,
+            activeColor: AppTheme.primaryColor,
+            inactiveColor: Colors.white24,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 54,
+          child: Text(
+            formatted,
+            textAlign: TextAlign.end,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SettingsSection extends StatelessWidget {
+  final String storageKey;
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Widget child;
+
+  const _SettingsSection({
+    required this.storageKey,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: PageStorageKey<String>(storageKey),
+          initiallyExpanded: false,
+          maintainState: true,
+          leading: Icon(icon, color: AppTheme.primaryColor, size: 22),
+          title: Text(
+            title,
+            style: TextStyle(
+              color: colors.onSurface,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          subtitle: subtitle == null
+              ? null
+              : Text(
+                  subtitle!,
+                  style:
+                      TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
+                ),
+          iconColor: AppTheme.primaryColor,
+          collapsedIconColor: colors.onSurfaceVariant,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          children: [child],
+        ),
+      ),
+    );
+  }
+}
+
+class _BassSlider extends StatelessWidget {
+  final String label;
+  final String description;
+  final double value;
+  final double min;
+  final double max;
+  final String valueLabel;
+  final ValueChanged<double> onChanged;
+
+  const _BassSlider({
+    required this.label,
+    required this.description,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.valueLabel,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
+        const SizedBox(height: 4),
+        Text(description,
+            style: const TextStyle(color: Colors.grey, fontSize: 12)),
+        Row(
+          children: [
+            Expanded(
+              child: Slider(
+                value: value,
+                min: min,
+                max: max,
+                activeColor: AppTheme.primaryColor,
+                inactiveColor: Colors.white24,
+                onChanged: onChanged,
+              ),
+            ),
+            Text(valueLabel,
+                style: const TextStyle(color: Colors.white, fontSize: 13)),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -398,6 +1560,7 @@ class _TabsSelectorState extends State<_TabsSelector> {
     'playlists': _TabMeta('Listas de reproducción', Icons.queue_music_outlined),
     'recently_added':
         _TabMeta('Añadido recientemente', Icons.new_releases_outlined),
+    'most_played': _TabMeta('Más reproducidas', Icons.bar_chart_rounded),
   };
 
   late List<String> _enabled;
@@ -443,80 +1606,73 @@ class _TabsSelectorState extends State<_TabsSelector> {
             style: const TextStyle(color: Colors.white54, fontSize: 13),
           ),
         ),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 8,
-            crossAxisSpacing: 8,
-            childAspectRatio: 2.2,
-          ),
-          itemCount: _allTabs.length,
-          itemBuilder: (context, index) {
-            final id = _allTabs[index];
-            final meta = _tabMeta[id]!;
-            final enabled = _isEnabled(id);
-            final isLast = enabled && _enabled.length == 1;
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 700 ? 2 : 1;
+            const spacing = 16.0;
+            final itemWidth =
+                (constraints.maxWidth - 32 - spacing * (columns - 1)) / columns;
 
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              decoration: BoxDecoration(
-                color:
-                    enabled ? const Color(0xFF1E3A3A) : const Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: enabled
-                      ? Colors.tealAccent.withAlpha(100)
-                      : Colors.white10,
-                  width: 1,
-                ),
-              ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: isLast ? null : () => _toggle(id),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          meta.icon,
-                          color: enabled ? Colors.tealAccent : Colors.grey,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            meta.label,
-                            style: TextStyle(
-                              color: enabled ? Colors.white : Colors.grey,
-                              fontWeight:
-                                  enabled ? FontWeight.w600 : FontWeight.normal,
-                              fontSize: 12,
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(
+                spacing: spacing,
+                runSpacing: 2,
+                children: _allTabs.map((id) {
+                  final meta = _tabMeta[id]!;
+                  final enabled = _isEnabled(id);
+                  final isLast = enabled && _enabled.length == 1;
+
+                  return SizedBox(
+                    width: itemWidth,
+                    child: InkWell(
+                      onTap: isLast ? null : () => _toggle(id),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            Checkbox(
+                              value: enabled,
+                              onChanged: isLast ? null : (_) => _toggle(id),
+                              activeColor: AppTheme.primaryColor,
+                              checkColor: Colors.black,
+                              side: const BorderSide(
+                                color: Colors.white54,
+                                width: 1.6,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(2),
+                              ),
                             ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              meta.icon,
+                              color: enabled
+                                  ? AppTheme.primaryColor
+                                  : Colors.white54,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                meta.label,
+                                style: TextStyle(
+                                  color:
+                                      enabled ? Colors.white : Colors.white60,
+                                  fontWeight: enabled
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        Transform.scale(
-                          scale: 0.65,
-                          child: Switch(
-                            value: enabled,
-                            onChanged: isLast ? null : (_) => _toggle(id),
-                            activeThumbColor: Colors.tealAccent,
-                            activeTrackColor: Colors.teal.withAlpha(100),
-                            inactiveTrackColor: Colors.white12,
-                            inactiveThumbColor: Colors.grey,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                }).toList(),
               ),
             );
           },

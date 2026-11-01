@@ -5,8 +5,27 @@ import 'package:provider/provider.dart';
 import '../providers/audio_provider.dart';
 import '../widgets/options_menu.dart';
 import '../widgets/smart_artwork.dart';
-import '../widgets/song_list_tile.dart';
+import '../widgets/library_sort_menu.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/song_list_tile.dart';
+import '../widgets/library_action_button.dart';
+import '../utils/song_sorting.dart';
+
+const _albumSongSortOptions = <LibrarySortOption>[
+  LibrarySortOption('title_asc', 'Título', Icons.title_rounded,
+      reverseValue: 'title_desc'),
+  LibrarySortOption(
+      'track_number_asc', 'Número de pista', Icons.format_list_numbered_rounded,
+      reverseValue: 'track_number_desc'),
+  LibrarySortOption('track_disc_asc', 'Número de pista por disco',
+      Icons.library_music_outlined,
+      reverseValue: 'track_disc_desc'),
+  LibrarySortOption('duration_asc', 'Duración', Icons.timer_outlined,
+      reverseValue: 'duration_desc'),
+  LibrarySortOption(
+      'date_added_asc', 'Fecha añadida', Icons.playlist_add_rounded,
+      reverseValue: 'date_added_desc'),
+];
 
 class AlbumDetailScreen extends StatefulWidget {
   final String albumName;
@@ -32,6 +51,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     return h > 0 ? '$h:$m:$s' : '$m:$s';
   }
 
+  String _trackNumber(SongModel song, int index) {
+    final rawTrack = song.track ?? 0;
+    final track = rawTrack >= 1000 ? rawTrack % 1000 : rawTrack;
+    final number = track > 0 ? track : index + 1;
+    return number.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     // listen: true → rebuild automático cuando AudioProvider llama notifyListeners()
@@ -41,7 +67,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final liveSongs = audioProvider.allSongs
         .where((s) => widget.songs.any((orig) => orig.id == s.id))
         .toList();
-    final songs = liveSongs.isNotEmpty ? liveSongs : widget.songs;
+    final availableSongs = liveSongs.isNotEmpty ? liveSongs : widget.songs;
+    final sortContext = 'album_detail:${widget.albumId}:${widget.albumName}';
+    final sortMode = normalizeSongSortMode(
+      audioProvider.librarySortMode(sortContext, 'track_disc_asc'),
+    );
+    final songs = List<SongModel>.from(availableSongs)
+      ..sort((a, b) => compareSongs(a, b, sortMode));
 
     final albumName =
         songs.isNotEmpty && (songs.first.album?.isNotEmpty == true)
@@ -73,6 +105,12 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     onPressed: () => Navigator.pop(context),
                   ),
                   actions: [
+                    LibrarySortMenu(
+                      value: sortMode,
+                      options: _albumSongSortOptions,
+                      onSelected: (value) =>
+                          audioProvider.setLibrarySortMode(sortContext, value),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.edit, color: Colors.white),
                       onPressed: () {
@@ -143,7 +181,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: _ActionButton(
+                          child: LibraryActionButton(
                             icon: Icons.play_arrow,
                             label: 'REPRODUCIR TODO',
                             onTap: () => audioProvider.playAlbumSongs(songs, 0,
@@ -152,7 +190,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: _ActionButton(
+                          child: LibraryActionButton(
                             icon: Icons.shuffle,
                             label: 'ALEATORIO',
                             onTap: () {
@@ -174,10 +212,14 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                       final song = songs[index];
                       final isPlaying =
                           audioProvider.currentSong?.id == song.id;
+                      final duration =
+                          Duration(milliseconds: song.duration ?? 0);
 
                       return SongListTile(
                         song: song,
                         isSelected: isPlaying,
+                        leadingLabel: _trackNumber(song, index),
+                        subtitleText: _formatDuration(duration),
                         onTap: () => audioProvider.playAlbumSongs(songs, index,
                             albumId: albumId),
                       );
@@ -191,42 +233,6 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
           ),
           if (audioProvider.currentPlaylist.isNotEmpty) const MiniPlayer(),
         ],
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _ActionButton(
-      {required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: const Color(0xFF2A2A2A),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: Colors.white, size: 20),
-            const SizedBox(width: 6),
-            Text(label,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5)),
-          ],
-        ),
       ),
     );
   }

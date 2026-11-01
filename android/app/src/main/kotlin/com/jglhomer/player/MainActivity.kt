@@ -26,6 +26,7 @@ import android.media.AudioManager
 import android.media.AudioDeviceInfo
 import android.media.AudioDeviceCallback
 import java.io.File
+import java.util.concurrent.Executors
 import com.jglhomer.player.autodj.AutoDjMethodChannel
 
 class MainActivity : AudioServiceActivity() {
@@ -44,6 +45,7 @@ class MainActivity : AudioServiceActivity() {
     private var myFlutterEngine: FlutterEngine? = null
     private var bluetoothReceiver: BroadcastReceiver? = null
     private var audioDeviceCallback: AudioDeviceCallback? = null
+    private val metadataExecutor = Executors.newSingleThreadExecutor()
     private var autoDjMethodChannel: AutoDjMethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -125,6 +127,66 @@ class MainActivity : AudioServiceActivity() {
                         result.error("INVALID_ARGUMENT", "filePath is required", null)
                     }
                 }
+                "extract_replay_gain" -> {
+                    val filePath = call.argument<String>("filePath")
+                    if (filePath == null) {
+                        result.error("INVALID_ARGUMENT", "filePath is required", null)
+                    } else {
+                        metadataExecutor.execute {
+                            val replayGain = MediaUtils.getReplayGainMetadata(filePath)
+                            runOnUiThread { result.success(replayGain) }
+                        }
+                    }
+                }
+                "set_tone_controls" -> {
+                    val params = call.arguments as? Map<String, Any>
+                    if (params == null) {
+                        result.error("INVALID_ARGUMENT", "Tone control params are required", null)
+                    } else {
+                        applyToneControls(params)
+                        result.success(true)
+                    }
+                }
+                "open_url" -> {
+                    val url = call.argument<String>("url")
+                    val uri = url?.let(Uri::parse)
+                    if (uri == null || uri.scheme !in setOf("http", "https")) {
+                        result.error("INVALID_ARGUMENT", "A valid HTTP URL is required", null)
+                    } else {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            result.success(true)
+                        } catch (error: Exception) {
+                            Log.w(TAG, "No se pudo abrir URL: $url", error)
+                            result.success(false)
+                        }
+                    }
+                }
+                "share_media" -> {
+                    val path = call.argument<String>("path")
+                    val file = path?.let(::File)
+                    if (file == null || !file.exists()) {
+                        result.success(false)
+                    } else {
+                        try {
+                            val uri = FileProvider.getUriForFile(
+                                this,
+                                "${applicationContext.packageName}.fileprovider",
+                                file
+                            )
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "audio/*"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            startActivity(Intent.createChooser(shareIntent, "Compartir canción"))
+                            result.success(true)
+                        } catch (error: Exception) {
+                            Log.w(TAG, "No se pudo compartir: $path", error)
+                            result.success(false)
+                        }
+                    }
+                }
                 "toggle_epicenter" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
                     com.ryanheise.just_audio.EpicenterProcessorController.setEpicenterEnabled(enabled)
@@ -135,24 +197,12 @@ class MainActivity : AudioServiceActivity() {
                     val params = call.arguments as? Map<String, Any>
                     if (params == null) {
                         result.error("INVALID_ARGUMENT", "Params are required", null)
+                    } else if (params.containsKey("engine") && params["engine"] !in setOf("hybrid", "smart", "legacy")) {
+                        result.error("INVALID_ARGUMENT", "Unknown Epicenter engine", null)
                     } else {
                         applyEpicenterParams(params)
                         result.success(true)
                     }
-                }
-                "set_output_gain" -> {
-                    val enabled = call.argument<Boolean>("enabled") ?: false
-                    val gainDb = call.argument<Number>("gainDb")?.toFloat() ?: 0f
-                    val limiterEnabled = call.argument<Boolean>("limiterEnabled") ?: true
-                    com.ryanheise.just_audio.SafeOutputGainController.configure(
-                        enabled,
-                        gainDb,
-                        limiterEnabled,
-                    )
-                    result.success(true)
-                }
-                "get_output_gain_meter" -> {
-                    result.success(com.ryanheise.just_audio.SafeOutputGainController.meter())
                 }
                 "set_keep_screen_on" -> {
                     val enabled = call.argument<Boolean>("enabled") ?: false
@@ -251,22 +301,20 @@ class MainActivity : AudioServiceActivity() {
         val artworkDir = File(cacheDir, "artwork_cache")
         if (!artworkDir.exists()) artworkDir.mkdirs()
 
-        val artworkFile = File(artworkDir, "artwork_$safeId.jpg")
+        val prefix = "artwork_${safeId}_"
+        artworkDir.listFiles()
+            ?.filter { it.name.startsWith(prefix) }
+            ?.forEach { it.delete() }
+        val artworkFile = File(
+            artworkDir,
+            "$prefix${bytes.contentHashCode()}.img"
+        )
         artworkFile.writeBytes(bytes)
 
-        val uri = FileProvider.getUriForFile(
-            this,
-            "$packageName.fileprovider",
-            artworkFile
-        )
-
-        grantUriPermission(
-            "com.android.systemui",
-            uri,
-            Intent.FLAG_GRANT_READ_URI_PERMISSION
-        )
-
-        return uri.toString()
+        // audio_service runs inside this app and can read the cache file
+        // directly. A file URI makes the Dart side attach artCacheFile, so the
+        // service decodes the bitmap before publishing MediaSession metadata.
+        return artworkFile.toURI().toString()
     }
 
     private fun registerMediaObserver() {
@@ -291,11 +339,35 @@ class MainActivity : AudioServiceActivity() {
 
 
     private fun applyEpicenterParams(params: Map<String, Any>) {
+        (params["engine"] as? String)?.let {
+            val engine = when (it) {
+                "legacy" -> com.ryanheise.just_audio.EpicenterEngine.LEGACY
+                "smart" -> com.ryanheise.just_audio.EpicenterEngine.SMART
+                else -> com.ryanheise.just_audio.EpicenterEngine.HYBRID
+            }
+            com.ryanheise.just_audio.EpicenterProcessorController.setEngine(engine)
+            Log.d(TAG, "Epicenter engine requested: $engine")
+        }
         (params["sweepFreq"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setSweepFreq(it.toFloat()) }
         (params["width"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setWidth(it.toFloat()) }
         (params["intensity"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setIntensity(it.toFloat()) }
         (params["volume"] as? Number)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setVolume(it.toFloat()) }
         (params["peakProtectionEnabled"] as? Boolean)?.let { com.ryanheise.just_audio.EpicenterProcessorController.setPeakProtectionEnabled(it) }
+    }
+
+    private fun applyToneControls(params: Map<String, Any>) {
+        val rawBands = params["bandGainsDb"] as? List<*>
+        val bands = FloatArray(com.ryanheise.just_audio.TONE_BAND_COUNT) { index ->
+            (rawBands?.getOrNull(index) as? Number)?.toFloat() ?: 0f
+        }
+        com.ryanheise.just_audio.ToneControlsProcessorController.setControls(
+            equalizerEnabled = params["equalizerEnabled"] as? Boolean ?: false,
+            bandGainsDb = bands,
+            replayGainEnabled = params["replayGainEnabled"] as? Boolean ?: false,
+            replayGainDb = (params["replayGainDb"] as? Number)?.toFloat() ?: 0f,
+            replayPeak = (params["replayPeak"] as? Number)?.toFloat() ?: 0f,
+            volumeBoostDb = (params["volumeBoostDb"] as? Number)?.toFloat() ?: 0f,
+        )
     }
     private fun deleteMedia(id: Long, result: MethodChannel.Result) {
         val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
@@ -381,6 +453,7 @@ class MainActivity : AudioServiceActivity() {
             }
             audioDeviceCallback = null
         }
+        metadataExecutor.shutdownNow()
         super.onDestroy()
     }
 

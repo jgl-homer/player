@@ -8,6 +8,7 @@ import '../utils/title_utils.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_list_tile.dart';
 import '../widgets/smart_artwork.dart';
+import '../widgets/library_list_tile.dart';
 import 'album_detail_screen.dart';
 import 'artist_detail_screen.dart';
 import 'folder_detail_screen.dart';
@@ -400,36 +401,25 @@ class _LibraryResultTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    return LibraryListTile(
       leading: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(5),
         child: artworkId == null
             ? _FallbackArtwork(icon: fallbackIcon)
             : SmartArtwork(
                 albumId: artworkId!,
                 songPath: "",
                 type: artworkType,
-                size: 52,
+                size: 56,
+                borderRadius: BorderRadius.circular(5),
               ),
       ),
-      title: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-        ),
+      title: title,
+      subtitle: subtitle,
+      trailing: Icon(
+        Icons.chevron_right,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
-      subtitle: Text(
-        subtitle,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: Colors.grey, fontSize: 13),
-      ),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
       onTap: onTap,
     );
   }
@@ -443,10 +433,13 @@ class _FallbackArtwork extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 52,
-      width: 52,
-      color: AppTheme.surfaceColor,
-      child: Icon(icon, color: Colors.grey),
+      height: 56,
+      width: 56,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Icon(
+        icon,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
     );
   }
 }

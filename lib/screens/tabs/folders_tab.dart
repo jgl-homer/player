@@ -138,11 +138,31 @@ class _FoldersTabState extends State<FoldersTab> {
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
     final allSongs = audioProvider.allSongs;
-    final folderPaths = audioProvider.sortedFolderPaths;
+    final sortMode = audioProvider.librarySortMode('folders', 'name_asc');
+    final songCounts = <String, int>{};
+    for (final song in allSongs) {
+      final folder = path.dirname(song.data);
+      songCounts[folder] = (songCounts[folder] ?? 0) + 1;
+    }
+    final folderPaths = List<String>.from(audioProvider.sortedFolderPaths)
+      ..sort((a, b) {
+        final nameA = path.basename(a).toLowerCase();
+        final nameB = path.basename(b).toLowerCase();
+        return switch (sortMode) {
+          'name_desc' => nameB.compareTo(nameA),
+          'songs_desc' => (songCounts[b] ?? 0).compareTo(songCounts[a] ?? 0),
+          'songs_asc' => (songCounts[a] ?? 0).compareTo(songCounts[b] ?? 0),
+          _ => nameA.compareTo(nameB),
+        };
+      });
 
     return Column(
       children: [
-        CountBanner(count: folderPaths.length, label: 'Carpetas'),
+        CountBanner(
+          count: folderPaths.length,
+          label: 'Carpetas',
+          backgroundColor: Colors.transparent,
+        ),
         Expanded(
           child: LayoutBuilder(builder: (context, constraints) {
             return Stack(
@@ -187,54 +207,57 @@ class _FoldersTabState extends State<FoldersTab> {
                 ),
 
                 // Alphabet Sidebar
-                Positioned(
-                  right: 0,
-                  top: 20,
-                  bottom: 20,
-                  width: 30,
-                  child: GestureDetector(
-                    onVerticalDragStart: (details) => _handleScroll(
-                        details.localPosition,
-                        constraints.maxHeight - 40,
-                        folderPaths),
-                    onVerticalDragUpdate: (details) => _handleScroll(
-                        details.localPosition,
-                        constraints.maxHeight - 40,
-                        folderPaths),
-                    onVerticalDragEnd: (_) =>
-                        setState(() => _draggedLetter = null),
-                    onTapDown: (details) => _handleScroll(details.localPosition,
-                        constraints.maxHeight - 40, folderPaths),
-                    onTapUp: (_) => setState(() => _draggedLetter = null),
-                    onTapCancel: () => setState(() => _draggedLetter = null),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: _alphabet.map((letter) {
-                          bool isDragging = _draggedLetter == letter;
-                          return Text(
-                            letter,
-                            style: TextStyle(
-                                color: isDragging
-                                    ? AppTheme.primaryColor
-                                    : Colors.white60,
-                                fontSize: isDragging ? 13 : 9,
-                                fontWeight: isDragging
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          );
-                        }).toList(),
+                if (sortMode == 'name_asc')
+                  Positioned(
+                    right: 0,
+                    top: 20,
+                    bottom: 20,
+                    width: 30,
+                    child: GestureDetector(
+                      onVerticalDragStart: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          folderPaths),
+                      onVerticalDragUpdate: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          folderPaths),
+                      onVerticalDragEnd: (_) =>
+                          setState(() => _draggedLetter = null),
+                      onTapDown: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          folderPaths),
+                      onTapUp: (_) => setState(() => _draggedLetter = null),
+                      onTapCancel: () => setState(() => _draggedLetter = null),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: _alphabet.map((letter) {
+                            bool isDragging = _draggedLetter == letter;
+                            return Text(
+                              letter,
+                              style: TextStyle(
+                                  color: isDragging
+                                      ? AppTheme.primaryColor
+                                      : Colors.white60,
+                                  fontSize: isDragging ? 13 : 9,
+                                  fontWeight: isDragging
+                                      ? FontWeight.bold
+                                      : FontWeight.normal),
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                   ),
-                ),
 
                 // Letter Overlay Indicator
-                if (_draggedLetter != null)
+                if (sortMode == 'name_asc' && _draggedLetter != null)
                   Center(
                     child: Container(
                       height: 100,

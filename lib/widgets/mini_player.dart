@@ -34,14 +34,11 @@ class MiniPlayer extends StatelessWidget {
         color: AppTheme.surfaceColor,
         child: InkWell(
           onTap: () {
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              useSafeArea: true,
-              backgroundColor: Colors.transparent,
-              clipBehavior: Clip.none,
-              constraints: const BoxConstraints(maxWidth: double.infinity),
-              builder: (context) => const _PlayerModalFrame(),
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                fullscreenDialog: true,
+                builder: (context) => const _PlayerModalContent(),
+              ),
             );
           },
           child: Column(
@@ -102,7 +99,7 @@ class MiniPlayer extends StatelessWidget {
                       onPressed: () => audioProvider.toggleFavorite(song),
                     ),
                     StreamBuilder<bool>(
-                      stream: audioProvider.player.playingStream,
+                      stream: audioProvider.playingStream,
                       builder: (context, snapshot) {
                         final isPlaying = snapshot.data ?? false;
                         return IconButton(
@@ -155,23 +152,6 @@ class MiniPlayer extends StatelessWidget {
   }
 }
 
-class _PlayerModalFrame extends StatelessWidget {
-  const _PlayerModalFrame();
-
-  @override
-  Widget build(BuildContext context) {
-    final isLandscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
-    if (isLandscape) {
-      return const SizedBox.expand(child: _PlayerModalContent());
-    }
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      child: const _PlayerModalContent(),
-    );
-  }
-}
-
 class _PlayerModalContent extends StatefulWidget {
   const _PlayerModalContent();
 
@@ -181,14 +161,25 @@ class _PlayerModalContent extends StatefulWidget {
 
 class _PlayerModalContentState extends State<_PlayerModalContent> {
   Future<LyricsResult?>? _lyricsFuture;
-  int? _lastLyricsSongId;
-  LyricsSource? _lastLyricsSource;
+  String? _lyricsRequestKey;
+  int _lyricsRequestRevision = 0;
 
-  void _ensureLyricsLoaded(SongModel song, LyricsSource source) {
-    if (_lastLyricsSongId != song.id || _lastLyricsSource != source) {
-      _lastLyricsSongId = song.id;
-      _lastLyricsSource = source;
-      _lyricsFuture = LyricsService.load(song, source);
+  void _ensureLyricsLoaded(
+      SongModel song, LyricsSource source, bool automaticLyrics) {
+    final requestKey = [
+      song.id,
+      song.data,
+      source.name,
+      automaticLyrics,
+    ].join('|');
+    if (_lyricsRequestKey != requestKey) {
+      _lyricsRequestKey = requestKey;
+      _lyricsRequestRevision++;
+      _lyricsFuture = LyricsService.load(
+        song,
+        source,
+        automatic: automaticLyrics,
+      );
     }
   }
 
@@ -249,6 +240,427 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     }
   }
 
+  Widget _buildPlayerMenu(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+  ) {
+    return PopupMenuButton<String>(
+      tooltip: 'Mas opciones',
+      icon: const Icon(Icons.more_vert, color: Colors.white, size: 26),
+      color: const Color(0xFF252525),
+      onSelected: (value) async {
+        if (value == 'info_archivo' && context.mounted) {
+          showSongInfo(context, song);
+          return;
+        }
+        if (value == 'editor_etiquetas' && context.mounted) {
+          showEditTagDialog(context, audioProvider, song: song);
+          return;
+        }
+        if (value == 'modo_auto') {
+          await _toggleModoAuto(audioProvider);
+          return;
+        }
+        if (value == 'epicentro') {
+          await _toggleEpicentro(audioProvider);
+          return;
+        }
+        if (value == 'velocidad_tono' && context.mounted) {
+          _showPlaybackRateSheet(context);
+          return;
+        }
+        if (value == 'guardar_playlist' && context.mounted) {
+          await _saveSongToPlaylist(context, audioProvider, song);
+          return;
+        }
+        if (value == 'eliminar' && context.mounted) {
+          showDeleteDialog(context, audioProvider, song);
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'info_archivo',
+          child: Row(
+            children: [
+              Icon(Icons.info_outline_rounded, size: 20, color: Colors.white),
+              SizedBox(width: 10),
+              Text('Informacion de archivo',
+                  style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'editor_etiquetas',
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 20, color: Colors.white),
+              SizedBox(width: 10),
+              Text('Editor de etiquetas',
+                  style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'modo_auto',
+          child: Row(
+            children: [
+              Icon(
+                Icons.directions_car_filled_rounded,
+                size: 20,
+                color: audioProvider.isAutoModeEnabled
+                    ? Colors.greenAccent
+                    : Colors.white,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                audioProvider.isAutoModeEnabled
+                    ? 'Modo Auto: ON'
+                    : 'Modo Auto: OFF',
+                style: const TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'epicentro',
+          child: Row(
+            children: [
+              Icon(
+                Icons.graphic_eq_rounded,
+                size: 20,
+                color: audioProvider.isEpicenterEnabled
+                    ? Colors.greenAccent
+                    : Colors.white,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                audioProvider.isEpicenterEnabled
+                    ? 'Epicentro: ON'
+                    : 'Epicentro: OFF',
+                style: const TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'velocidad_tono',
+          child: Row(
+            children: [
+              Icon(Icons.speed_rounded, size: 20, color: Colors.white),
+              SizedBox(width: 10),
+              Text('Velocidad y tono', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'guardar_playlist',
+          child: Row(
+            children: [
+              Icon(Icons.playlist_add, size: 20, color: Colors.white),
+              SizedBox(width: 10),
+              Text('Guardar en playlist',
+                  style: TextStyle(color: Colors.white)),
+            ],
+          ),
+        ),
+        if (audioProvider.isEpicenterEnabled)
+          PopupMenuItem(
+            enabled: false,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: StatefulBuilder(
+              builder: (context, setItemState) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Intensidad',
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 2,
+                              thumbShape: const RoundSliderThumbShape(
+                                enabledThumbRadius: 6,
+                              ),
+                              overlayShape: const RoundSliderOverlayShape(
+                                overlayRadius: 14,
+                              ),
+                            ),
+                            child: Slider(
+                              value: audioProvider.epicenterIntensity,
+                              min: 0,
+                              max: 100,
+                              activeColor: Colors.greenAccent,
+                              inactiveColor: Colors.white24,
+                              onChanged: (value) {
+                                audioProvider.updateEpicenterSettings(
+                                  intensity: value,
+                                );
+                                setItemState(() {});
+                              },
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '${audioProvider.epicenterIntensity.toInt()}%',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        const PopupMenuItem(
+          value: 'eliminar',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
+              SizedBox(width: 10),
+              Text('Eliminar del dispositivo',
+                  style: TextStyle(color: Colors.redAccent)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSquarePlayerMenu(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+  ) {
+    return IconButton(
+      tooltip: 'Mas opciones',
+      onPressed: () => _showSquarePlayerMenu(context, audioProvider, song),
+      icon: const Icon(Icons.more_vert, color: Colors.white, size: 28),
+    );
+  }
+
+  void _showSquarePlayerMenu(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+  ) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (menuContext) => Consumer<AudioProvider>(
+        builder: (context, provider, _) {
+          final actions = <Widget>[
+            _squareMenuAction(
+              icon: Icons.info_outline_rounded,
+              label: 'Información',
+              onTap: () => _closeMenuAndRun(
+                menuContext,
+                () async => showSongInfo(this.context, song),
+              ),
+            ),
+            _squareMenuAction(
+              icon: Icons.edit_outlined,
+              label: 'Etiquetas',
+              onTap: () => _closeMenuAndRun(
+                menuContext,
+                () async => showEditTagDialog(
+                  this.context,
+                  audioProvider,
+                  song: song,
+                ),
+              ),
+            ),
+            _squareMenuAction(
+              icon: Icons.directions_car_filled_rounded,
+              label: 'Modo Auto',
+              active: provider.isAutoModeEnabled,
+              onTap: () => _toggleModoAuto(provider),
+            ),
+            _squareMenuAction(
+              icon: Icons.graphic_eq_rounded,
+              label: 'Epicentro',
+              active: provider.isEpicenterEnabled,
+              onTap: () => _toggleEpicentro(provider),
+            ),
+            _squareMenuAction(
+              icon: Icons.speed_rounded,
+              label: 'Velocidad\ny tono',
+              onTap: () => _closeMenuAndRun(
+                menuContext,
+                () async => _showPlaybackRateSheet(this.context),
+              ),
+            ),
+            _squareMenuAction(
+              icon: Icons.playlist_add_rounded,
+              label: 'Guardar en\nplaylist',
+              onTap: () => _closeMenuAndRun(
+                menuContext,
+                () => _saveSongToPlaylist(this.context, provider, song),
+              ),
+            ),
+            _squareMenuAction(
+              icon: Icons.delete_outline_rounded,
+              label: 'Eliminar',
+              destructive: true,
+              onTap: () => _closeMenuAndRun(
+                menuContext,
+                () async => showDeleteDialog(this.context, provider, song),
+              ),
+            ),
+          ];
+
+          return Dialog(
+            backgroundColor: const Color(0xFF242424),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+              side: const BorderSide(color: Colors.white12),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 410),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const SizedBox(width: 40),
+                        const Expanded(
+                          child: Text(
+                            'Opciones',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Cerrar',
+                          onPressed: () => Navigator.pop(menuContext),
+                          icon: const Icon(Icons.close_rounded,
+                              color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                    GridView.count(
+                      crossAxisCount: 3,
+                      mainAxisSpacing: 4,
+                      crossAxisSpacing: 4,
+                      childAspectRatio: 1.05,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: actions,
+                    ),
+                    if (provider.isEpicenterEnabled) ...[
+                      const Divider(color: Colors.white12, height: 18),
+                      Row(
+                        children: [
+                          Icon(Icons.graphic_eq_rounded,
+                              color: AppTheme.primaryColor, size: 22),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Intensidad',
+                            style:
+                                TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: provider.epicenterIntensity,
+                              min: 0,
+                              max: 100,
+                              activeColor: AppTheme.primaryColor,
+                              inactiveColor: Colors.white24,
+                              onChanged: (value) =>
+                                  provider.updateEpicenterSettings(
+                                intensity: value,
+                              ),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 38,
+                            child: Text(
+                              '${provider.epicenterIntensity.round()}%',
+                              textAlign: TextAlign.end,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 11),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _squareMenuAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool active = false,
+    bool destructive = false,
+  }) {
+    final color = destructive
+        ? Colors.redAccent
+        : active
+            ? AppTheme.primaryColor
+            : Colors.white;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: 34),
+              const SizedBox(height: 7),
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _closeMenuAndRun(
+    BuildContext menuContext,
+    Future<void> Function() action,
+  ) async {
+    Navigator.pop(menuContext);
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    await action();
+  }
+
   @override
   Widget build(BuildContext context) {
     final audioProvider = Provider.of<AudioProvider>(context);
@@ -257,604 +669,329 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     if (song == null) return const SizedBox.shrink();
 
     final artista = TitleUtils.getDisplayArtist(song.artist);
-    final isLandscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
 
-    if (isLandscape) {
-      return _buildLandscapePlayer(context, audioProvider, song, artista);
-    }
+    final isLandscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF121212),
-        surfaceTintColor: Colors.transparent,
-        scrolledUnderElevation: 0,
-        elevation: 0,
-        systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent,
-          statusBarIconBrightness: Brightness.light,
-          statusBarBrightness: Brightness.dark,
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down,
-              color: Colors.white, size: 30),
-          onPressed: () => Navigator.pop(context),
-        ),
-        centerTitle: true,
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text(
-              "REPRODUCIENDO DESDE",
-              style: TextStyle(
-                color: Colors.white54,
-                fontSize: 10,
-                letterSpacing: 1.5,
-                fontWeight: FontWeight.bold,
+      appBar: isLandscape
+          ? null
+          : AppBar(
+              toolbarHeight: 0,
+              backgroundColor: const Color(0xFF121212),
+              surfaceTintColor: Colors.transparent,
+              scrolledUnderElevation: 0,
+              elevation: 0,
+              systemOverlayStyle: const SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: Brightness.light,
+                statusBarBrightness: Brightness.dark,
               ),
-            ),
-            const SizedBox(height: 4),
-            GestureDetector(
-              onTap: () {
-                final albumSongs = audioProvider.allSongs
-                    .where(
-                      (s) =>
-                          TitleUtils.getAlbumKey(s) ==
-                          TitleUtils.getAlbumKey(song),
-                    )
-                    .toList();
-                if (albumSongs.isEmpty) return;
+              leading: IconButton(
+                icon: const Icon(Icons.keyboard_arrow_down,
+                    color: Colors.white, size: 30),
+                onPressed: () => Navigator.pop(context),
+              ),
+              centerTitle: true,
+              title: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    "REPRODUCIENDO DESDE",
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 10,
+                      letterSpacing: 1.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  GestureDetector(
+                    onTap: () {
+                      final albumSongs = audioProvider.allSongs
+                          .where(
+                            (s) =>
+                                TitleUtils.getAlbumKey(s) ==
+                                TitleUtils.getAlbumKey(song),
+                          )
+                          .toList();
+                      if (albumSongs.isEmpty) return;
 
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AlbumDetailScreen(
-                      albumName: _resolveAlbumLabel(song),
-                      albumId: song.albumId ?? 0,
-                      songs: albumSongs,
-                    ),
-                  ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  _resolveAlbumLabel(song),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white, size: 26),
-            color: const Color(0xFF252525),
-            onSelected: (value) async {
-              if (value == 'info_archivo' && context.mounted) {
-                showSongInfo(context, song);
-                return;
-              }
-              if (value == 'editor_etiquetas' && context.mounted) {
-                showEditTagDialog(context, audioProvider, song: song);
-                return;
-              }
-              if (value == 'modo_auto') {
-                await _toggleModoAuto(audioProvider);
-                return;
-              }
-              if (value == 'epicentro') {
-                await _toggleEpicentro(audioProvider);
-                return;
-              }
-              if (value == 'guardar_playlist' && context.mounted) {
-                await _saveSongToPlaylist(context, audioProvider, song);
-                return;
-              }
-              if (value == 'eliminar' && context.mounted) {
-                showDeleteDialog(context, audioProvider, song);
-                return;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'info_archivo',
-                child: Row(
-                  children: [
-                    Icon(Icons.info_outline_rounded,
-                        size: 20, color: Colors.white),
-                    SizedBox(width: 10),
-                    Text('Información de archivo',
-                        style: TextStyle(color: Colors.white)),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'editor_etiquetas',
-                child: Row(
-                  children: [
-                    Icon(Icons.edit_outlined, size: 20, color: Colors.white),
-                    SizedBox(width: 10),
-                    Text('Editor de etiquetas',
-                        style: TextStyle(color: Colors.white)),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'modo_auto',
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.directions_car_filled_rounded,
-                      size: 20,
-                      color: audioProvider.isAutoModeEnabled
-                          ? Colors.greenAccent
-                          : Colors.white,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      audioProvider.isAutoModeEnabled
-                          ? 'Modo Auto: ON'
-                          : 'Modo Auto: OFF',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'epicentro',
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.graphic_eq_rounded,
-                      size: 20,
-                      color: audioProvider.isEpicenterEnabled
-                          ? Colors.greenAccent
-                          : Colors.white,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      audioProvider.isEpicenterEnabled
-                          ? 'Epicentro: ON'
-                          : 'Epicentro: OFF',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'guardar_playlist',
-                child: Row(
-                  children: [
-                    Icon(Icons.playlist_add, size: 20, color: Colors.white),
-                    SizedBox(width: 10),
-                    Text('Guardar en playlist',
-                        style: TextStyle(color: Colors.white)),
-                  ],
-                ),
-              ),
-              if (audioProvider.isEpicenterEnabled)
-                PopupMenuItem(
-                  enabled: false,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: StatefulBuilder(
-                    builder: (context, setItemState) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'Intensidad',
-                            style:
-                                TextStyle(color: Colors.white70, fontSize: 12),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AlbumDetailScreen(
+                            albumName: _resolveAlbumLabel(song),
+                            albumId: song.albumId ?? 0,
+                            songs: albumSongs,
                           ),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    trackHeight: 2.0,
-                                    thumbShape: const RoundSliderThumbShape(
-                                        enabledThumbRadius: 6.0),
-                                    overlayShape: const RoundSliderOverlayShape(
-                                        overlayRadius: 14.0),
-                                  ),
-                                  child: Slider(
-                                    value: audioProvider.epicenterIntensity,
-                                    min: 0,
-                                    max: 100,
-                                    activeColor: Colors.greenAccent,
-                                    inactiveColor: Colors.white24,
-                                    onChanged: (v) {
-                                      audioProvider.updateEpicenterSettings(
-                                          intensity: v);
-                                      setItemState(() {});
-                                    },
-                                  ),
-                                ),
-                              ),
-                              Text(
-                                '${audioProvider.epicenterIntensity.toInt()}%',
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 11),
-                              ),
-                            ],
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        _resolveAlbumLabel(song),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert,
+                      color: Colors.white, size: 26),
+                  color: const Color(0xFF252525),
+                  onSelected: (value) async {
+                    if (value == 'info_archivo' && context.mounted) {
+                      showSongInfo(context, song);
+                      return;
+                    }
+                    if (value == 'editor_etiquetas' && context.mounted) {
+                      showEditTagDialog(context, audioProvider, song: song);
+                      return;
+                    }
+                    if (value == 'modo_auto') {
+                      await _toggleModoAuto(audioProvider);
+                      return;
+                    }
+                    if (value == 'epicentro') {
+                      await _toggleEpicentro(audioProvider);
+                      return;
+                    }
+                    if (value == 'velocidad_tono' && context.mounted) {
+                      _showPlaybackRateSheet(context);
+                      return;
+                    }
+                    if (value == 'guardar_playlist' && context.mounted) {
+                      await _saveSongToPlaylist(context, audioProvider, song);
+                      return;
+                    }
+                    if (value == 'eliminar' && context.mounted) {
+                      showDeleteDialog(context, audioProvider, song);
+                      return;
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'info_archivo',
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline_rounded,
+                              size: 20, color: Colors.white),
+                          SizedBox(width: 10),
+                          Text('Información de archivo',
+                              style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'editor_etiquetas',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit_outlined,
+                              size: 20, color: Colors.white),
+                          SizedBox(width: 10),
+                          Text('Editor de etiquetas',
+                              style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'modo_auto',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.directions_car_filled_rounded,
+                            size: 20,
+                            color: audioProvider.isAutoModeEnabled
+                                ? Colors.greenAccent
+                                : Colors.white,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            audioProvider.isAutoModeEnabled
+                                ? 'Modo Auto: ON'
+                                : 'Modo Auto: OFF',
+                            style: const TextStyle(color: Colors.white),
                           ),
                         ],
-                      );
-                    },
-                  ),
-                ),
-              const PopupMenuItem(
-                value: 'eliminar',
-                child: Row(
-                  children: [
-                    Icon(Icons.delete_outline,
-                        size: 20, color: Colors.redAccent),
-                    SizedBox(width: 10),
-                    Text('Eliminar del dispositivo',
-                        style: TextStyle(color: Colors.redAccent)),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'epicentro',
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.graphic_eq_rounded,
+                            size: 20,
+                            color: audioProvider.isEpicenterEnabled
+                                ? Colors.greenAccent
+                                : Colors.white,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            audioProvider.isEpicenterEnabled
+                                ? 'Epicentro: ON'
+                                : 'Epicentro: OFF',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'velocidad_tono',
+                      child: Row(
+                        children: [
+                          Icon(Icons.speed_rounded,
+                              size: 20, color: Colors.white),
+                          SizedBox(width: 10),
+                          Text('Velocidad y tono',
+                              style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'guardar_playlist',
+                      child: Row(
+                        children: [
+                          Icon(Icons.playlist_add,
+                              size: 20, color: Colors.white),
+                          SizedBox(width: 10),
+                          Text('Guardar en playlist',
+                              style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                    if (audioProvider.isEpicenterEnabled)
+                      PopupMenuItem(
+                        enabled: false,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
+                        child: StatefulBuilder(
+                          builder: (context, setItemState) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  'Intensidad',
+                                  style: TextStyle(
+                                      color: Colors.white70, fontSize: 12),
+                                ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: SliderTheme(
+                                        data: SliderTheme.of(context).copyWith(
+                                          trackHeight: 2.0,
+                                          thumbShape:
+                                              const RoundSliderThumbShape(
+                                                  enabledThumbRadius: 6.0),
+                                          overlayShape:
+                                              const RoundSliderOverlayShape(
+                                                  overlayRadius: 14.0),
+                                        ),
+                                        child: Slider(
+                                          value:
+                                              audioProvider.epicenterIntensity,
+                                          min: 0,
+                                          max: 100,
+                                          activeColor: Colors.greenAccent,
+                                          inactiveColor: Colors.white24,
+                                          onChanged: (v) {
+                                            audioProvider
+                                                .updateEpicenterSettings(
+                                                    intensity: v);
+                                            setItemState(() {});
+                                          },
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${audioProvider.epicenterIntensity.toInt()}%',
+                                      style: const TextStyle(
+                                          color: Colors.white70, fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    const PopupMenuItem(
+                      value: 'eliminar',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline,
+                              size: 20, color: Colors.redAccent),
+                          SizedBox(width: 10),
+                          Text('Eliminar del dispositivo',
+                              style: TextStyle(color: Colors.redAccent)),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+      body: _buildResponsivePlayer(
+        context,
+        audioProvider,
+        song,
+        artista,
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.grey[900]!.withValues(alpha: 0.8),
-              const Color(0xFF121212),
-            ],
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              const Spacer(flex: 1),
-              Expanded(
-                flex: 10,
-                child: ClipRect(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onDoubleTap: () {
-                        final currentPos = audioProvider.player.position;
-                        audioProvider.player
-                            .seek(currentPos + const Duration(seconds: 10));
-                      },
-                      child: Center(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final artworkSize =
-                                constraints.biggest.shortestSide;
-                            return SizedBox.square(
-                              dimension: artworkSize,
-                              child: SmartArtwork(
-                                albumId: song.id,
-                                songPath: song.data,
-                                type: ArtworkType.AUDIO,
-                                size: artworkSize,
-                                borderRadius: BorderRadius.circular(
-                                    12), // Bordes redondeados sutiles para mejorar la estética
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 15),
-              Material(
-                type: MaterialType.transparency,
-                child: SizedBox(
-                  height: 48,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.shuffle,
-                          color: audioProvider.isShuffle
-                              ? Colors.greenAccent
-                              : Colors.white60,
-                          size: 24,
-                        ),
-                        onPressed: () => audioProvider.toggleShuffle(),
-                      ),
-                      IconButton(
-                        key: const ValueKey('now_playing_folder_previous'),
-                        icon: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            const Icon(Icons.folder_outlined,
-                                color: Colors.white60, size: 24),
-                            Transform.translate(
-                              offset: const Offset(4, 4),
-                              child: const Icon(Icons.remove,
-                                  color: Colors.white, size: 12),
-                            ),
-                          ],
-                        ),
-                        onPressed: () async {
-                          await audioProvider.playPreviousFolder();
-                        },
-                        tooltip: "Carpeta anterior",
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          audioProvider.loopMode == LoopMode.one
-                              ? Icons.repeat_one
-                              : Icons.repeat,
-                          color: audioProvider.loopMode != LoopMode.off
-                              ? Colors.greenAccent
-                              : Colors.white60,
-                          size: 24,
-                        ),
-                        onPressed: audioProvider.toggleLoop,
-                      ),
-                      IconButton(
-                        key: const ValueKey('now_playing_folder_next'),
-                        icon: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            const Icon(Icons.folder_outlined,
-                                color: Colors.white60, size: 24),
-                            Transform.translate(
-                              offset: const Offset(4, 4),
-                              child: const Icon(Icons.add,
-                                  color: Colors.white, size: 12),
-                            ),
-                          ],
-                        ),
-                        onPressed: () async {
-                          await audioProvider.playNextFolder();
-                        },
-                        tooltip: "Carpeta siguiente",
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.queue_music,
-                            color: Colors.white60, size: 24),
-                        onPressed: () => showQueueBottomSheet(context),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const Spacer(flex: 2),
-              if (audioProvider.lyricsVisible)
-                _buildLyricsSection(song, audioProvider),
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        GestureDetector(
-                          onTap: () => showSongInfo(context, song),
-                          child: SizedBox(
-                            width: MediaQuery.of(context).size.width * 0.75,
-                            height: 45,
-                            child: MarqueeText(
-                              text: TitleUtils.getDisplayTitle(song),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 26,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              velocity: 35.0,
-                              gap: 60.0,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        GestureDetector(
-                          onTap: () {
-                            final artistName =
-                                TitleUtils.getDisplayArtist(song.artist);
-                            final artistKey =
-                                TitleUtils.getArtistKey(song.artist);
-                            final artistSongs = audioProvider.allSongs
-                                .where((s) =>
-                                    TitleUtils.getArtistKey(s.artist) ==
-                                    artistKey)
-                                .toList();
-                            if (artistSongs.isEmpty) return;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ArtistDetailScreen(
-                                    artistName: artistName, songs: artistSongs),
-                              ),
-                            );
-                          },
-                          child: Text(
-                            artista,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w400,
-                            ),
-                            textAlign: TextAlign.left,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      audioProvider.isFavorite(song.id)
-                          ? Icons.favorite
-                          : Icons.favorite_border,
-                      color: audioProvider.isFavorite(song.id)
-                          ? Colors.redAccent
-                          : Colors.white,
-                      size: 32,
-                    ),
-                    onPressed: () => audioProvider.toggleFavorite(song),
-                  ),
-                ],
-              ),
-              const Spacer(flex: 2),
-              StreamBuilder<DurationState>(
-                stream: audioProvider.durationStateStream,
-                builder: (context, snapshot) {
-                  final durationState = snapshot.data;
-                  final progress = durationState?.position ?? Duration.zero;
-                  final total = durationState?.total ?? Duration.zero;
+    );
+  }
 
-                  return Column(
-                    children: [
-                      SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 4,
-                          thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 6),
-                          overlayShape:
-                              const RoundSliderOverlayShape(overlayRadius: 14),
-                          activeTrackColor: Colors.white,
-                          inactiveTrackColor: Colors.white24,
-                          thumbColor: Colors.white,
-                        ),
-                        child: Slider(
-                          value: progress.inMilliseconds.toDouble(),
-                          max: total.inMilliseconds.toDouble().clamp(
-                              progress.inMilliseconds.toDouble(),
-                              double.infinity),
-                          onChanged: (value) {
-                            audioProvider.player
-                                .seek(Duration(milliseconds: value.toInt()));
-                          },
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              _formatDuration(progress),
-                              style: const TextStyle(
-                                  color: Colors.white54, fontSize: 12),
-                            ),
-                            Text(
-                              _formatDuration(total),
-                              style: const TextStyle(
-                                  color: Colors.white54, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const Spacer(flex: 2),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.replay_10_rounded,
-                        color: Colors.white, size: 38),
-                    onPressed: () {
-                      final currentPos = audioProvider.player.position;
-                      audioProvider.player
-                          .seek(currentPos - const Duration(seconds: 10));
-                    },
-                    tooltip: "-10s",
-                  ),
-                  GestureDetector(
-                    onTap: () => audioProvider.previousSmart(),
-                    child: const Icon(Icons.skip_previous_rounded,
-                        color: Colors.white, size: 65),
-                  ),
-                  StreamBuilder<bool>(
-                    stream: audioProvider.player.playingStream,
-                    builder: (context, snapshot) {
-                      final isPlaying = snapshot.data ?? false;
-                      return Container(
-                        width: 85,
-                        height: 85,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: 10,
-                                offset: Offset(0, 5)),
-                          ],
-                        ),
-                        child: IconButton(
-                          icon: Icon(
-                            isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: Colors.black,
-                            size: 55,
-                          ),
-                          onPressed: audioProvider.togglePlayPause,
-                        ),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.skip_next_rounded,
-                        color: Colors.white, size: 65),
-                    onPressed: audioProvider.next,
-                    padding: EdgeInsets.zero,
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.forward_10_rounded,
-                        color: Colors.white, size: 38),
-                    onPressed: () {
-                      final currentPos = audioProvider.player.position;
-                      audioProvider.player
-                          .seek(currentPos + const Duration(seconds: 10));
-                    },
-                    tooltip: "+10s",
-                  ),
-                ],
-              ),
-              const Spacer(flex: 2),
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 15.0),
-                  child: Text(
-                    path.dirname(song.data),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 11,
-                        letterSpacing: 0.5),
-                    maxLines: 1,
-                    overflow: TextOverflow.fade,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
+  Widget _buildResponsivePlayer(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+    String artist,
+  ) {
+    return ColoredBox(
+      color: const Color(0xFF0B0D10),
+      child: SafeArea(
+        top: false,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragEnd: (details) {
+            final velocity = details.primaryVelocity ?? 0;
+            if (velocity <= -250) {
+              audioProvider.next();
+            } else if (velocity >= 250) {
+              audioProvider.previousSmart();
+            }
+          },
+          child: OrientationBuilder(
+            builder: (context, orientation) {
+              if (orientation == Orientation.landscape) {
+                return _buildLandscapePlayer(
+                  context,
+                  audioProvider,
+                  song,
+                  artist,
+                );
+              }
+              return _buildPortraitPlayer(
+                context,
+                audioProvider,
+                song,
+                artist,
+              );
+            },
           ),
         ),
       ),
@@ -865,254 +1002,649 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
     BuildContext context,
     AudioProvider audioProvider,
     SongModel song,
-    String artista,
+    String artist,
   ) {
-    final albumLabel = _resolveAlbumLabel(song);
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.bottomLeft,
-              end: Alignment.topRight,
-              colors: [
-                Color(0xFF114D9A),
-                Color(0xFF101820),
-                Color(0xFF101010),
-                Color(0xFF0B6A45),
-              ],
-              stops: [0.0, 0.36, 0.66, 1.0],
-            ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(22, 10, 22, 14),
-            child: Column(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(36, 14, 36, 14),
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
               children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: IconButton(
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                        color: Colors.white, size: 30),
-                    onPressed: () => Navigator.pop(context),
+                Expanded(
+                  flex: 7,
+                  child: _buildTrackInfo(
+                    context,
+                    audioProvider,
+                    song,
+                    artist,
+                    landscape: true,
                   ),
                 ),
+                const SizedBox(width: 30),
                 Expanded(
-                  child: Row(
+                  flex: 4,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: AspectRatio(
+                      aspectRatio: 1,
+                      child: _buildArtwork(song),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildProgress(audioProvider),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                flex: 6,
+                child: _buildSecondaryControls(
+                  context,
+                  audioProvider,
+                  song,
+                  compact: true,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                flex: 5,
+                child: _buildTransportControls(
+                  audioProvider,
+                  compact: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPortraitPlayer(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+    String artist,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+      child: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Expanded(
-                        flex: 7,
-                        child: Padding(
-                          padding: const EdgeInsets.only(left: 12, right: 20),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      _buildArtwork(song),
+                      Positioned(
+                        right: 10,
+                        bottom: 10,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.68),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                TitleUtils.getDisplayTitle(song),
-                                style: const TextStyle(
+                              IconButton(
+                                tooltip: 'Cerrar reproductor',
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(
+                                  Icons.keyboard_arrow_down_rounded,
                                   color: Colors.white,
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.05,
+                                  size: 27,
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 18),
-                              _LandscapeInfoLine(
-                                icon: Icons.person_rounded,
-                                text: artista,
-                              ),
-                              const SizedBox(height: 12),
-                              _LandscapeInfoLine(
-                                icon: Icons.album_rounded,
-                                text: albumLabel,
+                              _buildSquarePlayerMenu(
+                                context,
+                                audioProvider,
+                                song,
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 4,
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final size = constraints.biggest.shortestSide
-                                .clamp(92.0, 180.0);
-                            return Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                SmartArtwork(
-                                  albumId: song.id,
-                                  songPath: song.data,
-                                  type: ArtworkType.AUDIO,
-                                  size: size,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                const SizedBox(width: 10),
-                                Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    _LandscapeFolderButton(
-                                      add: false,
-                                      tooltip: 'Carpeta anterior',
-                                      onPressed: () =>
-                                          audioProvider.playPreviousFolder(),
-                                    ),
-                                    const SizedBox(height: 18),
-                                    _LandscapeFolderButton(
-                                      add: true,
-                                      tooltip: 'Carpeta siguiente',
-                                      onPressed: audioProvider.playNextFolder,
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            );
-                          },
                         ),
                       ),
                     ],
                   ),
                 ),
-                StreamBuilder<DurationState>(
-                  stream: audioProvider.durationStateStream,
-                  builder: (context, snapshot) {
-                    final durationState = snapshot.data;
-                    final progress = durationState?.position ?? Duration.zero;
-                    final total = durationState?.total ?? Duration.zero;
-                    final max = total.inMilliseconds.toDouble().clamp(
-                        progress.inMilliseconds.toDouble(), double.infinity);
-
-                    return Column(
-                      children: [
-                        SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 2.5,
-                            thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 5),
-                            overlayShape: const RoundSliderOverlayShape(
-                                overlayRadius: 12),
-                            activeTrackColor: Colors.white,
-                            inactiveTrackColor: Colors.white54,
-                            thumbColor: Colors.white,
-                          ),
-                          child: Slider(
-                            value: progress.inMilliseconds.toDouble(),
-                            max: max,
-                            onChanged: (value) {
-                              audioProvider.player
-                                  .seek(Duration(milliseconds: value.toInt()));
-                            },
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                _formatDuration(progress),
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 12),
-                              ),
-                              Text(
-                                _formatDuration(total),
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.queue_music_rounded,
-                          color: Colors.white, size: 28),
-                      onPressed: () => showQueueBottomSheet(context),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.skip_previous_rounded,
-                          color: Colors.white, size: 34),
-                      onPressed: audioProvider.previousSmart,
-                    ),
-                    StreamBuilder<bool>(
-                      stream: audioProvider.player.playingStream,
-                      builder: (context, snapshot) {
-                        final isPlaying = snapshot.data ?? false;
-                        return IconButton(
-                          icon: Icon(
-                            isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: Colors.white,
-                            size: 36,
-                          ),
-                          onPressed: audioProvider.togglePlayPause,
-                        );
-                      },
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.skip_next_rounded,
-                          color: Colors.white, size: 34),
-                      onPressed: audioProvider.next,
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        audioProvider.loopMode == LoopMode.one
-                            ? Icons.repeat_one_rounded
-                            : Icons.repeat_rounded,
-                        color: audioProvider.loopMode != LoopMode.off
-                            ? Colors.greenAccent
-                            : Colors.white,
-                        size: 26,
-                      ),
-                      onPressed: audioProvider.toggleLoop,
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        Icons.shuffle_rounded,
-                        color: audioProvider.isShuffle
-                            ? Colors.greenAccent
-                            : Colors.white,
-                        size: 26,
-                      ),
-                      onPressed: audioProvider.toggleShuffle,
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
+          const SizedBox(height: 16),
+          _buildTrackInfo(
+            context,
+            audioProvider,
+            song,
+            artist,
+            landscape: false,
+          ),
+          if (audioProvider.lyricsVisible)
+            _buildLyricsSection(song, audioProvider),
+          const SizedBox(height: 10),
+          _buildProgress(audioProvider),
+          const SizedBox(height: 12),
+          _buildTransportControls(audioProvider, compact: false),
+          const SizedBox(height: 12),
+          _buildSecondaryControls(
+            context,
+            audioProvider,
+            song,
+            compact: false,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            path.dirname(song.data),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildArtwork(SongModel song) {
+    return SmartArtwork(
+      albumId: song.id,
+      songPath: song.data,
+      type: ArtworkType.AUDIO,
+      size: 420,
+      borderRadius: BorderRadius.circular(6),
+    );
+  }
+
+  Widget _buildTrackInfo(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+    String artist, {
+    required bool landscape,
+  }) {
+    final details = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          audioProvider.queuePositionLabel,
+          style: TextStyle(
+            color: AppTheme.primaryColor,
+            fontSize: landscape ? 12 : 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () => showSongInfo(context, song),
+          child: SizedBox(
+            height: landscape ? 46 : 38,
+            child: MarqueeText(
+              text: TitleUtils.getDisplayTitle(song),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: landscape ? 32 : 25,
+                fontWeight: FontWeight.w800,
+              ),
+              velocity: 34,
+              gap: 54,
+            ),
+          ),
+        ),
+        const SizedBox(height: 5),
+        GestureDetector(
+          onTap: () => _openArtist(context, audioProvider, song),
+          child: Text(
+            artist,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: landscape ? 20 : 17,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const SizedBox(height: 7),
+        GestureDetector(
+          onTap: () => _openAlbum(context, audioProvider, song),
+          child: Text(
+            _resolveAlbumLabel(song),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white38, fontSize: 13),
+          ),
+        ),
+        if (landscape && audioProvider.lyricsVisible) ...[
+          const SizedBox(height: 10),
+          _buildLyricsSection(song, audioProvider),
+        ],
+      ],
+    );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(child: details),
+        IconButton(
+          tooltip: 'Favorito',
+          onPressed: () => audioProvider.toggleFavorite(song),
+          icon: Icon(
+            audioProvider.isFavorite(song.id)
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            color: audioProvider.isFavorite(song.id)
+                ? Colors.redAccent
+                : Colors.white,
+            size: landscape ? 34 : 30,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProgress(AudioProvider audioProvider) {
+    return StreamBuilder<DurationState>(
+      stream: audioProvider.durationStateStream,
+      builder: (context, snapshot) {
+        final progress = snapshot.data?.position ?? Duration.zero;
+        final total = snapshot.data?.total ?? Duration.zero;
+        final maxMs = total.inMilliseconds
+            .toDouble()
+            .clamp(progress.inMilliseconds.toDouble(), double.infinity);
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 4,
+                activeTrackColor: AppTheme.primaryColor,
+                inactiveTrackColor: Colors.white24,
+                thumbColor: AppTheme.primaryColor,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              ),
+              child: Slider(
+                value: progress.inMilliseconds.toDouble().clamp(0, maxMs),
+                max: maxMs,
+                onChanged: (value) =>
+                    audioProvider.seek(Duration(milliseconds: value.round())),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(_formatDuration(progress),
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 12)),
+                  Text(_formatDuration(total),
+                      style:
+                          const TextStyle(color: Colors.white54, fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTransportControls(
+    AudioProvider audioProvider, {
+    required bool compact,
+  }) {
+    final sideSize = compact ? 28.0 : 38.0;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        IconButton(
+          tooltip: 'Retroceder 10 segundos',
+          onPressed: () =>
+              audioProvider.seekRelative(const Duration(seconds: -10)),
+          icon: Icon(Icons.replay_10_rounded,
+              color: Colors.white, size: sideSize),
+        ),
+        GestureDetector(
+          onLongPress: () =>
+              audioProvider.seekRelative(const Duration(seconds: -10)),
+          child: IconButton(
+            tooltip: 'Anterior · mantener para retroceder',
+            onPressed: audioProvider.previousSmart,
+            icon: Icon(Icons.skip_previous_rounded,
+                color: Colors.white, size: compact ? 38 : 52),
+          ),
+        ),
+        StreamBuilder<bool>(
+          stream: audioProvider.playingStream,
+          builder: (context, snapshot) {
+            final playing = snapshot.data ?? false;
+            return Container(
+              width: compact ? 62 : 78,
+              height: compact ? 62 : 78,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                tooltip: playing ? 'Pausar' : 'Reproducir',
+                onPressed: audioProvider.togglePlayPause,
+                icon: Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  color: Colors.black,
+                  size: compact ? 38 : 48,
+                ),
+              ),
+            );
+          },
+        ),
+        GestureDetector(
+          onLongPress: () =>
+              audioProvider.seekRelative(const Duration(seconds: 10)),
+          child: IconButton(
+            tooltip: 'Siguiente · mantener para adelantar',
+            onPressed: audioProvider.next,
+            icon: Icon(Icons.skip_next_rounded,
+                color: Colors.white, size: compact ? 38 : 52),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Avanzar 10 segundos',
+          onPressed: () =>
+              audioProvider.seekRelative(const Duration(seconds: 10)),
+          icon: Icon(Icons.forward_10_rounded,
+              color: Colors.white, size: sideSize),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSecondaryControls(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song, {
+    required bool compact,
+  }) {
+    final size = compact ? 22.0 : 25.0;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      children: [
+        if (compact)
+          IconButton(
+            tooltip: 'Cerrar reproductor',
+            onPressed: () => Navigator.pop(context),
+            icon: Icon(Icons.keyboard_arrow_down_rounded,
+                size: size + 3, color: Colors.white60),
+          ),
+        IconButton(
+          tooltip: 'Aleatorio',
+          onPressed: audioProvider.toggleShuffle,
+          icon: Icon(
+            Icons.shuffle_rounded,
+            size: size,
+            color: audioProvider.isShuffle
+                ? AppTheme.primaryColor
+                : Colors.white60,
+          ),
+        ),
+        IconButton(
+          key: const ValueKey('now_playing_folder_previous'),
+          tooltip: 'Carpeta anterior',
+          onPressed: audioProvider.playPreviousFolder,
+          icon: Icon(Icons.folder_copy_outlined,
+              size: size, color: Colors.white60),
+        ),
+        IconButton(
+          tooltip: switch (audioProvider.loopMode) {
+            LoopMode.all => 'Repetir carpeta',
+            LoopMode.one => 'Repetir una canción',
+            LoopMode.off => 'Repetición apagada',
+          },
+          onPressed: audioProvider.toggleLoop,
+          icon: Icon(
+            audioProvider.loopMode == LoopMode.one
+                ? Icons.repeat_one_rounded
+                : Icons.repeat_rounded,
+            size: size,
+            color: audioProvider.loopMode == LoopMode.off
+                ? Colors.white60
+                : AppTheme.primaryColor,
+          ),
+        ),
+        IconButton(
+          key: const ValueKey('now_playing_folder_next'),
+          tooltip: 'Carpeta siguiente',
+          onPressed: audioProvider.playNextFolder,
+          icon: Icon(Icons.create_new_folder_outlined,
+              size: size, color: Colors.white60),
+        ),
+        IconButton(
+          tooltip: 'Cola',
+          onPressed: () => showQueueBottomSheet(context),
+          icon: Icon(Icons.queue_music_rounded,
+              size: size, color: Colors.white60),
+        ),
+        if (compact) _buildPlayerMenu(context, audioProvider, song),
+        if (!compact)
+          TextButton(
+            onPressed: () => _showPlaybackRateSheet(context),
+            child: Text('${audioProvider.playbackSpeed.toStringAsFixed(2)}x'),
+          ),
+      ],
+    );
+  }
+
+  void _openAlbum(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+  ) {
+    final albumSongs = audioProvider.allSongs
+        .where((item) =>
+            TitleUtils.getAlbumKey(item) == TitleUtils.getAlbumKey(song))
+        .toList();
+    if (albumSongs.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AlbumDetailScreen(
+          albumName: _resolveAlbumLabel(song),
+          albumId: song.albumId ?? 0,
+          songs: albumSongs,
+        ),
+      ),
+    );
+  }
+
+  void _openArtist(
+    BuildContext context,
+    AudioProvider audioProvider,
+    SongModel song,
+  ) {
+    final artistName = TitleUtils.getDisplayArtist(song.artist);
+    final artistKey = TitleUtils.getArtistKey(song.artist);
+    final artistSongs = audioProvider.allSongs
+        .where((item) => TitleUtils.getArtistKey(item.artist) == artistKey)
+        .toList();
+    if (artistSongs.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ArtistDetailScreen(
+          artistName: artistName,
+          songs: artistSongs,
         ),
       ),
     );
   }
 
   Widget _buildLyricsSection(SongModel song, AudioProvider audioProvider) {
-    _ensureLyricsLoaded(song, audioProvider.lyricsSource);
+    _ensureLyricsLoaded(
+      song,
+      audioProvider.lyricsSource,
+      audioProvider.automaticLyrics,
+    );
+    final viewKey = '$_lyricsRequestKey|$_lyricsRequestRevision';
     return FutureBuilder<LyricsResult?>(
+      key: ValueKey(viewKey),
       future: _lyricsFuture,
       builder: (context, snapshot) {
-        final result = snapshot.data;
-        if (result?.hasTimestamps != true || result!.lines.isEmpty) {
-          return const SizedBox.shrink();
-        }
+        final finished = snapshot.connectionState == ConnectionState.done;
+        // FutureBuilder retains the previous snapshot while a new future is
+        // pending. Ignore it, but preserve the lyrics slot while the current
+        // song is being resolved.
+        final result = finished ? snapshot.data : null;
         return Padding(
           padding: const EdgeInsets.only(bottom: 6.0),
-          child: _timestampedLyrics(
-            result.lines,
-            audioProvider.player.positionStream,
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                const SizedBox(width: 36),
+                Expanded(
+                  child: !finished
+                      ? const SizedBox.shrink()
+                      : result == null
+                          ? const Center(
+                              child: Text(
+                                'No se encontraron letras',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.white38),
+                              ),
+                            )
+                          : result.hasTimestamps && result.lines.isNotEmpty
+                              ? _timestampedLyrics(
+                                  result.lines,
+                                  audioProvider.positionStream,
+                                )
+                              : SingleChildScrollView(
+                                  child: Text(
+                                    result.text,
+                                    textAlign: TextAlign.center,
+                                    style:
+                                        const TextStyle(color: Colors.white70),
+                                  ),
+                                ),
+                ),
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: IconButton(
+                    tooltip: 'Actualizar letra',
+                    padding: EdgeInsets.zero,
+                    iconSize: 20,
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      setState(() {
+                        _lyricsRequestRevision++;
+                        _lyricsFuture = LyricsService.refresh(
+                          song,
+                          audioProvider.lyricsSource,
+                          automatic: true,
+                        );
+                      });
+                    },
+                    icon: Icon(
+                      Icons.refresh_rounded,
+                      color: AppTheme.primaryColor,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  void _showPlaybackRateSheet(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: const Color(0xFF181818),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => Consumer<AudioProvider>(
+        builder: (context, provider, _) {
+          final pitch = provider.playbackPitchSemitones;
+          final pitchLabel = pitch == 0
+              ? 'Normal'
+              : '${pitch > 0 ? '+' : ''}${pitch.round()} semitonos';
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white24,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Velocidad y tono',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: provider.playbackSpeed == 1.0 && pitch == 0
+                          ? null
+                          : provider.resetPlaybackRate,
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Normal'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _PlaybackRateSlider(
+                  icon: Icons.speed_rounded,
+                  title: 'Velocidad',
+                  valueLabel: '${provider.playbackSpeed.toStringAsFixed(2)}x',
+                  value: provider.playbackSpeed,
+                  min: 0.5,
+                  max: 2.0,
+                  divisions: 30,
+                  onChanged: provider.setPlaybackSpeed,
+                ),
+                const SizedBox(height: 8),
+                _PlaybackRateSlider(
+                  icon: Icons.music_note_rounded,
+                  title: 'Tono',
+                  valueLabel: pitchLabel,
+                  value: pitch,
+                  min: -12,
+                  max: 12,
+                  divisions: 24,
+                  onChanged: provider.setPlaybackPitchSemitones,
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -1141,68 +1673,52 @@ class _PlayerModalContentState extends State<_PlayerModalContent> {
   }
 }
 
-class _LandscapeInfoLine extends StatelessWidget {
+class _PlaybackRateSlider extends StatelessWidget {
   final IconData icon;
-  final String text;
+  final String title;
+  final String valueLabel;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final ValueChanged<double> onChanged;
 
-  const _LandscapeInfoLine({
+  const _PlaybackRateSlider({
     required this.icon,
-    required this.text,
+    required this.title,
+    required this.valueLabel,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: Colors.white, size: 22),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
+        Row(
+          children: [
+            Icon(icon, size: 20, color: Colors.white70),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600)),
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+            Text(valueLabel, style: TextStyle(color: AppTheme.primaryColor)),
+          ],
+        ),
+        Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          onChanged: onChanged,
         ),
       ],
-    );
-  }
-}
-
-class _LandscapeFolderButton extends StatelessWidget {
-  final bool add;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  const _LandscapeFolderButton({
-    required this.add,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: onPressed,
-      icon: Stack(
-        alignment: Alignment.center,
-        children: [
-          const Icon(Icons.folder_outlined, color: Colors.white, size: 30),
-          Transform.translate(
-            offset: const Offset(6, 6),
-            child: Icon(
-              add ? Icons.add : Icons.remove,
-              color: Colors.white,
-              size: 14,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

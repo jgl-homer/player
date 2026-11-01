@@ -4,12 +4,17 @@ import 'lyrics_service.dart';
 
 enum PlaybackMode { folder, album, artist, playlist, favorites, global }
 
+enum EpicenterEngineMode { hybrid, smart, legacy }
+
+enum ReplayGainMode { track, album }
+
 class StatePersistence {
-  static const double defaultEpicenterSweepFreq = 41.0;
-  static const double defaultEpicenterWidth = 86.0;
-  static const double defaultEpicenterIntensity = 84.0;
+  static const double defaultEpicenterSweepFreq = 40.0;
+  static const double defaultEpicenterWidth = 60.0;
+  static const double defaultEpicenterIntensity = 65.0;
   static const double defaultEpicenterVolume = 100.0;
   static const bool defaultEpicenterPeakProtectionEnabled = true;
+  static const List<double> defaultEqualizerBandGains = [0, 0, 0, 0, 0];
 
   static const String _modeKey = 'playback_mode';
   static const String _folderPathKey = 'active_folder_path';
@@ -21,13 +26,33 @@ class StatePersistence {
   static const String _shuffleKey = 'playback_shuffle';
   static const String _loopModeKey = 'playback_loop_mode';
   static const String _favoritesKey = 'favorites';
+  static const String _favoriteAddedAtKey = 'favorite_added_at_v1';
   static const String _playlistsKey = 'saved_playlists_v1';
   static const String _lyricsSourceKey = 'lyrics_source_v1';
   static const String _lyricsVisibleKey = 'lyrics_visible_v1';
+  static const String _automaticLyricsKey = 'automatic_lyrics_v1';
   static const String _autoModeKey = 'auto_mode_enabled';
   static const String _legacyAutoModeKey = 'modo_auto';
   static const String _epicenterEnabledKey = 'epicenter_enabled';
+  static const String _epicenterEngineKey = 'epicenter_engine';
+  static const String _epicenterHybridMigrationKey =
+      'epicenter_hybrid_default_v1';
   static const String _legacyEpicenterKey = 'epicentro';
+  static const String _equalizerEnabledKey = 'equalizer_enabled_v1';
+  static const String _equalizerBandsKey = 'equalizer_bands_v1';
+  static const String _replayGainEnabledKey = 'replay_gain_enabled_v1';
+  static const String _replayGainModeKey = 'replay_gain_mode_v1';
+  static const String _volumeBoostDbKey = 'volume_boost_db_v1';
+  static const String _librarySortModesKey = 'library_sort_modes_v1';
+  static const String _playbackSpeedKey = 'playback_speed_v1';
+  static const String _playbackPitchKey = 'playback_pitch_semitones_v1';
+  static const String _playCountsKey = 'song_play_counts_v1';
+  static const String _hiddenSongsKey = 'hidden_song_paths_v1';
+  static const String _hiddenFoldersKey = 'hidden_folder_paths_v1';
+  static const String _crossfadeSecondsKey = 'crossfade_seconds_v1';
+  static const String _themeModeKey = 'theme_mode_v1';
+  static const String _accentColorKey = 'accent_color_v1';
+  static const String _languageCodeKey = 'language_code_v1';
 
   static Future<bool> loadAutoMode() async {
     final prefs = await SharedPreferences.getInstance();
@@ -55,15 +80,34 @@ class StatePersistence {
     await prefs.setBool(_legacyEpicenterKey, enabled);
   }
 
+  static Future<EpicenterEngineMode> loadEpicenterEngine() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(_epicenterHybridMigrationKey) ?? false)) {
+      await prefs.setBool(_epicenterHybridMigrationKey, true);
+      await prefs.setString(
+          _epicenterEngineKey, EpicenterEngineMode.hybrid.name);
+      return EpicenterEngineMode.hybrid;
+    }
+    return switch (prefs.getString(_epicenterEngineKey)) {
+      'smart' => EpicenterEngineMode.smart,
+      'legacy' => EpicenterEngineMode.legacy,
+      _ => EpicenterEngineMode.hybrid,
+    };
+  }
+
+  static Future<void> saveEpicenterEngine(EpicenterEngineMode engine) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_epicenterEngineKey, engine.name);
+  }
+
   // Epicenter parameters persistence
   static const String _epicenterSweepFreqKey = 'epicenter_sweep_freq';
   static const String _epicenterWidthKey = 'epicenter_width';
   static const String _epicenterIntensityKey = 'epicenter_intensity';
   static const String _epicenterVolumeKey = 'epicenter_volume';
-  static const String _epicenterPeakProtectionKey =
-      'epicenter_peak_protection';
+  static const String _epicenterPeakProtectionKey = 'epicenter_peak_protection';
   static const String _epicenterTuningVersionKey = 'epicenter_tuning_version';
-  static const int _epicenterTuningVersion = 6;
+  static const int _epicenterTuningVersion = 7;
 
   static Future<Map<String, double>> loadEpicenterParams() async {
     final prefs = await SharedPreferences.getInstance();
@@ -103,6 +147,121 @@ class StatePersistence {
     await prefs.setBool(_epicenterPeakProtectionKey, enabled);
   }
 
+  static Future<bool> loadEqualizerEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_equalizerEnabledKey) ?? false;
+  }
+
+  static Future<List<double>> loadEqualizerBandGains() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList(_equalizerBandsKey);
+    if (saved == null || saved.length != defaultEqualizerBandGains.length) {
+      return List<double>.from(defaultEqualizerBandGains);
+    }
+    final parsed = saved.map(double.tryParse).toList(growable: false);
+    if (parsed.any((value) => value == null || !value.isFinite)) {
+      return List<double>.from(defaultEqualizerBandGains);
+    }
+    return parsed
+        .cast<double>()
+        .map((value) => value.clamp(-6.0, 6.0))
+        .toList(growable: false);
+  }
+
+  static Future<void> saveEqualizerSettings({
+    required bool enabled,
+    required List<double> bandGains,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalized = List<double>.generate(
+      defaultEqualizerBandGains.length,
+      (index) => index < bandGains.length && bandGains[index].isFinite
+          ? bandGains[index].clamp(-6.0, 6.0)
+          : 0.0,
+      growable: false,
+    );
+    await prefs.setBool(_equalizerEnabledKey, enabled);
+    await prefs.setStringList(
+      _equalizerBandsKey,
+      normalized.map((value) => value.toString()).toList(growable: false),
+    );
+  }
+
+  static Future<bool> loadReplayGainEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_replayGainEnabledKey) ?? false;
+  }
+
+  static Future<ReplayGainMode> loadReplayGainMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_replayGainModeKey) == ReplayGainMode.album.name
+        ? ReplayGainMode.album
+        : ReplayGainMode.track;
+  }
+
+  static Future<void> saveReplayGainSettings({
+    required bool enabled,
+    required ReplayGainMode mode,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_replayGainEnabledKey, enabled);
+    await prefs.setString(_replayGainModeKey, mode.name);
+  }
+
+  static Future<double> loadVolumeBoostDb() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getDouble(_volumeBoostDbKey) ?? 0.0;
+    return value.isFinite ? value.clamp(0.0, 6.0206) : 0.0;
+  }
+
+  static Future<void> saveVolumeBoostDb(double gainDb) async {
+    final prefs = await SharedPreferences.getInstance();
+    final safeValue = gainDb.isFinite ? gainDb.clamp(0.0, 6.0206) : 0.0;
+    await prefs.setDouble(_volumeBoostDbKey, safeValue);
+  }
+
+  static Future<Map<String, String>> loadLibrarySortModes() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_librarySortModesKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveLibrarySortModes(Map<String, String> modes) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_librarySortModesKey, jsonEncode(modes));
+  }
+
+  static Future<double> loadPlaybackSpeed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getDouble(_playbackSpeedKey) ?? 1.0).clamp(0.5, 2.0);
+  }
+
+  static Future<double> loadPlaybackPitchSemitones() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getDouble(_playbackPitchKey) ?? 0.0).clamp(-12.0, 12.0);
+  }
+
+  static Future<void> savePlaybackRate({
+    required double speed,
+    required double pitchSemitones,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_playbackSpeedKey, speed.clamp(0.5, 2.0));
+    await prefs.setDouble(
+      _playbackPitchKey,
+      pitchSemitones.clamp(-12.0, 12.0),
+    );
+  }
+
   static Future<void> _migrateEpicenterDefaultsIfNeeded(
     SharedPreferences prefs,
   ) async {
@@ -113,8 +272,7 @@ class StatePersistence {
     final width = prefs.getDouble(_epicenterWidthKey);
     final intensity = prefs.getDouble(_epicenterIntensityKey);
 
-    final canAutoTune = sweep == null ||
-        (_closeTo(sweep, 45.0) &&
+    final historicalDefault = (_closeTo(sweep, 45.0) &&
             _closeTo(width, 50.0) &&
             _closeTo(intensity, 50.0)) ||
         (_closeTo(sweep, 41.0) &&
@@ -129,11 +287,18 @@ class StatePersistence {
           intensity: intensity,
         );
 
+    final canAutoTune = sweep == null ||
+        (_closeTo(sweep, 41.0) &&
+            _closeTo(width, 86.0) &&
+            _closeTo(intensity, 84.0)) ||
+        (version < 6 && historicalDefault);
+
     if (canAutoTune) {
       await prefs.setDouble(_epicenterSweepFreqKey, defaultEpicenterSweepFreq);
       await prefs.setDouble(_epicenterWidthKey, defaultEpicenterWidth);
       await prefs.setDouble(_epicenterIntensityKey, defaultEpicenterIntensity);
-      await prefs.setDouble(_epicenterVolumeKey, defaultEpicenterVolume);
+      await prefs.setDouble(_epicenterVolumeKey,
+          prefs.getDouble(_epicenterVolumeKey) ?? defaultEpicenterVolume);
     }
 
     await prefs.setInt(_epicenterTuningVersionKey, _epicenterTuningVersion);
@@ -157,6 +322,9 @@ class StatePersistence {
         intensity >= 95.0;
   }
 
+  static const _playbackSnapshotKey = 'playback_snapshot_v2';
+  static Future<void> _playbackSave = Future.value();
+
   static Future<void> savePlaybackState({
     required PlaybackMode mode,
     String? folderPath,
@@ -167,40 +335,103 @@ class StatePersistence {
     required int positionMs,
     bool isShuffle = false,
     String loopMode = 'off',
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_modeKey, mode.toString());
+  }) {
+    final paths =
+        playlistPaths == null ? null : List<String>.from(playlistPaths);
+    final write = _playbackSave.then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_modeKey, mode.toString());
 
-    if (folderPath != null) {
-      await prefs.setString(_folderPathKey, folderPath);
-    } else {
-      await prefs.remove(_folderPathKey);
-    }
+      if (folderPath != null) {
+        await prefs.setString(_folderPathKey, folderPath);
+      } else {
+        await prefs.remove(_folderPathKey);
+      }
 
-    if (contextId != null) {
-      await prefs.setString(_contextIdKey, contextId);
-    } else {
-      await prefs.remove(_contextIdKey);
-    }
+      if (contextId != null) {
+        await prefs.setString(_contextIdKey, contextId);
+      } else {
+        await prefs.remove(_contextIdKey);
+      }
 
-    await prefs.setString(_songPathKey, songPath);
-    if (trackId != null) {
-      await prefs.setInt(_trackIdKey, trackId);
-    } else {
-      await prefs.remove(_trackIdKey);
-    }
-    if (playlistPaths != null) {
-      await prefs.setStringList(_playlistKey, playlistPaths);
-    } else {
-      await prefs.remove(_playlistKey);
-    }
-    await prefs.setInt(_positionKey, positionMs);
-    await prefs.setBool(_shuffleKey, isShuffle);
-    await prefs.setString(_loopModeKey, loopMode);
+      await prefs.setString(_songPathKey, songPath);
+      if (trackId != null) {
+        await prefs.setInt(_trackIdKey, trackId);
+      } else {
+        await prefs.remove(_trackIdKey);
+      }
+      if (playlistPaths != null) {
+        await prefs.setStringList(_playlistKey, paths!);
+      } else {
+        await prefs.remove(_playlistKey);
+      }
+      await prefs.setInt(_positionKey, positionMs);
+      await prefs.setBool(_shuffleKey, isShuffle);
+      await prefs.setString(_loopModeKey, loopMode);
+      // One complete snapshot prevents mixed track/position/context after a kill.
+      await prefs.setString(
+          _playbackSnapshotKey,
+          jsonEncode({
+            'mode': mode.toString(),
+            'folderPath': folderPath,
+            'contextId': contextId,
+            'songPath': songPath,
+            'trackId': trackId,
+            'playlistPaths': paths ?? <String>[],
+            'positionMs': positionMs,
+            'isShuffle': isShuffle,
+            'loopMode': loopMode,
+          }));
+    });
+    _playbackSave = write.catchError((_) {});
+    return write;
+  }
+
+  static Future<void> clearPlaybackState() {
+    final write = _playbackSave.then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _playbackSnapshotKey,
+          jsonEncode({
+            'mode': PlaybackMode.global.toString(),
+            'songPath': null,
+            'trackId': null,
+            'folderPath': null,
+            'contextId': null,
+            'playlistPaths': <String>[],
+            'positionMs': 0,
+            'isShuffle': false,
+            'loopMode': 'off',
+          }));
+      for (final key in [
+        _songPathKey,
+        _trackIdKey,
+        _playlistKey,
+        _positionKey,
+        _folderPathKey,
+        _contextIdKey
+      ]) {
+        await prefs.remove(key);
+      }
+    });
+    _playbackSave = write.catchError((_) {});
+    return write;
   }
 
   static Future<Map<String, dynamic>> loadPlaybackState() async {
     final prefs = await SharedPreferences.getInstance();
+    final snapshot = prefs.getString(_playbackSnapshotKey);
+    if (snapshot != null) {
+      try {
+        final saved = Map<String, dynamic>.from(jsonDecode(snapshot) as Map);
+        saved['mode'] = PlaybackMode.values.firstWhere(
+            (mode) => mode.toString() == saved['mode'],
+            orElse: () => PlaybackMode.global);
+        return saved;
+      } catch (_) {
+        // Keep backward compatibility with legacy state or an unreadable snapshot.
+      }
+    }
     final modeStr = prefs.getString(_modeKey);
     PlaybackMode mode = PlaybackMode.global;
     for (final m in PlaybackMode.values) {
@@ -235,6 +466,37 @@ class StatePersistence {
         _favoritesKey, favorites.map((id) => id.toString()).toList());
   }
 
+  static Future<Map<int, int>> loadFavoriteAddedAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_favoriteAddedAtKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      final result = <int, int>{};
+      for (final entry in decoded.entries) {
+        final id = int.tryParse(entry.key.toString());
+        final timestamp = entry.value is int
+            ? entry.value as int
+            : int.tryParse(entry.value.toString());
+        if (id != null && timestamp != null && timestamp >= 0) {
+          result[id] = timestamp;
+        }
+      }
+      return result;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> saveFavoriteAddedAt(Map<int, int> timestamps) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _favoriteAddedAtKey,
+      jsonEncode(timestamps.map((id, value) => MapEntry('$id', value))),
+    );
+  }
+
   static Future<Map<String, List<String>>> loadPlaylists() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_playlistsKey);
@@ -259,9 +521,9 @@ class StatePersistence {
 
   static Future<LyricsSource> loadLyricsSource() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_lyricsSourceKey) == LyricsSource.internet.name
-        ? LyricsSource.internet
-        : LyricsSource.embedded;
+    return prefs.getString(_lyricsSourceKey) == LyricsSource.embedded.name
+        ? LyricsSource.embedded
+        : LyricsSource.internet;
   }
 
   static Future<void> saveLyricsSource(LyricsSource source) async {
@@ -279,13 +541,26 @@ class StatePersistence {
     await prefs.setBool(_lyricsVisibleKey, visible);
   }
 
+  static Future<bool> loadAutomaticLyrics() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_automaticLyricsKey) ?? true;
+  }
+
+  static Future<void> saveAutomaticLyrics(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_automaticLyricsKey, enabled);
+  }
+
   // Enabled tabs persistence (ordered list of tab IDs)
   static const String _enabledTabsKey = 'enabled_tabs_v2';
   static const String _activeTabKey = 'active_tab_id';
+  static const String _mostPlayedTabIntroducedKey =
+      'most_played_tab_introduced_v1';
   static const List<String> defaultEnabledTabs = [
     'folders',
     'songs',
     'favorites',
+    'most_played',
   ];
   static const List<String> allAvailableTabs = [
     'folders',
@@ -295,6 +570,7 @@ class StatePersistence {
     'artists',
     'playlists',
     'recently_added',
+    'most_played',
   ];
 
   static Future<List<String>> loadEnabledTabs() async {
@@ -302,7 +578,15 @@ class StatePersistence {
     final saved = prefs.getStringList(_enabledTabsKey);
     if (saved == null || saved.isEmpty) return defaultEnabledTabs;
     // Filter out any stale IDs not in allAvailableTabs
-    return saved.where((id) => allAvailableTabs.contains(id)).toList();
+    final enabled = saved.where((id) => allAvailableTabs.contains(id)).toList();
+    if (!(prefs.getBool(_mostPlayedTabIntroducedKey) ?? false)) {
+      await prefs.setBool(_mostPlayedTabIntroducedKey, true);
+      if (!enabled.contains('most_played')) {
+        enabled.add('most_played');
+        await prefs.setStringList(_enabledTabsKey, enabled);
+      }
+    }
+    return enabled;
   }
 
   static Future<void> saveEnabledTabs(List<String> tabs) async {
@@ -324,6 +608,8 @@ class StatePersistence {
   // was browsing so the app reopens directly inside it instead of the root.
   static const String _lastBrowsedFolderKey = 'last_browsed_folder_path';
   static const String _recentSongsLimitKey = 'recent_songs_limit';
+  static const String _minimumSongDurationKey =
+      'minimum_song_duration_seconds_v1';
 
   static Future<void> saveLastBrowsedFolder(String? path) async {
     final prefs = await SharedPreferences.getInstance();
@@ -347,5 +633,95 @@ class StatePersistence {
   static Future<int> loadRecentSongsLimit() async {
     final prefs = await SharedPreferences.getInstance();
     return (prefs.getInt(_recentSongsLimitKey) ?? 100).clamp(100, 10000);
+  }
+
+  static Future<void> saveMinimumSongDuration(int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_minimumSongDurationKey, seconds.clamp(0, 120));
+  }
+
+  static Future<int> loadMinimumSongDuration() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getInt(_minimumSongDurationKey) ?? 0).clamp(0, 120);
+  }
+
+  static Future<Map<String, int>> loadPlayCounts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_playCountsKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return {};
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<void> savePlayCounts(Map<String, int> counts) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_playCountsKey, jsonEncode(counts));
+  }
+
+  static Future<Set<String>> loadHiddenSongPaths() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_hiddenSongsKey) ?? const <String>[]).toSet();
+  }
+
+  static Future<void> saveHiddenSongPaths(Set<String> paths) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenSongsKey, paths.toList()..sort());
+  }
+
+  static Future<Set<String>> loadHiddenFolderPaths() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_hiddenFoldersKey) ?? const <String>[]).toSet();
+  }
+
+  static Future<void> saveHiddenFolderPaths(Set<String> paths) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenFoldersKey, paths.toList()..sort());
+  }
+
+  static Future<int> loadCrossfadeSeconds() async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getInt(_crossfadeSecondsKey) ?? 0).clamp(0, 12);
+  }
+
+  static Future<void> saveCrossfadeSeconds(int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_crossfadeSecondsKey, seconds.clamp(0, 12));
+  }
+
+  static Future<String> loadThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_themeModeKey) ?? 'dark';
+  }
+
+  static Future<void> saveThemeMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themeModeKey, mode);
+  }
+
+  static Future<int> loadAccentColor() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_accentColorKey) ?? 0xFFFFD500;
+  }
+
+  static Future<void> saveAccentColor(int value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_accentColorKey, value);
+  }
+
+  static Future<String> loadLanguageCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_languageCodeKey) ?? 'es';
+  }
+
+  static Future<void> saveLanguageCode(String code) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_languageCodeKey, code);
   }
 }

@@ -5,6 +5,7 @@ import 'package:on_audio_query/on_audio_query.dart';
 import '../../../providers/audio_provider.dart';
 import '../../../widgets/song_list_tile.dart';
 import '../../../utils/title_utils.dart';
+import '../../../utils/song_sorting.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/count_banner.dart';
 
@@ -21,6 +22,8 @@ class _SongsTabState extends State<SongsTab> {
   String? _draggedLetter;
   List<SongModel>? _sortedSongs;
   List<SongModel>? _songsSource;
+  String? _sortMode;
+  bool? _ignoreArticles;
 
   @override
   void dispose() {
@@ -92,12 +95,23 @@ class _SongsTabState extends State<SongsTab> {
     }
 
     final sourceSongs = audioProvider.allSongs;
-    if (!identical(_songsSource, sourceSongs)) {
+    final sortMode = normalizeSongSortMode(
+      audioProvider.librarySortMode('songs', 'title_asc'),
+    );
+    final ignoreArticles = audioProvider.librarySortIgnoresArticles('songs');
+    if (!identical(_songsSource, sourceSongs) ||
+        _sortMode != sortMode ||
+        _ignoreArticles != ignoreArticles) {
       _songsSource = sourceSongs;
+      _sortMode = sortMode;
+      _ignoreArticles = ignoreArticles;
       _sortedSongs = List<SongModel>.from(sourceSongs)
-        ..sort((a, b) => TitleUtils.getDisplayTitle(a)
-            .toLowerCase()
-            .compareTo(TitleUtils.getDisplayTitle(b).toLowerCase()));
+        ..sort((a, b) => compareSongs(
+              a,
+              b,
+              sortMode,
+              ignoreArticles: ignoreArticles,
+            ));
     }
     final songs = _sortedSongs!;
 
@@ -150,8 +164,7 @@ class _SongsTabState extends State<SongsTab> {
                   },
                 ),
                 IconButton(
-                  icon: const Icon(Icons.play_arrow,
-                      color: AppTheme.primaryColor),
+                  icon: Icon(Icons.play_arrow, color: AppTheme.primaryColor),
                   tooltip: 'Reproducir selección',
                   onPressed: selectedCount > 0
                       ? () => audioProvider.playSelected(songs)
@@ -182,8 +195,9 @@ class _SongsTabState extends State<SongsTab> {
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text("CANCELAR",
-                                      style: TextStyle(color: Colors.teal)),
+                                  child: Text("CANCELAR",
+                                      style: TextStyle(
+                                          color: AppTheme.primaryColor)),
                                 ),
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx, true),
@@ -203,7 +217,10 @@ class _SongsTabState extends State<SongsTab> {
             ),
           )
         else
-          CountBanner(count: songs.length, label: 'Canciones'),
+          CountBanner(
+            count: songs.length,
+            label: 'Canciones',
+          ),
         Expanded(
           child: LayoutBuilder(builder: (context, constraints) {
             return Stack(
@@ -265,52 +282,55 @@ class _SongsTabState extends State<SongsTab> {
                 ),
 
                 // Alphabet Sidebar
-                Positioned(
-                  right: 0,
-                  top: 20,
-                  bottom: 20,
-                  width: 30,
-                  child: GestureDetector(
-                    onVerticalDragStart: (details) => _handleScroll(
-                        details.localPosition,
-                        constraints.maxHeight - 40,
-                        songs),
-                    onVerticalDragUpdate: (details) => _handleScroll(
-                        details.localPosition,
-                        constraints.maxHeight - 40,
-                        songs),
-                    onVerticalDragEnd: (_) =>
-                        setState(() => _draggedLetter = null),
-                    onTapDown: (details) => _handleScroll(details.localPosition,
-                        constraints.maxHeight - 40, songs),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black26,
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: _alphabet.map((letter) {
-                          bool isDragging = _draggedLetter == letter;
-                          return Text(
-                            letter,
-                            style: TextStyle(
-                                color: isDragging
-                                    ? AppTheme.primaryColor
-                                    : Colors.white60,
-                                fontSize: isDragging ? 13 : 9,
-                                fontWeight: isDragging
-                                    ? FontWeight.bold
-                                    : FontWeight.normal),
-                          );
-                        }).toList(),
+                if (sortMode == 'title_asc')
+                  Positioned(
+                    right: 0,
+                    top: 20,
+                    bottom: 20,
+                    width: 30,
+                    child: GestureDetector(
+                      onVerticalDragStart: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          songs),
+                      onVerticalDragUpdate: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          songs),
+                      onVerticalDragEnd: (_) =>
+                          setState(() => _draggedLetter = null),
+                      onTapDown: (details) => _handleScroll(
+                          details.localPosition,
+                          constraints.maxHeight - 40,
+                          songs),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: _alphabet.map((letter) {
+                            bool isDragging = _draggedLetter == letter;
+                            return Text(
+                              letter,
+                              style: TextStyle(
+                                  color: isDragging
+                                      ? AppTheme.primaryColor
+                                      : Colors.white60,
+                                  fontSize: isDragging ? 13 : 9,
+                                  fontWeight: isDragging
+                                      ? FontWeight.bold
+                                      : FontWeight.normal),
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                   ),
-                ),
 
                 // Letter Overlay Indicator
-                if (_draggedLetter != null)
+                if (sortMode == 'title_asc' && _draggedLetter != null)
                   Center(
                     child: Container(
                       height: 100,
@@ -354,7 +374,8 @@ class _SongsTabState extends State<SongsTab> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text("CANCELAR", style: TextStyle(color: Colors.teal)),
+            child: Text("CANCELAR",
+                style: TextStyle(color: AppTheme.primaryColor)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),

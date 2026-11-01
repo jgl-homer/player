@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class MediaUtils {
     private static final Map<String, Map<String, String>> WMA_METADATA_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, Map<String, Double>> REPLAY_GAIN_CACHE = new ConcurrentHashMap<>();
 
     /**
      * Extrae metadata básica y técnica completa de un archivo de audio.
@@ -132,6 +133,41 @@ public class MediaUtils {
         return null;
     }
 
+    public static Map<String, Double> getReplayGainMetadata(String path) {
+        File file = new File(path);
+        String cacheKey = path + ":" + file.length() + ":" + file.lastModified();
+        Map<String, Double> cached = REPLAY_GAIN_CACHE.get(cacheKey);
+        if (cached != null) return new HashMap<>(cached);
+
+        HashMap<String, Double> replayGain = new HashMap<>();
+        try {
+            MediaInformationSession session = FFprobeKit.getMediaInformation(path);
+            MediaInformation information = session.getMediaInformation();
+            if (information != null) {
+                readReplayGainTags(replayGain, information.getTags(), false);
+                if (information.getStreams() != null) {
+                    for (StreamInformation stream : information.getStreams()) {
+                        if ("audio".equals(stream.getType())) {
+                            readReplayGainTags(replayGain, stream.getTags(), false);
+                        }
+                    }
+                }
+                readReplayGainTags(replayGain, information.getTags(), true);
+                if (information.getStreams() != null) {
+                    for (StreamInformation stream : information.getStreams()) {
+                        if ("audio".equals(stream.getType())) {
+                            readReplayGainTags(replayGain, stream.getTags(), true);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.w("MediaUtils", "No se pudo leer ReplayGain: " + path, e);
+        }
+        REPLAY_GAIN_CACHE.put(cacheKey, new HashMap<>(replayGain));
+        return replayGain;
+    }
+
     private static Map<String, String> getWmaMetadata(
             String path, File file, HashMap<String, String> metadata) {
         try {
@@ -185,9 +221,64 @@ public class MediaUtils {
         return null;
     }
 
-    private static String firstTag(org.json.JSONObject tags, String first, String second) {
-        String value = tag(tags, first);
-        return value != null && !value.isEmpty() ? value : tag(tags, second);
+    private static String firstTag(org.json.JSONObject tags, String... candidates) {
+        for (String candidate : candidates) {
+            String value = tag(tags, candidate);
+            if (value != null && !value.isEmpty()) return value;
+        }
+        return null;
+    }
+
+    private static Double parseGain(String value) {
+        if (value == null) return null;
+        try {
+            String numeric = value.trim().toLowerCase()
+                    .replace("db", "")
+                    .replace(',', '.')
+                    .trim();
+            double parsed = Double.parseDouble(numeric);
+            return Double.isFinite(parsed) ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static Double parsePeak(String value) {
+        Double peak = parseGain(value);
+        return peak != null && peak > 0.0 ? peak : null;
+    }
+
+    private static Double parseR128Gain(String value) {
+        Double raw = parseGain(value);
+        if (raw == null) return null;
+        // Opus R128 tags use signed Q7.8 dB at a -23 LUFS reference.
+        return raw / 256.0 + 5.0;
+    }
+
+    private static void readReplayGainTags(
+            Map<String, Double> metadata,
+            org.json.JSONObject tags,
+            boolean r128Fallback) {
+        if (r128Fallback) {
+            putDoubleIfAbsent(metadata, "trackGainDb", parseR128Gain(
+                    firstTag(tags, "r128_track_gain")));
+            putDoubleIfAbsent(metadata, "albumGainDb", parseR128Gain(
+                    firstTag(tags, "r128_album_gain")));
+            return;
+        }
+        putDoubleIfAbsent(metadata, "trackGainDb", parseGain(
+                firstTag(tags, "replaygain_track_gain", "rg_track_gain")));
+        putDoubleIfAbsent(metadata, "trackPeak", parsePeak(
+                firstTag(tags, "replaygain_track_peak", "rg_track_peak")));
+        putDoubleIfAbsent(metadata, "albumGainDb", parseGain(
+                firstTag(tags, "replaygain_album_gain", "rg_album_gain")));
+        putDoubleIfAbsent(metadata, "albumPeak", parsePeak(
+                firstTag(tags, "replaygain_album_peak", "rg_album_peak")));
+    }
+
+    private static void putDoubleIfAbsent(
+            Map<String, Double> metadata, String key, Double value) {
+        if (value != null && !metadata.containsKey(key)) metadata.put(key, value);
     }
 
     private static void putIfPresent(

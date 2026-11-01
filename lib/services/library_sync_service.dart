@@ -6,7 +6,8 @@ class SyncResult {
   final List<SongModel> toUpdate;
   final Set<String> toDelete;
 
-  bool get hasChanges => toInsert.isNotEmpty || toUpdate.isNotEmpty || toDelete.isNotEmpty;
+  bool get hasChanges =>
+      toInsert.isNotEmpty || toUpdate.isNotEmpty || toDelete.isNotEmpty;
   int get totalChanges => toInsert.length + toUpdate.length + toDelete.length;
 
   SyncResult(this.toInsert, this.toUpdate, this.toDelete);
@@ -15,7 +16,7 @@ class SyncResult {
 class LibrarySyncService {
   static Future<SyncResult> computeDiff(List<SongModel> freshSongs) async {
     final snapshot = await LibraryDatabase.instance.getIndexSnapshot();
-    
+
     final dbMap = <String, Map<String, dynamic>>{};
     for (var row in snapshot) {
       dbMap[row['path'] as String] = row;
@@ -35,9 +36,13 @@ class LibrarySyncService {
       } else {
         final dbSize = dbRow['size_bytes'] as int?;
         final dbDate = dbRow['date_modified'] as int?;
-        
+        final dbAlbumId = dbRow['album_id'] as int?;
+        final dbTrack = dbRow['track_number'] as int?;
+
         if (dbSize != song.size ||
             dbDate != song.dateModified ||
+            dbAlbumId != song.albumId ||
+            dbTrack != song.track ||
             _wmaNeedsMetadataRefresh(song, dbRow)) {
           toUpdate.add(song);
         }

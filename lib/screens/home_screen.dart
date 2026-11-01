@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/audio_provider.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/library_sort_menu.dart';
 import 'search_screen.dart';
 import 'tabs/folders_tab.dart';
 import 'tabs/songs_tab.dart';
@@ -12,52 +13,166 @@ import 'tabs/albums_tab.dart';
 import 'tabs/playlists_tab.dart';
 import 'tabs/artists_tab.dart';
 import 'tabs/recently_added_tab.dart';
+import 'tabs/most_played_tab.dart';
+import '../theme/app_theme.dart';
+import '../l10n/app_strings.dart';
 
 // ─── Metadata de cada tab ────────────────────────────────────────────────────
 class _TabDef {
   final String id;
-  final String Function(AudioProvider p) label;
   final Widget widget;
-  const _TabDef({required this.id, required this.label, required this.widget});
+  const _TabDef({required this.id, required this.widget});
 }
 
 final _allTabDefs = <_TabDef>[
   _TabDef(
     id: 'folders',
-    label: (_) => 'Carpetas',
     widget: const FoldersTab(),
   ),
   _TabDef(
     id: 'songs',
-    label: (_) => 'Canciones',
     widget: const SongsTab(),
   ),
   _TabDef(
     id: 'favorites',
-    label: (_) => 'Favoritos',
     widget: const FavoritesTab(),
   ),
   _TabDef(
     id: 'albums',
-    label: (_) => 'Álbumes',
     widget: const AlbumsTab(),
   ),
   _TabDef(
     id: 'artists',
-    label: (_) => 'Artistas',
     widget: const ArtistsTab(),
   ),
   _TabDef(
     id: 'playlists',
-    label: (_) => 'Playlists',
     widget: const PlaylistsTab(),
   ),
   _TabDef(
     id: 'recently_added',
-    label: (_) => 'Recientes',
     widget: const RecentlyAddedTab(),
   ),
+  _TabDef(
+    id: 'most_played',
+    widget: const MostPlayedTab(),
+  ),
 ];
+
+class _LibrarySortConfig {
+  final String defaultMode;
+  final List<LibrarySortOption> options;
+  final bool ignoreArticles;
+
+  const _LibrarySortConfig({
+    required this.defaultMode,
+    required this.options,
+    this.ignoreArticles = false,
+  });
+}
+
+const _librarySortConfigs = <String, _LibrarySortConfig>{
+  'folders': _LibrarySortConfig(
+    defaultMode: 'name_asc',
+    options: [
+      LibrarySortOption('name_asc', 'Nombre', Icons.sort_by_alpha_rounded,
+          reverseValue: 'name_desc'),
+      LibrarySortOption('songs_asc', 'Cantidad de canciones',
+          Icons.format_list_numbered_rounded,
+          reverseValue: 'songs_desc'),
+    ],
+  ),
+  'songs': _LibrarySortConfig(
+    defaultMode: 'title_asc',
+    ignoreArticles: true,
+    options: [
+      LibrarySortOption('title_asc', 'Título', Icons.title_rounded,
+          reverseValue: 'title_desc'),
+      LibrarySortOption('artist_asc', 'Artista', Icons.person_outline_rounded,
+          reverseValue: 'artist_desc'),
+      LibrarySortOption('album_asc', 'Álbum', Icons.album_outlined,
+          reverseValue: 'album_desc'),
+      LibrarySortOption(
+          'album_artist_asc', 'Artista del álbum', Icons.group_outlined,
+          reverseValue: 'album_artist_desc'),
+      LibrarySortOption('composer_asc', 'Compositor', Icons.edit_note_rounded,
+          reverseValue: 'composer_desc'),
+      LibrarySortOption('size_asc', 'Tamaño', Icons.sd_storage_outlined,
+          reverseValue: 'size_desc'),
+      LibrarySortOption('year_asc', 'Año', Icons.calendar_today_outlined,
+          reverseValue: 'year_desc'),
+      LibrarySortOption('duration_asc', 'Duración', Icons.timer_outlined,
+          reverseValue: 'duration_desc'),
+      LibrarySortOption(
+          'date_added_asc', 'Fecha añadida', Icons.playlist_add_rounded,
+          reverseValue: 'date_added_desc'),
+      LibrarySortOption(
+          'date_modified_asc', 'Fecha modificada', Icons.update_rounded,
+          reverseValue: 'date_modified_desc'),
+    ],
+  ),
+  'favorites': _LibrarySortConfig(
+    defaultMode: 'title_asc',
+    options: [
+      LibrarySortOption('title_asc', 'Título', Icons.title_rounded,
+          reverseValue: 'title_desc'),
+      LibrarySortOption('artist_asc', 'Artista', Icons.person_outline_rounded),
+      LibrarySortOption('file_name_asc', 'Nombre de archivo',
+          Icons.insert_drive_file_outlined,
+          reverseValue: 'file_name_desc'),
+      LibrarySortOption('favorite_added_desc', 'Última adición',
+          Icons.playlist_add_check_rounded,
+          reverseValue: 'favorite_added_asc'),
+    ],
+  ),
+  'albums': _LibrarySortConfig(
+    defaultMode: 'album_asc',
+    options: [
+      LibrarySortOption('album_asc', 'Álbum', Icons.album_outlined,
+          reverseValue: 'album_desc'),
+      LibrarySortOption('artist_asc', 'Artista', Icons.person_outline_rounded),
+      LibrarySortOption(
+          'songs_desc', 'Más canciones', Icons.format_list_numbered_rounded),
+      LibrarySortOption('newest', 'Más recientes', Icons.schedule_rounded),
+    ],
+  ),
+  'artists': _LibrarySortConfig(
+    defaultMode: 'artist_asc',
+    options: [
+      LibrarySortOption('artist_asc', 'Artista', Icons.person_outline_rounded,
+          reverseValue: 'artist_desc'),
+      LibrarySortOption('songs_asc', 'Cantidad de canciones',
+          Icons.format_list_numbered_rounded,
+          reverseValue: 'songs_desc'),
+    ],
+  ),
+  'playlists': _LibrarySortConfig(
+    defaultMode: 'name_asc',
+    options: [
+      LibrarySortOption('name_asc', 'Nombre', Icons.sort_by_alpha_rounded,
+          reverseValue: 'name_desc'),
+      LibrarySortOption('songs_asc', 'Cantidad de canciones',
+          Icons.format_list_numbered_rounded,
+          reverseValue: 'songs_desc'),
+    ],
+  ),
+  'recently_added': _LibrarySortConfig(
+    defaultMode: 'newest',
+    options: [
+      LibrarySortOption('newest', 'Fecha añadida', Icons.schedule_rounded,
+          reverseValue: 'oldest'),
+      LibrarySortOption('title_asc', 'Título', Icons.title_rounded),
+      LibrarySortOption('artist_asc', 'Artista', Icons.person_outline_rounded),
+    ],
+  ),
+  'most_played': _LibrarySortConfig(
+    defaultMode: 'plays_desc',
+    options: [
+      LibrarySortOption(
+          'plays_desc', 'Reproducciones', Icons.bar_chart_rounded),
+    ],
+  ),
+};
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -83,6 +198,7 @@ class HomeScreen extends StatelessWidget {
         return DefaultTabController(
           key: ValueKey(audioProvider.enabledTabs.join('-')),
           length: tabCount,
+          animationDuration: AppMotion.tabTransition,
           initialIndex: activeDefs.isEmpty
               ? 0
               : activeDefs
@@ -95,6 +211,29 @@ class HomeScreen extends StatelessWidget {
                 height: 40,
               ),
               actions: [
+                AnimatedBuilder(
+                  animation: audioProvider.autoDj,
+                  builder: (context, _) {
+                    final controller = audioProvider.autoDj;
+                    final enabled = controller.settings.enabled;
+                    return IconButton(
+                      tooltip: enabled
+                          ? 'Mezcla inteligente activa'
+                          : 'Mezcla inteligente',
+                      icon: Icon(
+                        Icons.auto_awesome_rounded,
+                        color: enabled ? AppTheme.primaryColor : null,
+                      ),
+                      onPressed: () => controller.updateSettings(
+                        controller.settings.copyWith(enabled: !enabled),
+                      ),
+                    );
+                  },
+                ),
+                _ActiveTabSortMenu(
+                  activeDefs: activeDefs,
+                  audioProvider: audioProvider,
+                ),
                 IconButton(
                   icon: const Icon(Icons.search),
                   onPressed: () {
@@ -166,11 +305,11 @@ class HomeScreen extends StatelessWidget {
                         PopupMenuItem<String>(
                           value: 'refresh_library',
                           enabled: !state.isIndexing && !state.isSyncing,
-                          child: const Text('Refrescar carpetas/elementos'),
+                          child: Text(context.tr('refresh_library')),
                         ),
-                        const PopupMenuItem<String>(
+                        PopupMenuItem<String>(
                           value: 'settings',
-                          child: Text('Configuración'),
+                          child: Text(context.tr('settings')),
                         ),
                       ],
                     );
@@ -194,14 +333,17 @@ class HomeScreen extends StatelessWidget {
 
                     return TabBar(
                       isScrollable: defs.length > 4,
+                      tabAlignment: defs.length > 4
+                          ? TabAlignment.start
+                          : TabAlignment.fill,
+                      padding: EdgeInsets.zero,
                       onTap: (index) {
                         if (index >= 0 && index < defs.length) {
                           audioProvider.setActiveTab(defs[index].id);
                         }
                       },
-                      tabs: defs
-                          .map((d) => Tab(text: d.label(audioProvider)))
-                          .toList(),
+                      tabs:
+                          defs.map((d) => Tab(text: context.tr(d.id))).toList(),
                     );
                   },
                 ),
@@ -256,6 +398,9 @@ class HomeScreen extends StatelessWidget {
                           }
 
                           return TabBarView(
+                            physics: const ClampingScrollPhysics(
+                              parent: PageScrollPhysics(),
+                            ),
                             children: defs.map((d) => d.widget).toList(),
                           );
                         },
@@ -275,6 +420,46 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+class _ActiveTabSortMenu extends StatelessWidget {
+  final List<_TabDef> activeDefs;
+  final AudioProvider audioProvider;
+
+  const _ActiveTabSortMenu({
+    required this.activeDefs,
+    required this.audioProvider,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = DefaultTabController.of(context);
+    return AnimatedBuilder(
+      animation: controller.animation ?? controller,
+      builder: (context, _) {
+        if (activeDefs.isEmpty) return const SizedBox.shrink();
+        final index = controller.index.clamp(0, activeDefs.length - 1);
+        final tabId = activeDefs[index].id;
+        final config = _librarySortConfigs[tabId];
+        if (config == null) return const SizedBox.shrink();
+        final sortMode =
+            audioProvider.librarySortMode(tabId, config.defaultMode);
+        return LibrarySortMenu(
+          value: sortMode,
+          options: config.options,
+          showIgnoreArticles: config.ignoreArticles,
+          ignoreArticles: audioProvider.librarySortIgnoresArticles(tabId),
+          onIgnoreArticlesChanged: config.ignoreArticles
+              ? (enabled) => audioProvider.setLibrarySortIgnoresArticles(
+                    tabId,
+                    enabled,
+                  )
+              : null,
+          onSelected: (value) => audioProvider.setLibrarySortMode(tabId, value),
         );
       },
     );

@@ -1,46 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:on_audio_query/on_audio_query.dart';
 import 'package:provider/provider.dart';
 import '../../providers/audio_provider.dart';
 import '../../widgets/song_list_tile.dart';
 import '../../widgets/count_banner.dart';
+import '../../utils/title_utils.dart';
 
-class FavoritesTab extends StatefulWidget {
+class FavoritesTab extends StatelessWidget {
   const FavoritesTab({super.key});
-
-  @override
-  State<FavoritesTab> createState() => _FavoritesTabState();
-}
-
-class _FavoritesTabState extends State<FavoritesTab> {
-  List<SongModel>? _songsSource;
-  int? _favoritesFingerprint;
-  List<SongModel> _favoriteSongs = const [];
-
-  int _fingerprintFavorites(Set<int> ids) {
-    var hash = ids.length;
-    for (final id in ids) {
-      hash = 0x1fffffff & (hash + id.hashCode);
-      hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
-      hash ^= hash >> 6;
-    }
-    return hash;
-  }
-
-  List<SongModel> _songsForFavorites(AudioProvider audioProvider) {
-    final allSongs = audioProvider.allSongs;
-    final fingerprint = _fingerprintFavorites(audioProvider.favoriteIds);
-    if (!identical(_songsSource, allSongs) ||
-        _favoritesFingerprint != fingerprint) {
-      _songsSource = allSongs;
-      _favoritesFingerprint = fingerprint;
-      _favoriteSongs = allSongs
-          .where((song) => audioProvider.favoriteIds.contains(song.id))
-          .toList(growable: false);
-    }
-    return _favoriteSongs;
-  }
 
   Future<void> _importFavorites(
       BuildContext context, AudioProvider audioProvider) async {
@@ -84,16 +51,45 @@ class _FavoritesTabState extends State<FavoritesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final audioProvider = context.watch<AudioProvider>();
-    final favoriteSongs = _songsForFavorites(audioProvider);
+    final audioProvider = Provider.of<AudioProvider>(context);
+    final sortMode = audioProvider.librarySortMode('favorites', 'title_asc');
+    final favoriteSongs = audioProvider.allSongs
+        .where((s) => audioProvider.isFavorite(s.id))
+        .toList()
+      ..sort((a, b) {
+        int compareText(String first, String second) =>
+            first.toLowerCase().compareTo(second.toLowerCase());
+        return switch (sortMode) {
+          'title_desc' => compareText(
+              TitleUtils.getDisplayTitle(b), TitleUtils.getDisplayTitle(a)),
+          'artist_asc' => compareText(TitleUtils.getDisplayArtist(a.artist),
+              TitleUtils.getDisplayArtist(b.artist)),
+          'file_name_asc' => compareText(
+              a.data.replaceAll('\\', '/').split('/').last,
+              b.data.replaceAll('\\', '/').split('/').last),
+          'file_name_desc' => compareText(
+              b.data.replaceAll('\\', '/').split('/').last,
+              a.data.replaceAll('\\', '/').split('/').last),
+          'favorite_added_desc' => audioProvider
+              .favoriteAddedAt(b.id)
+              .compareTo(audioProvider.favoriteAddedAt(a.id)),
+          'favorite_added_asc' => audioProvider
+              .favoriteAddedAt(a.id)
+              .compareTo(audioProvider.favoriteAddedAt(b.id)),
+          _ => compareText(
+              TitleUtils.getDisplayTitle(a), TitleUtils.getDisplayTitle(b)),
+        };
+      });
 
     return Column(
       children: [
         Row(
           children: [
             Expanded(
-              child:
-                  CountBanner(count: favoriteSongs.length, label: 'Favoritos'),
+              child: CountBanner(
+                count: favoriteSongs.length,
+                label: 'Favoritos',
+              ),
             ),
             IconButton(
               tooltip: 'Importar favoritos desde M3U/M3U8',
@@ -118,9 +114,7 @@ class _FavoritesTabState extends State<FavoritesTab> {
         ),
         Expanded(
           child: ListView.builder(
-            key: const PageStorageKey<String>('favorites_list'),
             itemCount: favoriteSongs.length,
-            itemExtent: 64.0,
             itemBuilder: (context, index) {
               final song = favoriteSongs[index];
               final isSelected = audioProvider.currentSong?.id == song.id;

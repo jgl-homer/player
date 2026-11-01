@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'smart_artwork.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:audiotags/audiotags.dart';
@@ -8,12 +9,18 @@ import 'package:path/path.dart' as path;
 
 import '../utils/title_utils.dart';
 import '../services/artwork_cache_service.dart';
+import '../providers/audio_provider.dart';
 
 /// Modal de detalles de archivo que muestra los 19 campos técnicos y de metadatos.
 class SongInfoModal extends StatefulWidget {
   final SongModel song;
+  final bool dialogStyle;
 
-  const SongInfoModal({super.key, required this.song});
+  const SongInfoModal({
+    super.key,
+    required this.song,
+    this.dialogStyle = false,
+  });
 
   @override
   State<SongInfoModal> createState() => _SongInfoModalState();
@@ -33,10 +40,12 @@ class _SongInfoModalState extends State<SongInfoModal> {
 
   Future<_DetailedMetadata> _loadFullMetadata() async {
     final song = widget.song;
+    final audioProvider = context.read<AudioProvider>();
     Map<String, String> retrieverData = {};
     Tag? id3Tag;
     FileStat? fileStat;
     File? cachedCoverFile;
+    Map<String, double?> replayGainData = const {};
 
     try {
       final res = await _mediaChannel.invokeMapMethod<String, String>(
@@ -61,12 +70,23 @@ class _SongInfoModalState extends State<SongInfoModal> {
       cachedCoverFile = await ArtworkCacheService.getArtworkFile(song.id);
     } catch (_) {}
 
+    try {
+      replayGainData = await audioProvider.getReplayGainInfo(song.data);
+    } catch (_) {}
+
     return _DetailedMetadata(
       retrieverData: retrieverData,
       id3Tag: id3Tag,
       fileStat: fileStat,
       cachedCoverFile: cachedCoverFile,
+      replayGainData: replayGainData,
     );
+  }
+
+  String _formatReplayGain(double gainDb, double? peak) {
+    final gain = '${gainDb >= 0 ? '+' : ''}${gainDb.toStringAsFixed(2)} dB';
+    if (peak == null || !peak.isFinite || peak <= 0) return gain;
+    return '$gain · pico ${peak.toStringAsFixed(4)}';
   }
 
   String _formatSize(int bytes) {
@@ -156,30 +176,37 @@ class _SongInfoModalState extends State<SongInfoModal> {
     final fileName = path.basename(song.data);
 
     return Container(
-      constraints:
-          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height *
+            (widget.dialogStyle ? 0.88 : 0.85),
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E1E),
+        borderRadius: widget.dialogStyle
+            ? BorderRadius.circular(16)
+            : const BorderRadius.only(
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+              ),
       ),
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white30,
-                borderRadius: BorderRadius.circular(2),
+            if (!widget.dialogStyle) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white30,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ] else
+              const SizedBox(height: 18),
             const Text(
               "Información de archivo",
               style: TextStyle(
@@ -197,6 +224,9 @@ class _SongInfoModalState extends State<SongInfoModal> {
                   final rData = details?.retrieverData ?? {};
                   final id3 = details?.id3Tag;
                   final stat = details?.fileStat;
+                  final replayGain = details?.replayGainData ?? const {};
+                  final trackGain = replayGain['trackGainDb'];
+                  final albumGain = replayGain['albumGainDb'];
 
                   final rawRTitle = rData['title']?.trim();
                   final rawRArtist = rData['artist']?.trim();
@@ -244,96 +274,143 @@ class _SongInfoModalState extends State<SongInfoModal> {
                   final dateModified =
                       _formatDate(stat?.modified ?? song.dateModified);
 
-                  return ListView(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  final header = Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Header compacto
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: details?.cachedCoverFile != null
+                            ? Image.file(
+                                details!.cachedCoverFile!,
+                                height: 80,
+                                width: 80,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    _buildFallbackArtwork(song, 80),
+                              )
+                            : _buildFallbackArtwork(song, 80),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              displayTitle,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              displayArtist,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+
+                  final trackDetails = <Widget>[
+                    _sectionHeader("Información del Tema"),
+                    _infoRowVertical("Title", displayTitle),
+                    _infoRowVertical("Artist", displayArtist),
+                    _infoRowVertical("Album", displayAlbum),
+                    _infoRowVertical("Album artist", displayAlbumArtist),
+                    _infoRowVertical("Composer", displayComposer),
+                    _infoRowHorizontal("Year", displayYear),
+                    _infoRowHorizontal("Genre", displayGenre),
+                    _infoRowHorizontal("Track number", displayTrack),
+                  ];
+                  final fileDetails = <Widget>[
+                    _sectionHeader("Detalles del Archivo"),
+                    _infoRowVertical("File name", fileName),
+                    _infoRowVertical("File path", song.data),
+                    _infoRowHorizontal(
+                        "Format", _formatFormat(rData, song.data)),
+                    _infoRowHorizontal(
+                        "Size",
+                        _formatSize(
+                            song.size > 0 ? song.size : (stat?.size ?? 0))),
+                    _infoRowHorizontal(
+                        "Length", _formatDuration(song.duration)),
+                    _infoRowHorizontal(
+                        "Bitrate", _formatBitrate(rData['bitrate'])),
+                    _infoRowHorizontal("Sampling rate",
+                        _formatSampleRate(rData['sampleRate'])),
+                    _infoRowHorizontal(
+                        "Channels", _formatChannels(rData['channels'])),
+                    _infoRowHorizontal("Bits per sample",
+                        _formatBitsPerSample(rData['bitsPerSample'])),
+                    if (trackGain != null)
+                      _infoRowHorizontal(
+                        "ReplayGain pista",
+                        _formatReplayGain(trackGain, replayGain['trackPeak']),
+                      ),
+                    if (albumGain != null)
+                      _infoRowHorizontal(
+                        "ReplayGain álbum",
+                        _formatReplayGain(albumGain, replayGain['albumPeak']),
+                      ),
+                    if (trackGain == null && albumGain == null)
+                      _infoRowHorizontal("ReplayGain", "Sin etiqueta"),
+                    _infoRowHorizontal("Date added", dateAdded),
+                    _infoRowHorizontal("Date modified", dateModified),
+                  ];
+
+                  if (widget.dialogStyle) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 8, 22, 18),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: details?.cachedCoverFile != null
-                                ? Image.file(
-                                    details!.cachedCoverFile!,
-                                    height: 80,
-                                    width: 80,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        _buildFallbackArtwork(song, 80),
-                                  )
-                                : _buildFallbackArtwork(song, 80),
-                          ),
-                          const SizedBox(width: 16),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: ListView(
+                              padding: EdgeInsets.zero,
                               children: [
-                                Text(
-                                  displayTitle,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  displayArtist,
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 14,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                header,
+                                const SizedBox(height: 18),
+                                ...trackDetails,
                               ],
+                            ),
+                          ),
+                          const VerticalDivider(
+                            width: 34,
+                            thickness: 1,
+                            color: Colors.white12,
+                          ),
+                          Expanded(
+                            child: ListView(
+                              padding: EdgeInsets.zero,
+                              children: fileDetails,
                             ),
                           ),
                         ],
                       ),
+                    );
+                  }
+
+                  return ListView(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    children: [
+                      header,
                       const SizedBox(height: 24),
-
-                      // Sección 1
-                      _sectionHeader("Información del Tema"),
-                      _infoRowVertical("Title", displayTitle),
-                      _infoRowVertical("Artist", displayArtist),
-                      _infoRowVertical("Album", displayAlbum),
-                      _infoRowVertical("Album artist", displayAlbumArtist),
-                      _infoRowVertical("Composer", displayComposer),
-                      _infoRowHorizontal("Year", displayYear),
-                      _infoRowHorizontal("Genre", displayGenre),
-                      _infoRowHorizontal("Track number", displayTrack),
-
+                      ...trackDetails,
                       const SizedBox(height: 16),
                       const Divider(color: Colors.white10, height: 1),
                       const SizedBox(height: 16),
-
-                      // Sección 2
-                      _sectionHeader("Detalles del Archivo"),
-                      _infoRowVertical("File name", fileName),
-                      _infoRowVertical("File path", song.data),
-                      _infoRowHorizontal(
-                          "Format", _formatFormat(rData, song.data)),
-                      _infoRowHorizontal(
-                          "Size",
-                          _formatSize(
-                              song.size > 0 ? song.size : (stat?.size ?? 0))),
-                      _infoRowHorizontal(
-                          "Length", _formatDuration(song.duration)),
-                      _infoRowHorizontal(
-                          "Bitrate", _formatBitrate(rData['bitrate'])),
-                      _infoRowHorizontal("Sampling rate",
-                          _formatSampleRate(rData['sampleRate'])),
-                      _infoRowHorizontal(
-                          "Channels", _formatChannels(rData['channels'])),
-                      _infoRowHorizontal("Bits per sample",
-                          _formatBitsPerSample(rData['bitsPerSample'])),
-                      _infoRowHorizontal("Date added", dateAdded),
-                      _infoRowHorizontal("Date modified", dateModified),
+                      ...fileDetails,
                       const SizedBox(height: 24),
                     ],
                   );
@@ -435,16 +512,31 @@ class _DetailedMetadata {
   final Tag? id3Tag;
   final FileStat? fileStat;
   final File? cachedCoverFile;
+  final Map<String, double?> replayGainData;
 
   _DetailedMetadata({
     required this.retrieverData,
     required this.id3Tag,
     required this.fileStat,
     required this.cachedCoverFile,
+    required this.replayGainData,
   });
 }
 
 void showSongInfo(BuildContext context, SongModel song) {
+  if (MediaQuery.orientationOf(context) == Orientation.landscape) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black54,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 42, vertical: 28),
+        child: SongInfoModal(song: song, dialogStyle: true),
+      ),
+    );
+    return;
+  }
+
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
